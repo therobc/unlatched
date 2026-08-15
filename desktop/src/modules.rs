@@ -40,6 +40,17 @@ pub enum Module {
     Applied,
     /// The employer pulled the posting.
     TakenDown,
+    /// The employer pulled a posting this person had an application in flight
+    /// on.
+    ///
+    /// NOT IN `MODULES`, so it draws no card. It is reached by clicking the
+    /// sentence on the dashboard, which already existed and already explains
+    /// why it is a sentence rather than a card - see views::dashboard_view,
+    /// "Deliberately a sentence, not a sixth card".
+    ///
+    /// Its clause is the one `dashboard::load` counts the sentence with, so the
+    /// number in the sentence and the length of the list it opens cannot drift.
+    WithdrawnAfterApplying,
     /// One status, as its own list. The first user named No Offer and Declined Offer.
     Status(&'static str),
 }
@@ -73,6 +84,7 @@ impl Module {
             Module::AwaitingReply => "awaiting-reply".to_string(),
             Module::Applied => "applied".to_string(),
             Module::TakenDown => "taken-down".to_string(),
+            Module::WithdrawnAfterApplying => "withdrawn-after-applying".to_string(),
             Module::Status(value) => format!("status-{}", value.replace('_', "-")),
         }
     }
@@ -87,6 +99,7 @@ impl Module {
             Module::AwaitingReply => "AWAITING A REPLY".to_string(),
             Module::Applied => "APPLIED".to_string(),
             Module::TakenDown => "TAKEN DOWN".to_string(),
+            Module::WithdrawnAfterApplying => "TAKEN DOWN AFTER YOU APPLIED".to_string(),
             Module::Status(value) => status::label(value).to_uppercase(),
         }
     }
@@ -102,6 +115,8 @@ impl Module {
             Module::AwaitingReply => "Awaiting a reply".to_string(),
             Module::Applied => "Everything you have applied to".to_string(),
             Module::TakenDown => "Taken down".to_string(),
+            Module::WithdrawnAfterApplying =>
+                "Taken down after you applied".to_string(),
             Module::Status(value) => status::label(value),
         }
     }
@@ -136,6 +151,11 @@ impl Module {
                 "The employer removed the posting. Whatever you recorded about \
                  it is untouched."
                     .to_string(),
+            Module::WithdrawnAfterApplying =>
+                "You had an application in flight and the employer pulled the \
+                 posting. Worth closing out: record the rejection if one came, \
+                 or give up on the ones that stayed silent."
+                    .to_string(),
             Module::Status(value) => match status::get(value) {
                 Some(s) => s.hint.to_string(),
                 None => String::new(),
@@ -157,6 +177,11 @@ impl Module {
             Module::AwaitingReply => status::colour("applied"),
             Module::Applied => [99, 102, 241],
             Module::TakenDown => [120, 130, 150],
+            // THE DEFINITION, not a copy of one. This red was a private const
+            // in views::dashboard_view used by nothing but that sentence;
+            // it now reads this, so the sentence and the list it opens cannot
+            // end up different colours.
+            Module::WithdrawnAfterApplying => [239, 68, 68],
             Module::Status(value) => status::colour(value),
         }
     }
@@ -204,6 +229,17 @@ impl Module {
                     .to_string(),
             Module::TakenDown =>
                 "jobs.qualified = 1 AND jobs.delisted_at IS NOT NULL".to_string(),
+            // IN FLIGHT, not "ever applied": a posting pulled after the person
+            // was already turned down is just an old ad coming down, and
+            // putting it in this list would bury the ones still worth chasing.
+            //
+            // NO `qualified` FILTER, unlike TakenDown above. Screening decides
+            // what to show someone who has not acted; an application already
+            // sent overrules it.
+            Module::WithdrawnAfterApplying => format!(
+                "jobs.delisted_at IS NOT NULL AND job_status.status IN ({})",
+                status::sql_list(&status::in_flight_values())
+            ),
             Module::Status(value) => format!("job_status.status = '{value}'"),
         }
     }

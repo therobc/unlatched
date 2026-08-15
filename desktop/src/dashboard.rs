@@ -186,14 +186,20 @@ pub fn load(conn: &Connection) -> SqlResult<DashboardStats> {
         // In flight, so a posting pulled while the person was still waiting on
         // it counts - and one pulled after they had already been turned down
         // does not, because that is just an old ad coming down.
-        withdrawn_after_applying: count(
+        // COUNTED THROUGH THE MODULE, not by a query that says the same thing
+        // in its own words. The sentence is now a link to
+        // Module::WithdrawnAfterApplying's list, and this is the same function
+        // that list is built from - so the number in the sentence and the rows
+        // it opens are one statement used twice rather than two that agree
+        // today. Asserted by the_sentence_count_matches_the_list_it_opens.
+        //
+        // It also gains MODULE_EXCLUSIONS, which the hand-written query above
+        // lacked: a row the person retired or one folded behind its duplicate
+        // is no longer counted here, because clicking through would not have
+        // shown it.
+        withdrawn_after_applying: crate::db::count_module(
             conn,
-            &format!(
-                "SELECT COUNT(*) FROM jobs j JOIN job_status s ON s.key = j.key
-                 WHERE j.delisted_at IS NOT NULL
-                   AND s.status IN ({in_flight})",
-                in_flight = crate::status::sql_list(&crate::status::in_flight_values()),
-            ),
+            crate::modules::Module::WithdrawnAfterApplying,
         )?,
         // Compared against the job_status timestamp, which is when the person
         // last moved the row - not when the job was posted or collected.

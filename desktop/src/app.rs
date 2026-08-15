@@ -41,6 +41,8 @@ fn downloads_dir() -> Option<PathBuf> {
 pub enum View {
     Dashboard,
     AllJobs,
+    /// All jobs in its removed scope, as a rail entry of its own.
+    Removed,
     Resumes,
     GettingStarted,
     Triage,
@@ -263,6 +265,17 @@ pub struct UnlatchedApp {
     /// The row whose posting is open inline. One at a time: an accordion of
     /// several open blocks is a wall of text with no list left in it.
     pub triage_expanded: Option<String>,
+    /// Bring `triage_selected` into view on the next frame, then stop.
+    ///
+    /// ARRIVING AT A LIST IS NOT THE SAME AS SEEING THE ROW. Opening a card on
+    /// the Pipeline already selected and expanded the job and switched to All
+    /// jobs - and landed at the TOP of ten thousand rows, with the open posting
+    /// somewhere below the fold. From the reader's side the click did nothing
+    /// but change screens.
+    ///
+    /// One frame only: a sticky flag would fight the scrollbar every time the
+    /// person tried to look somewhere else.
+    pub scroll_to_selected: bool,
     pub expanded_tab: ExpandedTab,
     /// Which list is on screen. A dashboard tile sets this to its own module
     /// rather than leaving a filter on Triage - see ListScope::Module.
@@ -434,11 +447,16 @@ const REFRESH_CHECK_EVERY: std::time::Duration = std::time::Duration::from_secs(
 /// screen with no arrow pointing at anything, and nothing in the build would
 /// have said so. With the labels in one place, `tutorial`'s own test can hold
 /// the walkthrough against them.
-pub const NAV_JOBS: [(View, &str); 4] = [
+pub const NAV_JOBS: [(View, &str); 5] = [
     (View::Dashboard, "Dashboard"),
     (View::Triage, "Triage"),
     (View::Pipeline, "Pipeline"),
     (View::AllJobs, "All jobs"),
+    // BELOW All jobs, because that is what it is a way back from. It was
+    // reachable only as a chip in the All jobs toolbar, which is how a live
+    // profile came to hold 29 removed rows their owner did not know they could
+    // see.
+    (View::Removed, "Removed"),
 ];
 pub const NAV_TOOLS: [(View, &str); 4] = [
     (View::Keywords, "Keywords"),
@@ -588,6 +606,7 @@ impl UnlatchedApp {
             triage_every_location: false,
             triage_selected: None,
             triage_expanded: None,
+            scroll_to_selected: false,
             expanded_tab: ExpandedTab::Posting,
             triage_note_open: false,
             triage_note_just_opened: false,
@@ -2042,6 +2061,7 @@ impl eframe::App for UnlatchedApp {
             View::Config => views::config_view::show(self, ui),
             View::Dashboard => views::dashboard_view::show(self, ui),
             View::AllJobs => views::triage::show_all_jobs(self, ui, ctx),
+            View::Removed => views::triage::show_removed(self, ui, ctx),
             View::Resumes => views::resumes_view::show(self, ui),
             View::Profiles => views::profiles_view::show(self, ui),
             View::Agent => views::agent::show(self, ui),

@@ -544,10 +544,20 @@ fn read_triage_rows(conn: &Connection, sql: &str) -> SqlResult<Vec<TriageRow>> {
 /// Rows for whichever list is on screen.
 ///
 /// TRIAGE is the working queue: qualified rows the person has not closed out.
-/// ALL JOBS is a different question - everything still worth seeing - and its
-/// rule is the first user's: hide what the employer has taken down, EXCEPT a posting they
-/// applied to, which stays until he records how it ended by marking it Denied.
-/// A job you applied to does not stop mattering because the ad was pulled.
+/// ALL JOBS is a different question - EVERYTHING still worth seeing, taken-down
+/// postings included.
+///
+/// ALL JOBS USED TO HIDE TAKEN-DOWN ROWS unless an application was in flight.
+/// That worked while "taken down" was the end of the road, and stopped working
+/// the moment a closure started writing a status: a posting nobody had acted on
+/// left Triage as No longer open and left All jobs at the same instant, landing
+/// on no screen at all. There was then no way back to it - including no way to
+/// say "I did apply to this, before it was pulled".
+///
+/// So the three lists now answer three questions and every row is on at least
+/// one of them: Triage is live work, All jobs is everything, Removed is what
+/// the person explicitly discarded. Asserted by
+/// a_taken_down_row_nobody_acted_on_is_still_reachable_in_all_jobs.
 pub fn list_jobs_for(
     conn: &Connection,
     scope: crate::app::ListScope,
@@ -568,10 +578,7 @@ pub fn list_all_jobs(conn: &Connection) -> SqlResult<Vec<TriageRow>> {
          WHERE jobs.qualified = 1
            AND jobs.retired_at IS NULL
            AND jobs.duplicate_of IS NULL
-           AND (jobs.delisted_at IS NULL
-                OR (job_status.status IN ({in_flight})))
-         ORDER BY jobs.score DESC, jobs.key ASC",
-        in_flight = crate::status::sql_list(&crate::status::in_flight_values()),
+         ORDER BY jobs.score DESC, jobs.key ASC"
     );
     read_triage_rows(conn, &sql)
 }
@@ -858,7 +865,6 @@ pub fn mark_taken_down(conn: &Connection, keys: &[String]) -> SqlResult<usize> {
     if keys.is_empty() {
         return Ok(0);
     }
-    let in_flight = crate::status::in_flight_values();
     let stamp = date::now_iso();
     let mut touched = 0;
     for key in keys {
@@ -877,7 +883,17 @@ pub fn mark_taken_down(conn: &Connection, keys: &[String]) -> SqlResult<usize> {
                 |r| r.get(0),
             )
             .unwrap_or_default();
-        if !in_flight.contains(&held.as_str()) {
+        // ONLY ONTO "NOT SET". This asked `!in_flight.contains(held)`, which is
+        // a wider net than it looks: in_flight is the RUNGS (applied,
+        // interviewed, offer), so No Offer and Declined Offer are not in it and
+        // a recorded rejection was being overwritten with "No longer open" the
+        // moment the employer pulled the ad. That is the person's own record of
+        // how it ended, destroyed by a posting expiring - the exact thing the
+        // delisted_at-is-a-column design exists to prevent.
+        //
+        // Empty is the whole of the target: a row nobody ever judged. Anything
+        // they did record, at any stage, is theirs and stays.
+        if held.is_empty() {
             set_status_with(conn, key, crate::status::CLOSED, None, &OfferTerms::default())?;
         }
         touched += 1;
@@ -1210,6 +1226,88 @@ mod tests {
         assert!(keys.contains(&"gh:applied".to_string()));
     }
 
+    /// Every row is on at least one list. The one that used to fall through.
+    ///
+    /// A posting nobody acted on, then taken down, gets the closed status - so
+    /// Triage hides it as settled. All jobs USED TO hide it too, unless an
+    /// application was in flight. Both halves were defensible and together they
+    /// left the row on no screen at all, with no way to say "I did apply to
+    /// this, before it was pulled".
+    ///
+    /// Positive control, run 2026-08-15: restoring the old delisted clause to
+    /// list_all_jobs fails this with left: false, right: true.
+    #[test]
+    fn a_taken_down_row_nobody_acted_on_is_still_reachable_in_all_jobs() {
+        let conn = touched_and_untouched();
+        mark_taken_down(&conn, &["gh:untouched".to_string()]).unwrap();
+
+        // Gone from the working queue - that is the decluttering.
+        let triage: Vec<String> = list_triage_jobs(&conn, false)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.job.key)
+            .collect();
+        assert!(
+            !triage.contains(&"gh:untouched".to_string()),
+            "a taken-down row nobody acted on leaves Triage"
+        );
+
+        // Still reachable, so the status can still be corrected afterwards.
+        let all: Vec<String> = list_all_jobs(&conn)
+            .unwrap()
+            .into_iter()
+            .map(|r| r.job.key)
+            .collect();
+        assert!(
+            all.contains(&"gh:untouched".to_string()),
+            "and is still on All jobs, or there is no way back to it"
+        );
+    }
+
+    /// A recorded rejection is a decision, and the advert coming down later
+    /// must not erase it.
+    ///
+    /// THIS IS A REGRESSION TEST FOR A SHIPPED BUG, found 2026-08-15. The guard
+    /// was `!in_flight.contains(held)`, and in_flight is only the rungs
+    /// (applied, interviewed, offer) - so No Offer and Declined Offer fell
+    /// through it and were rewritten to "No longer open". Someone who had
+    /// recorded being turned down would lose that the moment the posting
+    /// expired, and nothing anywhere would say it had happened.
+    ///
+    /// Positive control, run before the fix: this test FAILS on the old rule
+    /// with left: "closed", right: "no_offer".
+    #[test]
+    fn taken_down_does_not_overwrite_a_rejection_the_person_recorded() {
+        let conn = touched_and_untouched();
+        set_status_with(&conn, "gh:untouched", "no_offer", None, &OfferTerms::default())
+            .unwrap();
+
+        mark_taken_down(&conn, &["gh:untouched".to_string()]).unwrap();
+
+        let status: String = conn
+            .query_row(
+                "SELECT status FROM job_status WHERE key = 'gh:untouched'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            status, "no_offer",
+            "a rejection the person recorded survives the advert closing"
+        );
+
+        // And the closure is still recorded beside it, because both facts are
+        // true and the column exists so they need not compete.
+        let delisted: Option<String> = conn
+            .query_row(
+                "SELECT delisted_at FROM jobs WHERE key = 'gh:untouched'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(delisted.is_some());
+    }
+
     /// The noise case: a posting nobody ever acted on, now gone.
     #[test]
     fn taken_down_closes_a_job_nobody_acted_on_and_drops_it_from_the_list() {
@@ -1230,13 +1328,21 @@ mod tests {
             "and it reads as words, not as a raw value"
         );
 
-        let keys: Vec<String> = list_all_jobs(&conn)
+        // THE WORKING LIST IS TRIAGE, and that is the one it has to leave.
+        //
+        // This asserted against list_all_jobs, which passed only because All
+        // jobs hid taken-down rows as well - so the row left BOTH lists and
+        // the test read that as success. Decluttering the queue and making a
+        // row unreachable are different outcomes, and this could not tell them
+        // apart. It now asserts each list separately, and the reachability half
+        // is a_taken_down_row_nobody_acted_on_is_still_reachable_in_all_jobs.
+        let triage: Vec<String> = list_triage_jobs(&conn, false)
             .unwrap()
             .into_iter()
             .map(|r| r.job.key)
             .collect();
         assert!(
-            !keys.contains(&"gh:untouched".to_string()),
+            !triage.contains(&"gh:untouched".to_string()),
             "it stops being noise in the working list"
         );
     }
@@ -1270,6 +1376,41 @@ mod tests {
             ],
             "one call, two outcomes, decided by what the person had already done"
         );
+    }
+
+    /// The button's number has to be the number of rows the ENGINE will read.
+    ///
+    /// It was not. This side counted `('manual','imported')` while
+    /// manual.ALWAYS_RECHECKABLE had been narrowed to hand-added rows alone,
+    /// so on a live profile the button offered to check 310 postings when the
+    /// engine would have fetched none of them - and 410 of those rows were
+    /// LinkedIn URLs, which is a site this app refuses to read automatically.
+    /// The number was wrong in the direction that looks like an incident.
+    ///
+    /// ASSERTED AGAINST THE OTHER HALF, not against this query's own shape: a
+    /// test that restated the SQL would have passed throughout.
+    #[test]
+    fn the_added_links_count_covers_only_what_the_engine_rechecks() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(SCHEMA_SQL).unwrap();
+        ensure_columns(&conn, "jobs", &ADDED_JOB_COLUMNS).unwrap();
+        conn.execute(
+            "INSERT INTO jobs (key, title, qualified, source) VALUES
+             ('manual:1', 'Typed in by hand', 1, 'manual'),
+             ('imported:1', 'Handed over by a collector', 1, 'imported'),
+             ('imported:2', 'Another one', 1, 'imported'),
+             ('greenhouse:1', 'Read off a board', 1, 'greenhouse')",
+            [],
+        )
+        .unwrap();
+
+        let state = manual_link_state(&conn, 0.0).unwrap();
+        assert_eq!(
+            state.total, 1,
+            "only the hand-added row is the button's business; imported rows \
+             belong to whatever collector wrote them"
+        );
+        assert_eq!(state.due, 1, "and it is due, never having been looked at");
     }
 
     /// A database with one job, for exercising the status/note path.
@@ -1925,14 +2066,26 @@ impl ManualLinkState {
 pub fn manual_link_state(conn: &Connection, min_hours: f64) -> Result<ManualLinkState, String> {
     let total: i64 = conn
         .query_row(
-            // Hand-added and imported are the SAME requirement for this button
-            // (decided 2026-08-09): no board is watching either, so nothing else
-            // tells the person the posting has gone. Untouched only - a row
-            // they have already decided about does not need its liveness
-            // checked, and a count larger than what will actually be read is a
-            // number people learn to disbelieve.
+            // HAND-ADDED ONLY, which is what the engine will actually read.
+            //
+            // This counted imported rows too, on reasoning from 2026-08-09
+            // that the engine SUPERSEDED on 2026-08-12: a collector that
+            // already read a posting asking us to read it again is a second
+            // automated reader for information the app has been handed, so
+            // manual.ALWAYS_RECHECKABLE dropped `imported` and this side was
+            // never updated. The button then advertised 310 rows on a live
+            // profile where the engine would have fetched zero.
+            //
+            // The comment this replaces said it out loud - "a count larger
+            // than what will actually be read is a number people learn to
+            // disbelieve" - and then the code did exactly that. It read as
+            // the app being about to hammer a site it is careful never to
+            // touch, which is a worse failure than the wrong number.
+            //
+            // Untouched only: a row already decided about does not need its
+            // liveness checked.
             "SELECT COUNT(*) FROM jobs j \
-             WHERE j.source IN ('manual', 'imported') AND j.delisted_at IS NULL \
+             WHERE j.source = 'manual' AND j.delisted_at IS NULL \
                AND NOT EXISTS (SELECT 1 FROM job_status s \
                                WHERE s.key = j.key AND TRIM(s.status) != '')",
             [],
@@ -1949,7 +2102,7 @@ pub fn manual_link_state(conn: &Connection, min_hours: f64) -> Result<ManualLink
     let due: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM jobs j \
-             WHERE j.source IN ('manual', 'imported') AND j.delisted_at IS NULL \
+             WHERE j.source = 'manual' AND j.delisted_at IS NULL \
                AND NOT EXISTS (SELECT 1 FROM job_status s \
                                WHERE s.key = j.key AND TRIM(s.status) != '') \
                AND (j.last_seen IS NULL \
@@ -1964,12 +2117,12 @@ pub fn manual_link_state(conn: &Connection, min_hours: f64) -> Result<ManualLink
     let stale: i64 = conn
         .query_row(
             "SELECT COUNT(*) FROM jobs m \
-             WHERE m.source IN ('manual', 'imported') AND m.delisted_at IS NULL \
+             WHERE m.source = 'manual' AND m.delisted_at IS NULL \
                AND NOT EXISTS (SELECT 1 FROM job_status s \
                                WHERE s.key = m.key AND TRIM(s.status) != '') \
                AND (m.last_seen IS NULL OR m.last_seen < \
                     (SELECT MAX(j.fetched_at) FROM jobs j \
-                      WHERE j.source NOT IN ('manual', 'imported')))",
+                      WHERE j.source != 'manual'))",
             [],
             |r| r.get(0),
         )
