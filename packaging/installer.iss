@@ -15,7 +15,14 @@
 ; (packaging/build_release.py drives this for a full release build.)
 
 #define MyAppName "Unlatched"
-#define MyAppVersion "0.1.1"
+; A FALLBACK, NOT THE VERSION. build_release.py passes -DMyAppVersion so the
+; number has one definition (APP_VERSION, there). This line was that second
+; definition, and it drifted the first time the version was bumped: 0.1.2
+; content compiled out as Unlatched-Setup-0.1.1.exe. Only a hand-compile of
+; this file uses the value below.
+#ifndef MyAppVersion
+  #define MyAppVersion "0.0.0-local"
+#endif
 #define MyAppPublisher "Unlatched contributors"
 #define MyAppExeName "Unlatched.exe"
 #define PortableDir SourcePath + "..\dist\portable\Unlatched"

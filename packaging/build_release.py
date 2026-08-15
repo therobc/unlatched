@@ -38,7 +38,7 @@ import zipfile
 from pathlib import Path
 
 APP_NAME = "Unlatched"
-APP_VERSION = "0.1.1"
+APP_VERSION = "0.1.2"
 
 REPO_ROOT = Path(__file__).resolve().parent.parent  # app/
 PACKAGING_DIR = REPO_ROOT / "packaging"
@@ -208,7 +208,18 @@ def build_installer() -> Path | None:
         )
         return None
 
-    run([str(iscc), str(PACKAGING_DIR / "installer.iss")])
+    # THE VERSION IS PASSED IN, because it was defined in two places and they
+    # drifted at the first opportunity. installer.iss carried its own
+    # `#define MyAppVersion`, so bumping APP_VERSION here to 0.1.2 built 0.1.2
+    # content and named it Unlatched-Setup-0.1.1.exe - overwriting the previous
+    # release's installer on disk with different bytes under its name.
+    #
+    # Caught by the missing-file check below, which is the only reason it was
+    # noticed at all: the build otherwise reported success. -D overrides the
+    # define in the script, so the .iss keeps a working default for anyone
+    # compiling it by hand.
+    run([str(iscc), f"-DMyAppVersion={APP_VERSION}",
+         str(PACKAGING_DIR / "installer.iss")])
 
     installer = DIST_DIR / f"{APP_NAME}-Setup-{APP_VERSION}.exe"
     if not installer.is_file():
