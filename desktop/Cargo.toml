@@ -1,0 +1,52 @@
+[package]
+name = "unlatched-desktop"
+version = "0.1.1"
+edition = "2021"
+description = "Desktop front end for Unlatched, a local-first job discovery app."
+license = "MIT"
+
+[[bin]]
+name = "unlatched-desktop"
+path = "src/main.rs"
+
+[target.'cfg(windows)'.build-dependencies]
+# Embeds the icon and version metadata as PE resources. Windows
+# only, so a Linux or macOS build never has to resolve it.
+winresource = "0.1"
+
+[dependencies]
+# GUI: pinned to the 0.28 line because egui minor releases routinely
+# change layout and widget APIs; upgrades are deliberate, not automatic.
+# "accesskit" is one of eframe's DEFAULT features, so default-features = false
+# silently compiled the accessibility tree out. Without it, naming widgets is
+# dead code: nothing is published to UIA, no screen reader sees the app, and our
+# own automation cannot address a single control by name.
+eframe = { version = "0.28", default-features = false, features = ["accesskit", "default_fonts", "glow", "persistence"] }
+egui = "0.28"
+egui_extras = "0.28"
+
+# Window icon decoding, and encoding a pasted screenshot to PNG. PNG ONLY, and
+# deliberately back down to that: attachments are download-only now, so nothing
+# decodes an attachment at all, and the jpeg/gif/bmp/webp codecs that a preview
+# would have needed are attack surface with no use.
+image = { version = "0.25", default-features = false, features = ["png"] }
+
+# Reading a pasted screenshot off the clipboard. The operator asked for paste-to-attach
+# by name; nothing in egui 0.28 or std can get an IMAGE off the clipboard.
+#
+# "image-data" is the feature that carries get_image; without it arboard is
+# text-only and the paste button has nothing to read.
+arboard = { version = "3", default-features = false, features = ["image-data"] }
+
+# Storage: bundled feature compiles SQLite in, so the app has no external
+# library dependency on the machine it runs on.
+rusqlite = { version = "0.31", features = ["bundled"] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Native folder/file pickers for the New profile modal's Browse buttons.
+rfd = "0.14"
+
+[profile.release]
+opt-level = 2
