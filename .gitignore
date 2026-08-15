@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.venv/
+venv/
+*.egg
+
+# Rust / desktop. Cargo.lock is deliberately NOT ignored: this is an
+# application, so the lockfile is committed for reproducible builds (the
+# release workflow's cache key depends on it).
+desktop/target/
+**/*.rs.bk
+.toolrun_last.log
+
+# Local data / config (never ship a user's own state)
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+config.json
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Editors
+.vscode/
+.idea/
+*.swp
