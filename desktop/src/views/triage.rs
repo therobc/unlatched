@@ -53,10 +53,25 @@ const EDGE_BAND: f32 = 10.0;
 /// because the employer pulled the ad; it stops mattering when you know how it
 /// ended. That is the same principle the delisting code follows: the row has
 /// to outlive the listing.
+/// All jobs: everything still worth seeing, taken-down postings included.
 pub fn show_all_jobs(app: &mut UnlatchedApp, ui: &mut egui::Ui, ctx: &egui::Context) {
-    // The way back to removed rows lives on THIS screen rather than in the nav
-    // rail: it is a mode of "everything", not a ninth place to look, and the
-    // rail is already the longest list in the window.
+    // THE RAIL ENTRY OWNS THE MODE NOW. Removed used to be a toggle on this
+    // screen and nothing else - so a person with 29 removed jobs had no way to
+    // find them without noticing a chip in the toolbar of a screen they might
+    // never open. It is its own entry; arriving at All jobs means All jobs.
+    app.show_retired = false;
+    show_scope(app, ui, ctx);
+}
+
+/// What the person took out of their lists. Reversible, and nothing was deleted.
+pub fn show_removed(app: &mut UnlatchedApp, ui: &mut egui::Ui, ctx: &egui::Context) {
+    app.show_retired = true;
+    // Two scopes of one table, so entering either leaves the other.
+    app.show_duplicates = false;
+    show_scope(app, ui, ctx);
+}
+
+fn show_scope(app: &mut UnlatchedApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     let wanted = if app.show_retired {
         ListScope::Retired
     } else if app.show_duplicates {
@@ -231,9 +246,16 @@ fn show_list(
                     format!("{removed} removed"),
                 );
                 if response.changed() {
-                    app.show_retired = showing;
-                    // Two modes of one screen, so entering either leaves the
-                    // other.
+                    // SWITCHES THE VIEW rather than setting the flag, because
+                    // the flag is now decided by whichever rail entry is open.
+                    // Kept as a chip as well as a rail entry: it carries the
+                    // count, which is what tells somebody there is anything in
+                    // there to go back to.
+                    app.view = if showing {
+                        crate::app::View::Removed
+                    } else {
+                        crate::app::View::AllJobs
+                    };
                     app.show_duplicates = false;
                     app.selected_keys.clear();
                 }
@@ -259,7 +281,9 @@ fn show_list(
                 );
                 if response.changed() {
                     app.show_duplicates = showing;
-                    app.show_retired = false;
+                    // Grouped is a mode of All jobs, so it leaves Removed the
+                    // same way Removed leaves it.
+                    app.view = crate::app::View::AllJobs;
                     app.selected_keys.clear();
                 }
             }
@@ -447,6 +471,20 @@ fn show_list(
         // row high, so top and centre are identical for them.
         .cell_layout(egui::Layout::left_to_right(egui::Align::Min))
         .min_scrolled_height(200.0);
+    // Asked for by key, resolved to an index here, because the caller that
+    // wants the row on screen knows the job and not its position - and the
+    // position depends on the sort, the scope and the filters, none of which
+    // are that caller's business.
+    //
+    // A key that is not in THIS list scrolls nowhere rather than to row 0.
+    if app.scroll_to_selected {
+        if let Some(index) = app.triage_selected.as_ref().and_then(|key| {
+            app.triage_rows.iter().position(|r| &r.job.key == key)
+        }) {
+            builder = builder.scroll_to_row(index, Some(egui::Align::Center));
+        }
+        app.scroll_to_selected = false;
+    }
     for (i, id) in shown.iter().enumerate() {
         let spec = columns::spec(*id);
         // One column stretches so the table reaches the window edge; the rest

@@ -134,6 +134,11 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
         app.list_scope = crate::app::ListScope::All;
         app.refresh_triage();
         app.view = crate::app::View::AllJobs;
+        // The half that was missing. Everything above was already right - the
+        // row was selected and its posting opened - and none of it was visible,
+        // because All jobs draws from the top and the row is wherever score
+        // ordering put it. See UnlatchedApp::scroll_to_selected.
+        app.scroll_to_selected = true;
     }
 }
 

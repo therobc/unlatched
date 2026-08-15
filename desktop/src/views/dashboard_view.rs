@@ -29,7 +29,6 @@ use crate::dashboard::{DashboardStats, SILENT_DAYS};
 const ACTIVE: egui::Color32 = egui::Color32::from_rgb(59, 130, 246);
 const INTERVIEW: egui::Color32 = egui::Color32::from_rgb(245, 158, 11);
 const HIRED: egui::Color32 = egui::Color32::from_rgb(34, 197, 94);
-const CLOSED: egui::Color32 = egui::Color32::from_rgb(239, 68, 68);
 const NEUTRAL: egui::Color32 = egui::Color32::from_rgb(120, 130, 150);
 
 /// Twice a normal card. The status doughnut and its counted legend need the
@@ -228,15 +227,34 @@ fn stat_cards(app: &mut UnlatchedApp, ui: &mut egui::Ui, stats: &DashboardStats)
     // expiring, and it is worth interrupting someone for.
     if stats.withdrawn_after_applying > 0 {
         ui.add_space(4.0);
-        ui.colored_label(
-            CLOSED,
-            format!(
-                "{} job{} you applied to {} been taken down.",
-                stats.withdrawn_after_applying,
-                if stats.withdrawn_after_applying == 1 { "" } else { "s" },
-                if stats.withdrawn_after_applying == 1 { "has" } else { "have" },
-            ),
+        let module = crate::modules::Module::WithdrawnAfterApplying;
+        let [r, g, b] = module.colour();
+        let text = format!(
+            "{} job{} you applied to {} been taken down.",
+            stats.withdrawn_after_applying,
+            if stats.withdrawn_after_applying == 1 { "" } else { "s" },
+            if stats.withdrawn_after_applying == 1 { "has" } else { "have" },
         );
+        // A LINK RATHER THAN A LABEL. The count on its own is a dead end - the
+        // person already knows something went wrong and still has to find the
+        // rows by hand. What they came to do is close them out: record the
+        // rejection that did arrive, or give up on the ones that stayed silent.
+        let clicked = crate::access::tag_with_value(
+            ui.add(egui::Link::new(
+                egui::RichText::new(&text).color(egui::Color32::from_rgb(r, g, b)),
+            )),
+            egui::WidgetType::Link,
+            format!("module-{}", module.key()),
+            stats.withdrawn_after_applying.to_string(),
+        )
+        .on_hover_text(
+            "Open these, to record the rejections you were sent and give up on \
+             the ones that stayed silent.",
+        )
+        .clicked();
+        if clicked {
+            app.open_module(module);
+        }
     }
     if stats.waiting_on_reply > 0 {
         ui.weak(format!(
