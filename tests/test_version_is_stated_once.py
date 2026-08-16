@@ -73,7 +73,7 @@ def test_the_installer_script_no_longer_pins_a_version():
     depth = 0
     for line in text.splitlines():
         stripped = line.strip()
-        if stripped.startswith("#ifndef") or stripped.startswith("#ifdef"):
+        if stripped.startswith(("#ifndef", "#ifdef")):
             depth += 1
             continue
         if stripped.startswith("#endif"):
