@@ -4,13 +4,23 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "unlatched"
-version = "0.1.1"
+version = "0.1.2" # keep in step with packaging/build_release.py APP_VERSION
+                  # - asserted by tests/test_version_is_stated_once.py
 description = "Local-first job discovery: find roles on company career pages and ATS boards, screen them deterministically, and track your pipeline."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.9"
 authors = [{ name = "Unlatched contributors" }]
-dependencies = []
+# zoneinfo NEEDS A TIME ZONE DATABASE AND WINDOWS DOES NOT SHIP ONE. The engine
+# schedules against a named zone, so on a clean Windows machine every dated
+# test dies with ZoneInfoNotFoundError: 'No time zone found with key
+# America/New_York'. It has always needed this; it simply never said so, and
+# worked here because something else in the environment had pulled tzdata in.
+#
+# Found by the first CI run on 2026-08-16 - a clean runner is the only place
+# an undeclared dependency shows up, which is most of the argument for having
+# one.
+dependencies = ["tzdata; platform_system == 'Windows'"]
 
 [project.optional-dependencies]
 dev = ["pytest>=7"]
