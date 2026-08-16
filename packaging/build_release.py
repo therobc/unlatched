@@ -38,7 +38,7 @@ import zipfile
 from pathlib import Path
 
 APP_NAME = "Unlatched"
-APP_VERSION = "0.1.2"
+APP_VERSION = "0.1.3"
 
 REPO_ROOT = Path(__file__).resolve().parent.parent  # app/
 PACKAGING_DIR = REPO_ROOT / "packaging"
