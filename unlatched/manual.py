@@ -39,6 +39,7 @@ from typing import TYPE_CHECKING, Any
 
 from . import collectors as collectors_mod
 from . import db, screen
+from . import db as db_mod
 from . import links as links_mod
 from . import status as status_mod
 from .fetch import fetch as default_fetch
@@ -602,6 +603,9 @@ def recheck(con: sqlite3.Connection, cfg: dict[str, Any], *,
         con.execute("UPDATE jobs SET last_seen = ? WHERE key = ?",
                     (stamp, row["key"]))
     con.commit()
+    # A posting this path closed was confirmed gone by reading the site, so it
+    # takes the same status rule as every other way a closure is noticed.
+    db_mod.close_untouched_delisted(con, list(gone), at=stamp)
     return {"checked": len(gone), "gone": gone,
             "unreadable": unreadable}
 

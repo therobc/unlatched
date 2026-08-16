@@ -1090,6 +1090,11 @@ def cmd_delist(args: argparse.Namespace) -> int:
         con.execute("UPDATE jobs SET delisted_at = ? WHERE key = ?",
                     (stamp, args.key))
         con.commit()
+        # Only when it is being CLOSED. `--back` is the undo, and giving a
+        # posting the closed status on the way to being relisted would be the
+        # opposite of what was asked for.
+        if stamp is not None:
+            db.close_untouched_delisted(con, [args.key], at=stamp)
         # `changed` is False when it already said this. Reported rather than
         # hidden so a caller re-running a sweep can tell "99 closed" from
         # "99 already known to be closed".
@@ -1178,6 +1183,7 @@ def _apply_closures(con: sqlite3.Connection, keys: list[str],
     """
     stamp = status_mod.now_iso()
     changed, unknown = 0, []
+    closed_keys: list[str] = []
     for raw in keys:
         key = raw
         row = con.execute(
@@ -1196,8 +1202,14 @@ def _apply_closures(con: sqlite3.Connection, keys: list[str],
             continue
         con.execute("UPDATE jobs SET delisted_at = ? WHERE key = ?",
                     (stamp, key))
+        closed_keys.append(key)
         changed += 1
     con.commit()
+    # A collector's closure is a closure. It used to set the column and stop,
+    # so a posting somebody else's program reported dead sat in the list
+    # reading "not set" - the single largest source of them, since a handoff
+    # can carry dozens at once (62 on 2026-08-12).
+    db.close_untouched_delisted(con, closed_keys, at=stamp)
     return changed, unknown
 
 

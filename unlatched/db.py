@@ -585,6 +585,19 @@ def mark_delisted(con: sqlite3.Connection, company_id: int, seen_at: str) -> int
     # it has not learned anything about it - and if they added a job at an
     # employer whose board we also read, it shares this company_id and would
     # otherwise be struck through the first time that board was collected.
+    #
+    # THE KEYS ARE READ BEFORE THE UPDATE so the same rows can be handed to
+    # close_untouched_delisted. rowcount says how many changed and not which,
+    # and "which" is the whole question for the status rule.
+    rows = con.execute(
+        "SELECT key FROM jobs "
+        "WHERE company_id = ? AND delisted_at IS NULL "
+        "AND source != 'manual' "
+        "AND (last_seen IS NULL OR last_seen < ?)",
+        (company_id, seen_at)).fetchall()
+    keys = [str(r["key"]) for r in rows]
+    if not keys:
+        return 0
     cur = con.execute(
         "UPDATE jobs SET delisted_at = ? "
         "WHERE company_id = ? AND delisted_at IS NULL "
@@ -592,7 +605,45 @@ def mark_delisted(con: sqlite3.Connection, company_id: int, seen_at: str) -> int
         "AND (last_seen IS NULL OR last_seen < ?)",
         (seen_at, company_id, seen_at))
     con.commit()
+    close_untouched_delisted(con, keys, at=seen_at)
     return int(cur.rowcount or 0)
+
+
+def close_untouched_delisted(con: sqlite3.Connection, keys: list[str],
+                             at: str | None = None) -> int:
+    """Give a taken-down posting a status, but ONLY where nobody set one.
+
+    THE SAME RULE FOR EVERY WAY A CLOSURE IS NOTICED. A person pressing "Mark
+    taken down" got this; a collect finding the posting gone, the added-links
+    recheck, the `delist` verb and a collector's own pushed closures all set
+    `delisted_at` and no status - so the rows a person never touched sat in the
+    list reading "not set" for ever while the identical row closed by hand read
+    "No longer open". The outcome must not depend on how the closure was
+    noticed, which is why this is one function called from all five.
+
+    ONLY ONTO AN EMPTY STATUS. Everything else is the person's: an application
+    in flight keeps its rung, and a recorded rejection keeps saying it was a
+    rejection. Widening this to "anything not in flight" is what overwrote No
+    Offer rows in the desktop half - see db.rs::mark_taken_down.
+
+    Returns how many were given the status.
+    """
+    if not keys:
+        return 0
+    marks = ", ".join("?" for _ in keys)
+    # NO ROW AND AN EMPTY ROW MEAN THE SAME THING. A job nobody ever judged
+    # usually has no job_status row at all, but clear_status leaves one behind
+    # holding "", and both are "nobody decided".
+    rows = con.execute(
+        f"SELECT j.key FROM jobs j "  # noqa: S608 - `marks` is bind markers only
+        f"LEFT JOIN job_status s ON s.key = j.key "
+        f"WHERE j.key IN ({marks}) "
+        f"AND COALESCE(s.status, '') = ''",
+        keys).fetchall()
+    untouched = [str(r["key"]) for r in rows]
+    for key in untouched:
+        status_vocab.set_status(con, key, status_vocab.CLOSED, at=at)
+    return len(untouched)
 
 
 def relist(con: sqlite3.Connection, key: str) -> None:

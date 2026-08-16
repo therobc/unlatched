@@ -51,11 +51,22 @@ def now_iso() -> str:
 FLOW = ("applied", "interviewed", "offer", "accepted_offer", "hired",
         "offer_withdrawn", "declined_offer", "no_offer", "pass")
 
-# Closed the loop, either way. "closed" is the retired value for "the opening
-# went away", kept because databases still carry it - the app now derives that
-# from jobs.delisted_at instead.
+# Closed the loop, either way.
 SETTLED = ("hired", "offer_withdrawn", "declined_offer", "no_offer", "pass",
            "closed")
+
+# What the app writes onto a taken-down posting nobody ever judged.
+#
+# DELIBERATELY NOT IN `FLOW`, which is what keeps it out of every dropdown: it
+# is a word the app writes, never one a person picks, so it cannot compete with
+# the statuses they set. `delisted_at` remains the fact that the employer
+# pulled the advert - this is only the status filled in where the person had
+# recorded nothing, so those rows stop reading "not set" for ever.
+#
+# Written by db.close_untouched_delisted here and by db.rs::mark_taken_down in
+# the desktop. Both halves are checked against each other by
+# tests/test_status_vocabulary.py.
+CLOSED = "closed"
 
 # Every status that proves an application was actually sent. Read from the LOG
 # rather than the current status, so a job since marked No Offer still counts:
