@@ -131,7 +131,17 @@ def test_the_same_payload_in_either_format_lands_the_same_board(tmp_path,
 
     # AND THE STATUS THE SENDER CARRIED, which is the one thing an import
     # exists to preserve.
-    assert status_json == status_csv == [{"key": "partner:a3",
+    #
+    # a1 IS THE CLOSURE, and it carries a status now. A collector's closure used
+    # to set delisted_at and stop, which left the row reading "not set" for
+    # ever; it now takes the same rule as every other way a posting is found
+    # gone - the app's own `closed` where the person never decided anything.
+    # Asserted HERE rather than in a test of its own because the point of this
+    # file is that the two formats land the same board, and a closure that
+    # wrote a status in JSON and not in CSV would be exactly that kind of drift.
+    assert status_json == status_csv == [{"key": "partner:a1",
+                                          "status": "closed"},
+                                         {"key": "partner:a3",
                                           "status": "applied"}]
 
 
