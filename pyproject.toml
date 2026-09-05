@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "unlatched"
-version = "0.1.30" # keep in step with packaging/build_release.py APP_VERSION
+version = "0.1.32" # keep in step with packaging/build_release.py APP_VERSION
                   # - asserted by tests/test_version_is_stated_once.py
 description = "Local-first job discovery: find roles on company career pages and ATS boards, screen them deterministically, and track your pipeline."
 readme = "README.md"

@@ -3,6 +3,78 @@
 What changed in each release, in the words of somebody using the app rather
 than the code.
 
+## 0.1.32 - 2026-09-05
+
+### Fixed
+
+- **Dates and times are your own, not UTC.** The app recorded everything in
+  UTC and showed the date straight out of the stored value, so anything you
+  did after 8pm appeared on the next day. On this profile that was 199 of 630
+  statuses. It now records and shows your machine's own clock, wherever you
+  are - Central, Mountain, Pacific and anywhere else - with nothing to set up.
+
+  Entries from before this keep their meaning and are still read correctly.
+
+### Added
+
+- **"No Offer" belongs to the interviewed pipeline**, and applications that end
+  another way have their own words: **Rejection Email** for a reply that said
+  no, and **No Response** for silence. They shared one status before, so a
+  reply and a silence counted the same and the response rate could not tell
+  them apart.
+
+- **Collect -> Added links.** Links you add by hand are re-read only when you
+  ask, and the only way to ask was a button on the jobs list - while the
+  Dashboard reported how many were waiting and offered no way to do it.
+
+- **The staleness notices have their own line** under Refresh and Collect: what
+  a collector has left for you, and how many added links are unchecked.
+
+## 0.1.31 - 2026-09-05
+
+### Added
+
+- **Add a collector without opening a text editor.** A collector is another
+  program that hands jobs over in a file - your own, or one somebody wrote for
+  you. Setting one up meant editing `config.json` by hand, which was the last
+  thing in this app that needed a text editor. **Config -> Collectors** now
+  adds, renames, repoints, switches off and removes them.
+
+  A collector can carry settings this screen does not show - when to look, and
+  two questions about what it is allowed to do - and those are kept exactly as
+  they are, listed under the entry that has them so you can see nothing was
+  dropped. Names are checked as you save rather than hours later when the
+  collector next runs.
+
+- **Move your criteria between this app and another tool, from the app.**
+  **Settings -> Your criteria, in another tool** writes what you are looking
+  for to a file, and reads one back. It was command-line only.
+
+  Before anything is written you get a list of exactly what would change -
+  which setting, and for a list, how many arrive and how many go. You choose
+  whether the lists in the file **replace** yours or **add to** them, and the
+  list updates as you switch between the two, so it is a decision made on
+  what would actually happen rather than on a word.
+
+  Titles, skills, places and pay travel. Keys, resumes and schedules do not:
+  those belong to this install, not to the search.
+
+### Changed
+
+- **Everything on every screen can now be read by a screen reader and driven
+  by name.** Fifty controls published nothing at all to the accessibility tree
+  - they could be clicked, but nothing could say what they were or what state
+  they were in. Tick boxes now report whether they are ticked, text boxes
+  report what is in them, and anything in a list is named by what it is rather
+  than by where it sits, so it stays findable when the list reorders.
+
+### Fixed
+
+- **Arrow keys move the list, not just the highlight.** Holding the down arrow
+  on a long list walked the highlighted row off the bottom of the window and
+  kept going. The keys worked - the row you were about to act on was simply
+  somewhere you could not see it.
+
 ## 0.1.30 - 2026-09-02
 
 ### Added

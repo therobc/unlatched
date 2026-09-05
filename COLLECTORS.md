@@ -258,6 +258,107 @@ unlatched closures
 
 ---
 
+## Statuses coming back
+
+Closures were the first fact to travel back. Every other decision a person
+makes here is the same kind of fact, and until now it stayed here: you would
+re-surface a lead they had already passed on, or re-check one they had already
+applied to, and your board and theirs would quietly disagree.
+
+**The same arrangement as closures.** A file beside the one you hand over, with
+`-status-by-unlatched.json` in place of your file's extension: hand over
+`inbox.json` and you are handed back `inbox-status-by-unlatched.json`. Written
+whole and moved into place, so you never read a half-written file. Read it
+before you collect, not after - a lead you already know is settled is one you
+do not need to spend budget on.
+
+```json
+{
+  "version": 1,
+  "source": "unlatched",
+  "collector": "myboard",
+  "generated_at": "2026-09-05T14:46:41-04:00",
+  "statuses": [
+    {
+      "key": "myboard:1042",
+      "url": "https://example.com/careers/1042",
+      "status": "applied",
+      "at": "2026-09-04T18:46:41-04:00",
+      "set_by": "person"
+    },
+    {
+      "key": "myboard:1108",
+      "url": "https://example.com/careers/1108",
+      "status": "pass",
+      "at": "2026-09-05T09:12:00-04:00",
+      "set_by": "person"
+    }
+  ]
+}
+```
+
+| Field | What it is |
+|---|---|
+| `key` | The posting's key **in your namespace**, as with closures. |
+| `url` | The posting URL. The reliable join; the key is the convenience. |
+| `status` | One of the values below, exactly as spelled. |
+| `at` | When it was set, with an explicit offset. |
+| `set_by` | `person`, `app`, or absent when it is not known. |
+
+### The vocabulary
+
+`applied`, `interviewed`, `offer`, `accepted_offer`, `hired`,
+`offer_withdrawn`, `declined_offer`, `no_offer`, `rejection_email`,
+`no_response`, `pass`.
+
+`closed` is written by this app for a posting the employer pulled and is never
+picked by a person. It travels in the closures file rather than this one, so a
+single fact does not arrive twice by two routes.
+
+Three of these are easy to confuse and are deliberately separate:
+
+| Status | What it means |
+|---|---|
+| `rejection_email` | They wrote back with a no. Applied, and they answered. |
+| `no_response` | Silence. The application was sent and nobody replied. |
+| `no_offer` | They interviewed you and then said no. |
+
+**`no_offer` requires an interview.** This app refuses to set it on a posting
+whose history holds no `interviewed`, because recording it would assert an
+interview that never happened and put one into the funnel. If you are pushing a
+rejection for something that never reached an interview, send
+`rejection_email`. Silence is `no_response`.
+
+**`denied` is a legacy spelling of `no_offer`.** If your store still holds it,
+map it before sending rather than passing it through.
+
+### Deciding who wins
+
+Both sides can change a status, so both sides need the same rule for what
+happens when they disagree.
+
+1. **A person outranks a machine.** If one side's entry is `set_by: person`
+   and the other's is not, the person's wins, whatever the clocks say. A
+   sweep should never overwrite somebody's own decision because it ran later.
+2. **Otherwise the later `at` wins**, compared as instants after normalising
+   the offsets - not as text.
+3. **A tie goes to the person's side**, and if neither is a person's, to the
+   one already held rather than the arriving one. Changing nothing is the
+   safe answer when there is no reason to prefer either.
+
+**`set_by` is newly recorded and is absent on older entries.** Nothing tracked
+who set a status before 2026-09-05, and those rows have not been guessed at -
+an absent `set_by` means genuinely unknown, and rule 1 does not apply to it.
+Treat unknown as a machine write for rule 1 and fall through to rule 2.
+
+### Times
+
+Every stamp in this file carries an explicit offset, and it is the **local**
+time of the machine that wrote it - `2026-09-05T14:46:41-04:00`, not UTC.
+Entries written before 2026-09-05 carry `+00:00` or, on the oldest, no offset
+at all; those were UTC. Parse the offset rather than assuming one, and
+normalise before comparing.
+
 ## Staleness: stamp your file
 
 `generated_at` - an ISO 8601 timestamp - is when **your collector** wrote the

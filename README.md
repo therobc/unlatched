@@ -388,7 +388,7 @@ Every command takes `--home <path>` and most take `--json`.
 |---|---|
 | `init` | Create a profile folder with a default config |
 | `config set/get` | Read and write settings |
-| `criteria` | Show what the current search actually asks for |
+| `criteria` | Move the search between this app and another tool (`--export`, `--import`; `--mode merge` adds to your lists rather than replacing them, `--dry-run` says what an import would change) |
 | `discover` | Find a company's careers page and identify its ATS |
 | `rediscover` | Re-check stored employers for a changed ATS (reports first; `--apply` to update) |
 | `starter --add` | Add a list of national employers with readable boards |
