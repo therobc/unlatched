@@ -16,12 +16,20 @@
 //! THE FLOW:
 //!
 //! ```text
-//!   Applied -> No Offer
+//!   Applied -> Rejection Email
+//!       +-> No Response
 //!       +-> Interviewed -> No Offer
 //!                     +-> Offer -> Declined Offer
 //!                             +-> Accepted Offer -> Hired
 //!                                              +-> Offer Withdrawn
 //! ```
+//!
+//!
+//! THREE WAYS AN APPLICATION ENDS WITHOUT AN OFFER, and they are not one
+//! outcome. An employer who writes back to say no has answered; one who never
+//! replies has not; and one who interviews you first has done something
+//! different again. Recorded as a single "No Offer" they were indistinguishable
+//! (changed 2026-09-05), and the response rate counted silence as a reply.
 //!
 //! Hired and Offer Withdrawn are BOTH reachable from Accepted Offer, because
 //! accepting is not the end: a background check, a rescinded req or a hiring
@@ -77,7 +85,11 @@ pub const APPLIED: &str = "applied";
 /// and "Offer Withdrawn" are deliberately NOT adjacent. They are the two
 /// entries most easily mis-clicked for each other, and the cost of the mis-click
 /// is a false record of how a search ended.
-pub const FLOW: [Status; 9] = [
+///
+/// The three "ended without an offer" entries sit together at the end, before
+/// Pass: they are what a person reaches for most often, and grouping them makes
+/// the choice between them the visible decision rather than a hunt.
+pub const FLOW: [Status; 11] = [
     Status {
         value: "applied",
         label: "Applied",
@@ -156,12 +168,50 @@ pub const FLOW: [Status; 9] = [
     Status {
         value: "no_offer",
         label: "No Offer",
+        // STAYS AT RUNG 0, and this is not an oversight. The funnel takes the
+        // MAX rung across a job's LOG, so raising this to 1 would count every
+        // No Offer already recorded - including the ones set before an
+        // interview was required - as an interview that never happened.
+        // Verified in dashboard::reached_from_log. Going forward the rung is
+        // redundant anyway: `requires` puts `interviewed` in the history first,
+        // so the job already reaches rung 1 on its own.
         rung: Some(0),
         responded: true,
         settled: true,
-        requires: None,
+        // AFTER AN INTERVIEW, which is what makes it different from a
+        // rejection email: No Offer is the interviewed pipeline's outcome, and
+        // the applied pipeline's are Rejection Email and No Response. Enforced
+        // the same way declined_offer and offer_withdrawn are - see
+        // blocked_reason.
+        requires: Some("interviewed"),
         colour: [220, 38, 38],
-        hint: "They said no, at any stage.",
+        hint: "You interviewed and they said no.",
+    },
+    Status {
+        value: "rejection_email",
+        label: "Rejection Email",
+        rung: Some(0),
+        // THEY ANSWERED. Verified in status::is_response, which reads this
+        // field and nothing else: a rejection is a reply, and while it shared
+        // a status with silence the response rate could not say so.
+        responded: true,
+        settled: true,
+        requires: None,
+        colour: [239, 68, 68],
+        hint: "They wrote back to say no, without interviewing you.",
+    },
+    Status {
+        value: "no_response",
+        label: "No Response",
+        rung: Some(0),
+        // SILENCE IS NOT A REPLY. This is the one that was being counted as one
+        // while it shared a status with No Offer.
+        responded: false,
+        settled: true,
+        requires: None,
+        colour: [120, 113, 108],
+        hint: "You never heard back, and you are done waiting. The application \
+               still counts as sent.",
     },
     Status {
         value: "pass",
@@ -314,6 +364,38 @@ pub fn settled_values() -> Vec<&'static str> {
         .collect()
 }
 
+/// Where a status sits when the list is sorted by it: undecided, then live,
+/// then finished.
+///
+/// NOT ALPHABETICAL, and that is the whole point. Sorting the Status column by
+/// its own words puts "Applied" above "not set" and buries the rows nobody has
+/// looked at yet under the ones already dealt with - which is the opposite of
+/// what a queue is for.
+///
+/// DERIVED FROM `FLOW`, never written out again here. The two facts it reads -
+/// `settled` and whether the status has a rung - already decide who is in
+/// flight and who is finished, so by construction a status added to FLOW gets
+/// a rank without this function being touched. A hand-written list would be a
+/// third place to forget one.
+///
+/// The empty string is "not set" and ranks first, which is the ordering the
+/// list is sorted by.
+pub fn sort_rank(value: &str) -> u8 {
+    let value = value.trim();
+    if value.is_empty() {
+        return 0;
+    }
+    match get(value) {
+        Some(status) if status.settled => 2,
+        Some(_) => 1,
+        // A status this build does not know - a legacy `closed`, or one
+        // written by a newer version - is finished rather than pending. The
+        // safe direction: a row that has been dealt with must not climb back
+        // to the top of the queue.
+        None => 2,
+    }
+}
+
 /// Statuses that mean an application is still live. The counterpart of
 /// `settled_values`, and NOT its complement: "not set" is neither.
 pub fn in_flight_values() -> Vec<&'static str> {
@@ -376,6 +458,58 @@ pub fn choices_for(history: &HashSet<String>) -> Vec<(&'static Status, Option<St
 /// fields for it would be guessing at what somebody wants to write down.
 pub fn has_offer_fields(value: &str) -> bool {
     value == "offer"
+}
+
+#[cfg(test)]
+mod sort_rank_tests {
+    use super::{sort_rank, FLOW};
+
+    /// UNDECIDED FIRST. The queue exists to surface rows nobody has judged,
+    /// and sorting the Status column alphabetically buries them under the ones
+    /// already dealt with.
+    #[test]
+    fn not_set_ranks_before_everything_else() {
+        assert_eq!(sort_rank(""), 0);
+        assert_eq!(sort_rank("   "), 0);
+        for status in FLOW {
+            assert!(
+                sort_rank(status.value) > 0,
+                "{} ranked with not-set",
+                status.value
+            );
+        }
+    }
+
+    /// IN FLIGHT SITS ABOVE FINISHED. An application still waiting on an
+    /// answer is work; one that ended is history.
+    #[test]
+    fn live_applications_rank_above_settled_ones() {
+        assert!(sort_rank("applied") < sort_rank("no_offer"));
+        assert!(sort_rank("interviewed") < sort_rank("pass"));
+        assert!(sort_rank("offer") < sort_rank("declined_offer"));
+    }
+
+    /// A status this build has never heard of - a legacy `closed`, or one
+    /// written by a newer version - ranks as finished. The safe direction: a
+    /// row already dealt with must not climb back to the top of the queue.
+    #[test]
+    fn an_unknown_status_is_treated_as_finished() {
+        assert_eq!(sort_rank("closed"), 2);
+        assert_eq!(sort_rank("something_from_a_later_build"), 2);
+    }
+
+    /// DERIVED FROM FLOW, not written again. Every settable status has to get
+    /// a rank without this function naming it - otherwise adding one is a
+    /// second place to forget.
+    #[test]
+    fn every_status_in_the_flow_has_a_rank() {
+        for status in FLOW {
+            let rank = sort_rank(status.value);
+            assert!(rank == 1 || rank == 2, "{} ranked {rank}", status.value);
+            assert_eq!(rank == 2, status.settled, "{} rank disagrees with settled",
+                       status.value);
+        }
+    }
 }
 
 #[cfg(test)]
@@ -476,14 +610,32 @@ mod tests {
             "the reason must name what is missing, got: {reason}"
         );
         assert!(blocked_reason("declined_offer", &fresh).is_some());
-        // And the flow's own statuses are never blocked.
+
+        // NO OFFER NEEDS AN INTERVIEW. It is the interviewed pipeline's
+        // outcome; the applied pipeline's are Rejection Email and No Response,
+        // and offering all three unconditionally is what made them one status.
+        let no_offer = blocked_reason("no_offer", &fresh)
+            .expect("must be blocked without an interview");
+        assert!(
+            no_offer.contains("Interviewed"),
+            "the reason must name what is missing, got: {no_offer}"
+        );
+        assert!(blocked_reason("no_offer", &history(&["interviewed"])).is_none());
+
+        // The three an application reaches on its own carry no `requires`
+        // by construction, so none of them can be blocked.
         assert!(blocked_reason("applied", &fresh).is_none());
-        assert!(blocked_reason("no_offer", &fresh).is_none());
+        assert!(blocked_reason("rejection_email", &fresh).is_none());
+        assert!(blocked_reason("no_response", &fresh).is_none());
     }
 
     #[test]
     fn every_choice_is_offered_and_the_blocked_ones_carry_their_reason() {
-        let full = history(&["offer", "accepted_offer"]);
+        // `interviewed` joined this history when No Offer began requiring it
+        // on 2026-09-05. Without it the job holds an offer it was never
+        // interviewed for, which is not the "everything unlocked" case this
+        // is describing.
+        let full = history(&["interviewed", "offer", "accepted_offer"]);
         let choices = choices_for(&full);
         assert_eq!(choices.len(), FLOW.len(), "no status may be dropped");
         assert!(choices.iter().all(|(_, reason)| reason.is_none()));

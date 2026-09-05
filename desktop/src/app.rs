@@ -18,17 +18,20 @@ use crate::settings::{self, DesktopSettings};
 use crate::views;
 
 /// What the kept copy of a posting is called on screen. A .txt because that is
-/// what it is - the app does not open it either way, but the person who
-/// downloads it should get a file their own machine opens without ceremony.
+/// what it is - by construction the app never opens this file, it only writes
+/// it, so the extension exists purely for the person who downloads it and
+/// wants their own machine to open it without ceremony.
 const SNAPSHOT_NAME: &str = "posting as it read when you applied.txt";
 
 /// Where a Save dialog opens by default: the Downloads folder, with the
-/// target still changeable - so this only picks the starting directory and
-/// never forces it.
+/// target still changeable. By construction this can only suggest: it returns
+/// an Option that the dialog takes as a starting directory, and has no way to
+/// constrain what the person picks.
 ///
-/// USERPROFILE rather than a crate: it is the variable Windows itself sets,
-/// and a missing one falls back to the dialog's own default rather than
-/// inventing a path that may not exist.
+/// USERPROFILE rather than a crate: it is the variable Windows itself sets.
+/// A missing one returns None - again by construction - so the dialog falls
+/// back to its own default instead of being handed a path that may not
+/// exist.
 fn downloads_dir() -> Option<PathBuf> {
     let profile = env::var("USERPROFILE")
         .ok()
@@ -41,9 +44,10 @@ fn downloads_dir() -> Option<PathBuf> {
 pub enum View {
     Dashboard,
     AllJobs,
-    /// Results for what was typed in the rail. Its own view rather than a mode
-    /// of All jobs, so leaving a search is navigating away from it rather than
-    /// remembering to clear a box.
+    /// Results for what was typed in the rail. A View of its own rather than a
+    /// mode of All jobs, which by construction makes leaving a search an act of
+    /// navigation - there is no filter left set behind you to remember to
+    /// clear.
     Search,
     /// All jobs in its removed scope, as a rail entry of its own.
     Removed,
@@ -75,7 +79,18 @@ pub enum SortBy {
     Fit,
     Company,
     Title,
+    /// Ordered by what the status MEANS, not by its label - undecided, then
+    /// live, then finished. See status::sort_rank.
+    Status,
 }
+
+/// How many columns the list may be sorted by at once.
+///
+/// THREE, because two is the pair people actually asked for - status then
+/// posted, so undecided rows stay on top and newest leads them - and a third
+/// is the tiebreaker that makes the order stable to look at. A fourth would
+/// be a rule nobody can hold in their head while reading a table.
+pub const MAX_SORT_KEYS: usize = 3;
 
 /// Which face of an opened posting is showing. The description is what a
 /// person usually wants; the fit breakdown is what they want when they clicked
@@ -109,13 +124,15 @@ pub struct RetireConfirm {
 /// asks ends up holding a column of dates and no story.
 ///
 /// `keys` is a list rather than one key so the bulk bar goes through the same
-/// path. Marking nine rejections in one gesture is one thing that happened,
+/// path - by construction there is no single-key variant for it to diverge
+/// from. Marking nine rejections in one gesture is one thing that happened,
 /// and typing the same sentence nine times is not a feature.
 pub struct PendingStatus {
     pub keys: Vec<String>,
     pub status: String,
-    /// What the prompt calls the job (or "9 jobs"), settled when it opens so
-    /// the heading cannot change under a person who is mid-sentence.
+    /// What the prompt calls the job (or "9 jobs"), settled when it opens.
+    /// Stored rather than derived, so by construction the heading cannot
+    /// change under a person who is mid-sentence.
     pub subject: String,
     pub note: String,
     /// Only ever filled for an Offer. See status::has_offer_fields.
@@ -124,8 +141,9 @@ pub struct PendingStatus {
     /// Whether the cursor has already been put in the first field.
     ///
     /// ONE SHOT. Focus is asked for on the frame the prompt opens and never
-    /// again - requesting it every frame would pin the cursor to the note and
-    /// make the Pay and date boxes above it unreachable.
+    /// again. By construction of egui's request_focus, which takes focus on
+    /// the frame it runs, asking every frame would return the cursor to the
+    /// note each time and leave the Pay and date boxes above it unreachable.
     pub cursor_placed: bool,
 }
 
@@ -140,39 +158,79 @@ pub enum ListScope {
     /// not a narrowing of the current screen: looking for a posting you half
     /// remember is exactly when it must not matter where you were standing.
     Search,
-    /// Rows the person removed from their lists. Its own scope rather than a
-    /// separate screen so the same table, columns and actions apply - the way
-    /// back has to be as ordinary as the way out, or "delete" is a cliff.
+    /// Rows the person removed from their lists. A scope rather than a
+    /// separate screen, which by construction gives them the same table,
+    /// columns and actions - the way back has to be as ordinary as the way
+    /// out, or "delete" is a cliff.
     Retired,
-    /// Rows folded behind another posting as the same job. Same reasoning as
-    /// Retired: a grouping the person cannot inspect and undo is a merge that
-    /// disappeared a job, which is the expensive way to be wrong here.
+    /// Rows folded behind another posting as the same job. A scope for the
+    /// same reason as Retired, and reachable by construction: a grouping the
+    /// person cannot inspect and undo is a merge that disappeared a job,
+    /// which is the expensive way to be wrong here.
     Duplicates,
     /// One dashboard module, as its own list.
     ///
-    /// A SCOPE, NOT A FILTER. These used to be TriageFilter values applied to
-    /// rows the triage query had already returned, which made every module a
-    /// SUBSET of Triage - so "Taken down" and "No Offer", which Triage hides
-    /// by design, could never show anything. Each module has to be its OWN
-    /// list; this is what makes that true rather than nearly true.
+    /// A SCOPE, NOT A FILTER. These were TriageFilter values applied to rows
+    /// the triage query had already returned, which made every module a SUBSET
+    /// of Triage - observed: "Taken down" and "No Offer", which Triage hides by
+    /// design, could never show anything at all. Each module has to be its OWN
+    /// list; being a scope is what makes that true rather than nearly true.
     Module(crate::modules::Module),
 }
 
 /// Text-field state for the "New profile" modal (views/new_profile.rs).
-/// Plain strings all the way through, same reasoning as ConfigDraft: an
-/// in-progress edit never has to be a valid profile.
+/// Plain strings all the way through, same reasoning as ConfigDraft: a
+/// String holds anything by construction, so an in-progress edit never has
+/// to be a valid profile on its way to becoming one.
 #[derive(Default, Clone, Debug)]
 pub struct NewProfileDraft {
     /// The person. Typing one that already exists adds a search to them rather
-    /// than rejecting the name - that is the whole point of the two-level
-    /// model, and refusing it would push people back to "Maya Ellison (local)".
+    /// than rejecting the name - by construction, since a person is a key in
+    /// the registry and a search is an entry under it. That is the whole point
+    /// of the two-level model; refusing it would push people back to naming
+    /// two profiles "Maya Ellison (local)" and "Maya Ellison (remote)".
     pub name: String,
     /// What this hunt is called. Blank means the person's first search, which
-    /// is named "Default" so it matches what a migrated profile looks like.
+    /// is named "Default" - the same name profiles::DEFAULT_SEARCH gives a
+    /// migrated one-level profile, so by construction the two are
+    /// indistinguishable afterwards.
     pub search: String,
     pub home: String,
     pub resume_path: String,
     pub error: Option<String>,
+}
+
+/// The engine call behind both halves of a criteria import.
+///
+/// ONE PLACE, because the two differ by a single flag and getting that wrong
+/// is silent in the worst direction: an import that ran without --dry-run
+/// while a person was still deciding would apply the change they were shown
+/// and then show it to them again as a question.
+pub fn criteria_args(path: &std::path::Path, mode: &str, dry_run: bool) -> Vec<String> {
+    let mut args = vec![
+        "criteria".to_string(),
+        "--import".to_string(),
+        path.to_string_lossy().into_owned(),
+        "--mode".to_string(),
+        mode.to_string(),
+        "--json".to_string(),
+    ];
+    if dry_run {
+        args.push("--dry-run".to_string());
+    }
+    args
+}
+
+/// A criteria file somebody has chosen but not yet accepted.
+pub struct CriteriaImport {
+    pub path: std::path::PathBuf,
+    /// "merge" or "replace". Switching it re-asks the engine rather than
+    /// re-reading the answer: the two modes produce different previews, as
+    /// test_a_preview_of_a_replace_counts_what_would_be_lost measures - the
+    /// same file removes two entries under replace and none under merge.
+    pub mode: String,
+    /// What the engine says this would do, or why it would not read the file.
+    pub report: Result<crate::criteria::Report, String>,
 }
 
 pub struct UnlatchedApp {
@@ -191,15 +249,16 @@ pub struct UnlatchedApp {
 
     pub profile_registry: Registry,
     /// How the current person and search are written wherever one is shown.
-    /// Derived from the two below via profiles::label - kept as a field because
-    /// the window title and the switcher both read it every frame.
+    /// Derived from the two below via profiles::label, and kept as a field
+    /// rather than recomputed: by construction it is read every frame, by both
+    /// the window title and the switcher.
     pub profile_name: String,
     pub active_person: String,
     pub active_search: String,
-    // True when UNLATCHED_HOME was set at process startup: the registry is
-    // never read from disk into edits and never written back while this is
-    // set, so a scripted/isolated launch (the GUI QC harness, a --home-style
-    // override) can never mutate a real profiles.json. See paths::platform_default_home.
+    // True when UNLATCHED_HOME was set at process startup. Every registry
+    // write is gated on this by construction, so a scripted or isolated launch
+    // - the GUI QC harness, a --home-style override - cannot mutate a real
+    // profiles.json. See paths::platform_default_home.
     pub profile_env_locked: bool,
     pub profile_message: Option<String>,
     /// Result of the last Download on the Resumes page, shown on that page.
@@ -214,22 +273,26 @@ pub struct UnlatchedApp {
     /// Profile awaiting a confirmed Remove. Set by the Profiles view, cleared
     /// when the modal closes either way - removal is never a single click.
     pub profile_pending_removal: Option<(String, String)>,
-    /// A switch requested from a view rather than the sidebar dropdown, applied
-    /// once at the end of the frame so a view never re-enters switch_profile
-    /// while it is still borrowing app state.
+    /// A switch requested from a view rather than the sidebar dropdown,
+    /// applied once at the end of the frame. Deferring it is what makes the
+    /// borrow safe - enforced by the type, since switch_profile takes &mut
+    /// self and the view still holds it.
     pub profile_switch_request: Option<(String, String)>,
-    /// UNLATCHED_HOME pinned this launch to one folder, so the registry is
-    /// read-only. Computed once at startup rather than re-read per frame.
+    /// UNLATCHED_HOME pinned this launch to one folder, which makes the
+    /// registry read-only. Read once at startup: by construction the variable
+    /// cannot change under a running process, so re-reading it per frame would
+    /// answer the same question every time.
     pub profile_locked: bool,
     /// Set when a Save actually CHANGED the config, so the app can offer to
-    /// re-run the search. Saving an untouched form offers nothing - a prompt
-    /// that appears when nothing happened is noise, and noise gets clicked
-    /// through without reading.
+    /// re-run the search. By construction an untouched form leaves this false
+    /// and offers nothing - a prompt that appears when nothing happened is
+    /// noise, and noise gets clicked through without reading.
     pub offer_run_after_save: bool,
     pub new_profile_draft: NewProfileDraft,
     window_title_set: bool,
-    /// Which theme is currently applied to the egui context, so visuals are
-    /// only pushed when the setting actually changes rather than every frame.
+    /// Which theme is currently applied to the egui context. Compared before
+    /// pushing, so by construction visuals change only when the setting does
+    /// rather than on every frame.
     applied_dark: Option<bool>,
 
     pub view: View,
@@ -237,11 +300,12 @@ pub struct UnlatchedApp {
     /// Bumped by every change to stored data. Each cached view records the
     /// version it loaded at and reloads when its copy is stale.
     ///
-    /// WHY A COUNTER AND NOT A CALL AT EACH MUTATION SITE. The call-at-each-site
-    /// approach is what shipped, and it was already wrong: refresh_dashboard()
-    /// ran in three places - construction, profile switch, and its own Refresh
-    /// button - and NOT after a status change, so marking jobs applied left the
-    /// dashboard counts stale until somebody pressed Refresh.
+    /// WHY A COUNTER AND NOT A CALL AT EACH MUTATION SITE. The
+    /// call-at-each-site approach is what shipped, and it was already wrong -
+    /// observed: refresh_dashboard() ran in 3 places (construction, profile
+    /// switch, and its own Refresh button) and NOT after a status change, so
+    /// marking jobs applied left the dashboard counts stale until somebody
+    /// pressed Refresh.
     ///
     /// A counter cannot be FORGOTTEN, because the check lives in the render
     /// path rather than at the mutation. It is also lazy: only the view being
@@ -256,7 +320,8 @@ pub struct UnlatchedApp {
 
     pub dashboard_stats: Option<crate::dashboard::DashboardStats>,
     /// What each CONFIGURED collector last delivered, read when the data
-    /// changes rather than while drawing.
+    /// changes rather than while drawing - by construction, since it is
+    /// refreshed off data_version and never from the render path.
     ///
     /// The stamps are cached; whether they are late is not. See
     /// collectors_pending - a cached verdict would stop moving on the one
@@ -267,17 +332,24 @@ pub struct UnlatchedApp {
     /// opens - see file_age_hours.
     file_ages: std::collections::HashMap<String, (std::time::Instant, Option<f64>)>,
     collector_stamps: Vec<(String, Option<String>)>,
-    /// Which collector ids collector_stamps was read for. The listing
-    /// arrives on a background thread AFTER the first dashboard load, so
-    /// without this the stamps stay empty for the session and an
-    /// unanswered thread reads as an empty database.
+    /// Which collector ids collector_stamps was read for. The listing arrives
+    /// on a background thread AFTER the first dashboard load - observed, and
+    /// the reason this field exists: without it the stamps stayed empty for
+    /// the whole session, so a thread that had not answered yet read exactly
+    /// like a database with nothing in it.
     collector_stamps_ids: Vec<String>,
     /// When each collector's file was last taken in, as the ENGINE recorded
-    /// it. Preferred over collector_stamps, which only says when a row from
-    /// them last arrived - see db::collector_taken_in.
+    /// it. Preferred over collector_stamps, which by construction can only say
+    /// when a row from them last ARRIVED - a file of nothing but closures
+    /// imports perfectly and moves no row's timestamp. See
+    /// db::collector_taken_in.
     collector_taken: Vec<(String, Option<String>)>,
     /// This machine's UTC offset, cached with them. It moves twice a year.
-    collector_offset: i64,
+    ///
+    /// READ BY EVERY DATE THE SCREENS SHOW, not just the collector
+    /// staleness it was added for. db::local_offset_secs is a query, and a
+    /// query in the draw path runs on a frame that is already drawing.
+    pub local_offset: i64,
 
     /// Three small counts the Triage and Dashboard headers show, held here
     /// rather than queried while drawing.
@@ -296,9 +368,10 @@ pub struct UnlatchedApp {
     pub triage_rows: Vec<TriageRow>,
     /// What is typed in the rail's search box, verbatim.
     pub search_query: String,
-    /// The parsed terms the last search actually ran with. Kept apart from the
-    /// raw text so the results heading says what produced them, which stops a
-    /// half-typed word reading as a result set.
+    /// The parsed terms the last search actually ran with. Kept apart from
+    /// the raw text, so by construction the results heading names what
+    /// produced them rather than what is currently in the box - a half-typed
+    /// word cannot relabel a finished result set.
     pub search_terms: Vec<String>,
     /// When the box was last typed into, if a search is still owed for it.
     /// None means what is on screen already matches what is in the box.
@@ -312,11 +385,13 @@ pub struct UnlatchedApp {
     pub search_found: usize,
     pub triage_show_all: bool,
     /// Off by default: one opening listed in five cities is five rows of the
-    /// same triage decision. On, nothing is folded.
+    /// same triage decision - the count comes from the engine's own grouping,
+    /// see dupes.py. On, nothing is folded.
     pub triage_every_location: bool,
     pub triage_selected: Option<String>,
-    /// The row whose posting is open inline. One at a time: an accordion of
-    /// several open blocks is a wall of text with no list left in it.
+    /// The row whose posting is open inline. An Option rather than a set, so
+    /// by construction only one can be open: an accordion of several open
+    /// blocks is a wall of text with no list left in it.
     pub triage_expanded: Option<String>,
     /// Bring `triage_selected` into view on the next frame, then stop.
     ///
@@ -326,8 +401,9 @@ pub struct UnlatchedApp {
     /// somewhere below the fold. From the reader's side the click did nothing
     /// but change screens.
     ///
-    /// One frame only: a sticky flag would fight the scrollbar every time the
-    /// person tried to look somewhere else.
+    /// One frame only - cleared by construction after it is consumed. A
+    /// sticky flag would re-scroll on every frame and fight the scrollbar
+    /// each time the person tried to look somewhere else.
     pub scroll_to_selected: bool,
     pub expanded_tab: ExpandedTab,
     /// Which list is on screen. A dashboard tile sets this to its own module
@@ -335,34 +411,45 @@ pub struct UnlatchedApp {
     pub list_scope: ListScope,
     /// Sort column and direction for the list. Defaults to score descending,
     /// which is the order the query already returns.
-    pub triage_sort: SortBy,
-    pub triage_sort_desc: bool,
+    /// The sort, most significant first. Never longer than MAX_SORT_KEYS.
+    ///
+    /// A LIST RATHER THAN ONE COLUMN, because "newest first" is only useful
+    /// among rows that are still worth reading: sorted by posted date alone, a
+    /// job passed on last month sits above one that arrived this morning. The
+    /// wanted default is status then posted, which one key cannot say.
+    pub triage_sort: Vec<(SortBy, bool)>,
     pub triage_note_open: bool,
     pub triage_note_just_opened: bool,
     pub triage_note_buffer: String,
     pub triage_message: Option<String>,
 
     /// The job list's columns, left to right, and which of them are turned
-    /// off. Held as ids rather than as the strings on disk so a typo in the
-    /// settings file cannot reach the drawing code.
+    /// off. Held as ids rather than as the strings on disk: by construction an
+    /// unrecognised string cannot become a ColumnId, so a typo in the settings
+    /// file is dropped at the parse rather than reaching the drawing code.
+    /// See views::columns::from_keys_lenient.
     pub column_order: Vec<views::columns::ColumnId>,
     pub column_hidden: Vec<views::columns::ColumnId>,
     pub show_column_settings: bool,
 
     /// Rows ticked for a bulk action, by jobs.key.
     ///
-    /// Keys, never row indices: the list re-sorts and re-filters under the
-    /// person while they are selecting, and an index-based selection would
-    /// quietly come to mean different rows than the ones they ticked.
+    /// Keys, never row indices. The list re-sorts and re-filters under the
+    /// person while they are selecting, and a key names the same job however
+    /// the rows move - by construction, since it is the primary key the
+    /// database uses. An index-based selection would come to mean different
+    /// rows than the ones they ticked.
     pub selected_keys: HashSet<String>,
     /// Whether the retire confirmation is up, and what it needs to say.
     pub confirm_retire: Option<RetireConfirm>,
     /// The status change being written, while its note is being typed.
     pub pending_status: Option<PendingStatus>,
-    /// Status changes a locked database refused, kept to re-apply when
-    /// it frees up. NEVER dropped: this is the person's own typing, and
-    /// a collect's final passes can hold the write lock for longer than
-    /// any timeout it would be reasonable to freeze the window for.
+    /// Status changes a locked database refused, kept to re-apply when it
+    /// frees up. NEVER dropped: this is the person's own typing, and a
+    /// collect's final passes hold the write lock for longer than any timeout
+    /// it would be reasonable to freeze the window for - believed from the
+    /// observed run lengths (13 to 32 minutes on a live profile), not measured
+    /// against the lock itself.
     deferred_status: Vec<PendingStatus>,
     /// The All jobs screen showing what was removed instead of what is live.
     pub show_retired: bool,
@@ -370,18 +457,30 @@ pub struct UnlatchedApp {
     pub show_duplicates: bool,
     /// Where the last export went, or why it did not. Shown beside the button.
     pub export_message: Option<String>,
-    /// When the automatic copy was last written, so a burst of keyboard triage
-    /// does not rewrite it once per keystroke.
+    /// Where the last criteria export went, or why it did not.
+    pub criteria_message: Option<String>,
+    /// The import being decided on: what was picked, which way it would be
+    /// brought in, and what that would do. `None` when no dialog is open.
+    ///
+    /// HELD RATHER THAN RECOMPUTED WHILE DRAWING. The preview costs a process,
+    /// and a dialog that re-ran the engine every frame would spawn hundreds
+    /// while somebody read it.
+    pub criteria_import: Option<CriteriaImport>,
+    /// When the automatic copy was last written. Compared against before
+    /// writing, so by construction a burst of keyboard triage cannot rewrite
+    /// it once per keystroke.
     pub last_backup: Option<std::time::Instant>,
     /// Set when the person followed the pointer from the job list, so Config
     /// opens with the added-links section expanded instead of dropping them on
-    /// a page of collapsed headings to hunt through. Cleared once it is used.
+    /// a page of collapsed headings to hunt through. Cleared once it is used,
+    /// so by construction it steers exactly one visit.
     pub focus_added_links_setting: bool,
 
     pub pipeline_log: Vec<StatusLogEntry>,
     /// Notes written outside a status change. Kept apart from the log because
-    /// they ARE apart in the database - see db::add_note for why a note-only
-    /// row in job_status_log would read as an erased status.
+    /// they ARE apart in the database, by construction: job_note is its own
+    /// table. See db::add_note for why a note-only row in job_status_log would
+    /// read as an erased status instead.
     pub pipeline_notes: Vec<db::Note>,
     pub pipeline_current: HashMap<String, CurrentStatus>,
     pub pipeline_job_info: HashMap<String, (String, Option<String>)>,
@@ -391,45 +490,53 @@ pub struct UnlatchedApp {
     pub keywords_corpus_size: usize,
     pub keywords_message: Option<String>,
     /// Why the coverage half of the keywords report is empty, when it is.
-    /// Without it, "no readable resume" and "a resume that matches nothing"
-    /// draw the identical screen.
+    /// Without it the two causes are indistinguishable by construction - "no
+    /// readable resume" and "a resume that matches nothing" both produce an
+    /// empty list, and would draw the identical screen.
     pub keywords_resume_gap: Option<views::keywords::ResumeGap>,
 
     /// Attachments for the job whose row is open, and which job they are for.
-    /// Loaded per opened row rather than for the whole board: a person has
-    /// thousands of jobs and looks at one at a time.
+    /// Loaded per opened row rather than for the whole board - by construction
+    /// only one row is open at a time (see triage_expanded), and a live
+    /// profile holds thousands of jobs.
     pub attachments: Vec<crate::attachments::Attachment>,
     pub attachments_for: Option<String>,
     pub attachment_message: Option<String>,
-    /// The "add a link" prompt: a modal, like the note prompt, so the open
-    /// row can stay a read-only view of what is already there.
+    /// The "add a link" prompt: a modal, like the note prompt. A modal draws
+    /// over the row rather than inside it by construction, so the open row
+    /// stays a read-only view of what is already there.
     pub link_prompt_open: bool,
     pub link_url: String,
     pub link_label: String,
 
     pub companies: Vec<Company>,
     /// The handoff collectors this profile has, fetched off the UI thread.
-    /// Rebuilt when the profile opens and when config.json is reloaded, because
-    /// both change which collectors exist.
+    /// Rebuilt when the profile opens and when config.json is reloaded.
+    /// Those are the only two events that change which collectors exist,
+    /// by construction: the list is read from that file, for that home.
     pub handoffs: crate::collectors::Collectors,
     pub new_company_name: String,
     pub log_lines: Vec<String>,
     /// Where in `log_lines` the endpoint test started, so its result can be
-    /// shown ON the Agents card. Sending the reader to another tab to find out
-    /// whether their address works is the opposite of a test button.
+    /// shown ON the Agents card. An index rather than a copy, which
+    /// by construction cannot disagree with the log it points into. Sending the
+    /// reader to another tab to find out whether their address works is the
+    /// opposite of a test button.
     pub agent_check_from: Option<usize>,
 
     pub tutorial_active: bool,
     pub tutorial_step: usize,
-    /// Screen rects of the sidebar entries, refilled every frame so the
-    /// spotlight follows the real control rather than a hard-coded position.
+    /// Screen rects of the sidebar entries, refilled every frame from the
+    /// widgets themselves - so by construction the spotlight follows the real
+    /// control, at whatever size and position it was actually drawn.
     pub tutorial_anchors: HashMap<&'static str, egui::Rect>,
     pub running_process: Option<(String, RunningProcess)>,
     /// What the last engine run did, kept AFTER it ends: the sentence, and
     /// whether it went well.
     ///
-    /// An indicator that simply disappears is not an answer - it looks the
-    /// same whether the run finished, was killed, or the app lost track of it.
+    /// An indicator that simply disappears is not an answer - by construction
+    /// an absent indicator is one state for three different endings: the run
+    /// finished, it was killed, or the app lost track of it.
     ///
     /// THE FLAG IS CARRIED, NOT RE-DERIVED. The bar used to colour itself by
     /// searching the sentence for the word "failed", which is the exit code
@@ -441,11 +548,12 @@ pub struct UnlatchedApp {
     /// The last thing the engine actually SAID, for the line above.
     ///
     /// "pull Handoff file finished" is not an answer to "did it take anything
-    /// in". A handoff whose contents were already imported prints "nothing new
-    /// from <id>" and exits 0, so the run finished, the strip said so, and the
-    /// dashboard did not move - which reads as a button that does nothing.
-    /// The engine's own sentence went to the log, and the log renders on one
-    /// screen, which is not the screen the button is on.
+    /// in". Observed on the installed build, 2026-09-03: a handoff whose
+    /// contents were already imported printed "nothing new from imported" and
+    /// exited 0, so the run finished, the strip said so, the dashboard did not
+    /// move, and it read as a button that does nothing. The engine's own
+    /// sentence went to the log, and the log renders on one screen, which is
+    /// not the screen the button is on.
     pub last_engine_line: Option<String>,
     /// Person-present commands waiting for the engine to be free.
     ///
@@ -457,23 +565,26 @@ pub struct UnlatchedApp {
     /// Waiting is what a person would have done by hand anyway.
     ///
     /// SCHEDULED WORK IS NOT QUEUED. A refresh that cannot run now comes
-    /// round again on its own; queueing it would stack copies of the same
-    /// crawl behind each other. This holds what somebody ASKED for.
+    /// round again on its own - by construction, since start_scheduled_refresh
+    /// is consulted on a timer and this queue is only fed by queue_process.
+    /// Queueing it would stack copies of the same crawl behind each other.
     pub pending: std::collections::VecDeque<(String, Vec<String>)>,
     /// When the daily schedule was last consulted - see
-    /// start_scheduled_refresh.
+    /// start_scheduled_refresh. An Instant rather than a wall clock, which
+    /// by construction a clock change cannot move backwards.
     last_refresh_check: std::time::Instant,
     /// How long to wait before consulting it again, as the ENGINE last
-    /// reported it. None until an engine run has said, which is why the fixed
-    /// interval is still the fallback.
+    /// reported it. None until an engine run has said so - by construction the
+    /// value can only come from parse_wake_in on the engine's output - which
+    /// is why the fixed interval is still the fallback.
     next_refresh_check: Option<std::time::Duration>,
 }
 
 /// Everything opened from a profile's home directory: the database
-/// connection plus the paths and parsed documents that go with it. Shared
-/// by `UnlatchedApp::new` and `switch_profile` so startup and a runtime
-/// profile switch can never open a home's files differently from each
-/// other.
+/// connection plus the paths and parsed documents that go with it. One
+/// function shared by `UnlatchedApp::new` and `switch_profile`, so
+/// by construction startup and a runtime profile switch cannot open a home's
+/// files differently from each other.
 struct OpenedHome {
     conn: Connection,
     config_path: PathBuf,
@@ -492,6 +603,12 @@ fn open_home(home: &Path) -> Result<OpenedHome, String> {
 
     let conn = db::open(&db_path)
         .map_err(|e| format!("could not open database at {}: {e}", db_path.display()))?;
+    // THE CLOCK, BEFORE ANYTHING CAN BE WRITTEN. date::now_iso reads this to
+    // stamp in local time, and it defaults to zero - which is UTC. Setting it
+    // only when the dashboard refreshes left every write before that stamped
+    // in the wrong zone, by five hours for somebody in Chicago and eight in
+    // Los Angeles. This is the one point every path goes through.
+    crate::date::set_local_offset(db::local_offset_secs(&conn));
     let (config, config_error) = config::load(&config_path);
     let settings = settings::load(&settings_path);
 
@@ -506,9 +623,10 @@ fn open_home(home: &Path) -> Result<OpenedHome, String> {
 }
 
 /// Env var wins over the registry, exactly like the engine's own --home /
-/// UNLATCHED_HOME precedence. Empty-string is treated as unset, matching
-/// paths::resolve_data_dir, so `UNLATCHED_HOME=` in a launcher script does
-/// not silently lock the app to "".
+/// UNLATCHED_HOME precedence. Empty-string is treated as unset
+/// by construction - the filter below drops it - matching
+/// paths::resolve_data_dir, so `UNLATCHED_HOME=` in a launcher script cannot
+/// silently lock the app to "".
 fn env_home_override() -> Option<String> {
     env::var("UNLATCHED_HOME")
         .ok()
@@ -524,9 +642,9 @@ fn env_home_override() -> Option<String> {
 const NAV_BOTTOM_GROUP_HEIGHT: f32 = 124.0;
 
 /// How often a running app re-asks the engine whether a collection is owed.
-/// Half an hour, because the schedule it is asking about has slots half an
-/// hour apart at their closest, and asking more often only spawns a process
-/// to be told "no".
+/// Half an hour: the schedule it is asking about has slots half an hour apart
+/// at their closest - see refresh.DEFAULT_ANCHORS and WEEKEND_ANCHORS - so
+/// by construction asking more often can only spawn a process to be told "no".
 const REFRESH_CHECK_EVERY: std::time::Duration = std::time::Duration::from_secs(30 * 60);
 
 /// The nav rail, in the order it is drawn, as data rather than as three
@@ -534,20 +652,20 @@ const REFRESH_CHECK_EVERY: std::time::Duration = std::time::Duration::from_secs(
 ///
 /// IT IS DATA BECAUSE THE WALKTHROUGH ADDRESSES IT BY NAME. `tutorial::STEPS`
 /// spotlights a rail entry by its label, and a label that no longer exists
-/// spotlights nothing at all - silently, because a missing anchor just draws
-/// the plain dim. Renaming "Companies" would have left a step describing a
-/// screen with no arrow pointing at anything, and nothing in the build would
-/// have said so. With the labels in one place, `tutorial`'s own test can hold
-/// the walkthrough against them.
+/// spotlights nothing at all - silently, since by construction a missing
+/// anchor just draws the plain dim. Renaming "Companies" would have left a
+/// step describing a screen with no arrow pointing at anything, and nothing
+/// in the build would have said so. With the labels in one place,
+/// tutorial::tests holds the walkthrough against them.
 pub const NAV_JOBS: [(View, &str); 5] = [
     (View::Dashboard, "Dashboard"),
     (View::Triage, "Triage"),
     (View::Pipeline, "Pipeline"),
     (View::AllJobs, "All jobs"),
     // BELOW All jobs, because that is what it is a way back from. It was
-    // reachable only as a chip in the All jobs toolbar, which is how a live
-    // profile came to hold 29 removed rows their owner did not know they could
-    // see.
+    // reachable only as a chip in the All jobs toolbar - observed on a live
+    // profile holding 29 removed rows whose owner did not know they could be
+    // seen at all.
     (View::Removed, "Removed"),
 ];
 pub const NAV_TOOLS: [(View, &str); 4] = [
@@ -557,12 +675,14 @@ pub const NAV_TOOLS: [(View, &str); 4] = [
     (View::Agent, "Agents"),
 ];
 pub const NAV_SETUP: [(View, &str); 2] = [(View::Config, "Config"), (View::Profiles, "Settings")];
-/// Only drawn while it is needed, so a walkthrough step must never anchor on
-/// it: on a home that has finished setting up it is not on screen.
+/// Only drawn while it is needed, which is why a walkthrough step must never
+/// anchor on it: by construction it is absent from the rail on a home that has
+/// finished setting up, and an anchor with no widget draws no spotlight.
 pub const NAV_GETTING_STARTED: (View, &str) = (View::GettingStarted, "Getting started");
 
 /// Every rail entry that is ALWAYS drawn, which is the set a walkthrough step
-/// may point at.
+/// may point at. Getting started is excluded by construction: it is drawn
+/// only while it is needed.
 ///
 /// Used by the tutorial's anchor check, which is a test.
 #[cfg(test)]
@@ -577,12 +697,15 @@ pub fn nav_entries() -> impl Iterator<Item = (View, &'static str)> {
 ///
 /// IN THE RAIL BECAUSE IT BELONGS TO THE WINDOW. Searching from the
 /// dashboard, from Triage and from All jobs are three requests for the same
-/// thing: a way in that does not depend on where you are standing. The
-/// run indicator is in the window chrome for the identical reason.
+/// thing: a way in that does not depend on where you are standing. Drawn once
+/// in the rail, so by construction it is on every screen. The run indicator
+/// is in the window chrome for the identical reason.
 ///
-/// SEARCHES AS YOU TYPE, and also on Enter. Typing is how a person explores a
-/// half-remembered posting; making them press a key first turns three guesses
-/// into three round trips. Enter still works because people press it.
+/// SEARCHES AS YOU TYPE, and also on Enter - both paths call run_search, so
+/// by construction they cannot answer differently. Typing is how a person
+/// explores a half-remembered posting; making them press a key first turns
+/// three guesses into three round trips. Enter still works because people
+/// press it.
 fn show_search_box(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     let response = crate::access::tag(
         ui.add(
@@ -601,8 +724,9 @@ fn show_search_box(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     // is ~1.4 ms over 176 rows, so the query was never the cost; the repetition
     // was.
     const SETTLE: std::time::Duration = std::time::Duration::from_millis(180);
-    // One character matches nearly every row: the most expensive query and the
-    // least useful answer, since "everything" is not a result.
+    // One character matches nearly every row - by construction, since the
+    // query is a substring match - which is the most expensive search and the
+    // least useful answer, because "everything" is not a result.
     const MIN_CHARS: usize = 2;
 
     if response.changed() {
@@ -624,15 +748,16 @@ fn show_search_box(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                 app.run_search();
             }
         } else {
-            // egui only draws on events, so without this the pause never
-            // elapses on screen - it would sit waiting for the next keystroke
-            // to notice that typing had stopped.
+            // egui only draws on events by construction, so without this the
+            // pause never elapses on screen: it would sit waiting for the next
+            // keystroke to notice that typing had stopped.
             ui.ctx().request_repaint_after(SETTLE - waited);
         }
     }
 
     // A way out that does not require selecting the text and deleting it.
-    // Only drawn when there is something to clear, so the rail stays quiet.
+    // Only drawn when there is something to clear, so by construction the rail
+    // is quiet on every screen where no search is running.
     if !app.search_query.is_empty() {
         ui.horizontal(|ui| {
             ui.small(format!("{} found", app.search_found));
@@ -646,8 +771,9 @@ fn show_search_box(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                 app.search_query.clear();
                 app.search_terms.clear();
                 app.search_found = 0;
-                // Otherwise the pending keystroke fires after the clear and
-                // puts the person straight back into an empty search.
+                // Cleared by construction along with the text: otherwise the
+                // pending keystroke fires after the clear and puts the person
+                // straight back into an empty search.
                 app.search_typed_at = None;
                 app.view = View::AllJobs;
                 app.list_scope = ListScope::All;
@@ -659,8 +785,9 @@ fn show_search_box(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
 
 fn nav_entry(app: &mut UnlatchedApp, ui: &mut egui::Ui, view: View, label: &'static str) {
     let response = crate::theme::nav_row(ui, label, app.view == view);
-    // Recorded every frame so the walkthrough spotlights the control where it
-    // actually is, at any window size.
+    // Recorded every frame from the response itself, so by construction the
+    // walkthrough spotlights the control where it actually is, at any window
+    // size.
     app.tutorial_anchors.insert(label, response.rect);
     if response.clicked() {
         app.view = view;
@@ -695,7 +822,9 @@ enum QueueDecision {
 ///
 /// IDENTICAL MEANS LABEL AND ARGUMENTS. Pressing Add twice during a collect
 /// must add the job once; two DIFFERENT jobs pasted during the same collect
-/// must both survive, and they differ in their arguments.
+/// must both survive, and by construction they differ in their arguments
+/// because the URL is one of them. Both directions are tested - see
+/// the_same_request_twice_waits_once and two_different_jobs_both_wait.
 fn queue_decision(
     pending: &std::collections::VecDeque<(String, Vec<String>)>,
     label: &str,
@@ -712,16 +841,19 @@ fn queue_decision(
 
 /// How many person-present commands may wait at once.
 ///
-/// A CAP, because the queue is memory and a stuck engine would otherwise let
-/// it grow without limit. Twenty is far more than anybody queues by hand and
-/// small enough that being at the cap is a real signal something is wrong.
+/// A CAP, because the queue is memory and by construction nothing drains it
+/// while the engine is stuck, so it would otherwise grow without limit.
+/// Twenty is believed, not measured: far more than anybody queues by hand,
+/// and small enough that reaching it is a real signal something is wrong.
 const MAX_PENDING: usize = 20;
 
 /// The sentence shown when a command is queued rather than run now.
 ///
 /// SAYS WHAT IT IS WAITING FOR. "Queued" alone reads like the app absorbed
 /// the request and did nothing; naming the run that holds the engine is the
-/// difference between waiting and pressing the button again.
+/// difference between waiting and pressing the button again. The name comes
+/// from running_process, so by construction it is the run actually holding
+/// the lock rather than a guess at one.
 fn queued_message(label: &str, running: &str, position: usize) -> (String, bool) {
     let where_in_line = if position <= 1 {
         String::new()
@@ -736,9 +868,11 @@ fn queued_message(label: &str, running: &str, position: usize) -> (String, bool)
 
 /// The sentence shown when a command is refused because another is running.
 ///
-/// NAMES BOTH: what was refused and what is holding the lock. "Busy" alone
-/// leaves somebody guessing whether the app is stuck or working, and the
-/// answer decides whether they wait or investigate.
+/// NAMES BOTH: what was refused and what is holding the lock, taken from
+/// running_process rather than guessed - so by construction the sentence
+/// cannot name a run that is not the one blocking. "Busy" alone leaves
+/// somebody guessing whether the app is stuck or working, and the answer
+/// decides whether they wait or investigate.
 fn skipped_message(label: &str, running: &str) -> (String, bool) {
     (
         format!("{label} did not run - {running} is still going. Try again when it finishes."),
@@ -754,8 +888,9 @@ fn skipped_message(label: &str, running: &str) -> (String, bool) {
 /// thrown away.
 ///
 /// TRUNCATED HERE rather than at the call site. The running half of the strip
-/// already truncates what it shows; the finished half did not, because it only
-/// ever showed a label it had built itself.
+/// already truncates what it shows; the finished half did not, because
+/// by construction it only ever showed a label it had built itself - and now it
+/// carries a sentence the engine wrote, of no fixed length.
 fn finish_message(label: &str, code: i32, said: Option<&str>) -> (String, bool) {
     let said = said.map(|s| crate::fmt::truncate(s, 120));
     match (code == 0, said) {
@@ -796,10 +931,9 @@ impl UnlatchedApp {
 
         let opened = open_home(&active_home).unwrap_or_else(|e| {
             // A profile that cannot be opened at all is unrecoverable for
-            // this session; there is no sensible degraded mode to fall
-            // back to, so surface the problem immediately rather than
-            // limping along with a None connection scattered through
-            // every view.
+            // this session: by construction every view reads through this
+            // connection, so the degraded mode would be an Option threaded
+            // through all of them. Surface it immediately instead.
             panic!(
                 "could not open profile '{profile_name}' at {}: {e}",
                 active_home.display()
@@ -839,23 +973,25 @@ impl UnlatchedApp {
             new_profile_draft: NewProfileDraft::default(),
             window_title_set: false,
             applied_dark: None,
-            // Replaced below once the profile has been read: a profile with
-            // no titles and no employers opens on the guidance instead of an
-            // empty triage table.
+            // Replaced below once the profile has been read -
+            // by construction this value cannot depend on the config, which is
+            // not loaded yet. A profile with no titles and no employers ends
+            // up on the guidance instead of an empty triage table.
             view: View::Dashboard,
             dashboard_stats: None,
             file_ages: std::collections::HashMap::new(),
             collector_stamps: Vec::new(),
             collector_stamps_ids: Vec::new(),
             collector_taken: Vec::new(),
-            collector_offset: 0,
-            // Data at 1, views at 0, so a cache that is never loaded reads as
-            // STALE rather than current. The constructor below loads all five
-            // eagerly and stamps them, so nothing is actually stale on the
-            // first frame - this is the safety net for the case where that
-            // eager load is later removed or a sixth cache is added without
-            // one. Starting them equal would make an unloaded cache look
-            // fresh, which is the wrong direction to fail in.
+            local_offset: 0,
+            // Data at 1, views at 0, so by construction a cache that is
+            // never loaded compares as STALE rather than current. The
+            // constructor below loads all five eagerly and stamps them, so
+            // nothing is actually stale on the first frame - this is the
+            // safety net for the case where that eager load is later removed,
+            // or a sixth cache is added without one. Starting them equal
+            // would make an unloaded cache look fresh, which is the wrong
+            // direction to fail in.
             data_version: 1,
             dashboard_loaded_at: 0,
             triage_loaded_at: 0,
@@ -875,8 +1011,13 @@ impl UnlatchedApp {
             search_found: 0,
             triage_show_all: false,
             list_scope: ListScope::Triage,
-            triage_sort: SortBy::Score,
-            triage_sort_desc: true,
+            // Undecided first, newest of those at the top, best-scoring
+            // among same-day arrivals. The queue's own reading order.
+            triage_sort: vec![
+                (SortBy::Status, false),
+                (SortBy::Posted, true),
+                (SortBy::Score, true),
+            ],
             triage_every_location: false,
             triage_selected: None,
             triage_expanded: None,
@@ -894,6 +1035,8 @@ impl UnlatchedApp {
             show_retired: false,
             show_duplicates: false,
             export_message: None,
+            criteria_message: None,
+            criteria_import: None,
             last_backup: None,
             focus_added_links_setting: false,
             pending_status: None,
@@ -928,19 +1071,21 @@ impl UnlatchedApp {
             last_refresh_check: std::time::Instant::now(),
             next_refresh_check: None,
         };
-        // Loaded here rather than left to the first frame because the code
-        // below decides the landing view from what these contain - an empty
-        // triage table routes a first-time user to guidance instead of a
-        // dashboard of zeros. sync_caches then finds them current and does not
-        // repeat the work, because this stamps the version it loaded at.
+        // Loaded here rather than left to the first frame: by construction
+        // the code below decides the landing view from what these contain, so
+        // it cannot run before them. An empty triage table routes a first-time
+        // user to guidance instead of a dashboard of zeros. sync_caches then
+        // finds them current and does not repeat the work, because the stamps
+        // below record the version they loaded at.
         app.refresh_triage();
         app.refresh_pipeline();
         app.refresh_keywords();
         app.refresh_companies();
-        // Off the UI thread and started here rather than when the menu opens:
-        // starting the frozen engine costs the better part of a second, and a
-        // menu that freezes when clicked is worse than one that fills in a
-        // moment after the window appears.
+        // Off the UI thread and started here rather than when the menu opens.
+        // Starting the frozen engine costs the better part of a second -
+        // believed from how long a cold PyInstaller launch takes, not measured
+        // here - and a menu that freezes when clicked is worse than one that
+        // fills in a moment after the window appears.
         app.refresh_handoffs();
         app.refresh_dashboard();
         app.triage_loaded_at = app.data_version;
@@ -948,17 +1093,19 @@ impl UnlatchedApp {
         app.keywords_loaded_at = app.data_version;
         app.companies_loaded_at = app.data_version;
         app.dashboard_loaded_at = app.data_version;
-        // Decided after the profile is loaded, because it depends on whether
-        // that profile has anything set up. A first-time user meeting an
-        // empty triage table has no idea what to do next; the guidance says
-        // so, and stops appearing once it is no longer true.
+        // Decided after the profile is loaded, because by construction it
+        // reads what that profile contains. A first-time user meeting an empty
+        // triage table has no idea what to do next; the guidance says so, and
+        // stops appearing once it is no longer true - see
+        // views::getting_started::needed.
         // The dashboard is the landing view (decided 2026-08-05): it summarises
         // and routes, while the sortable list lives in its own tab. First-run
         // guidance still wins over it - a dashboard of zeros teaches nothing
         // to someone who has not set up a search yet.
-        // The walkthrough opens itself for somebody who has never seen it. It
-        // is the FIRST thing a new user meets, ahead of the static guidance
-        // page, because a spotlight on the real control beats a page of prose
+        // The walkthrough opens itself for somebody who has never seen it,
+        // and by construction only once: the flag it reads is written to the
+        // profile's settings. It comes ahead of the static guidance page
+        // because a spotlight on the real control beats a page of prose
         // describing where that control is.
         if !app.settings.tutorial_seen {
             app.start_tutorial();
@@ -972,12 +1119,13 @@ impl UnlatchedApp {
 
     /// Asks the engine to collect, if the schedule says it is owed.
     ///
-    /// On open, because that is the only moment this app reliably has: it is
-    /// not a service, and a schedule nothing consults is a setting that lies.
-    /// The engine decides - the same refresh.py the Config page documents -
-    /// so there is one rule, not a Rust copy of it drifting from a Python
-    /// one. It also means somebody who was away for four days gets those
-    /// four days' postings the moment they come back.
+    /// On open, because by construction that is the only moment this app
+    /// reliably has - it is not a service, and a schedule nothing consults is
+    /// a setting that lies. The engine decides, through the same refresh.py
+    /// the Config page documents, so there is one rule rather than a Rust copy
+    /// drifting from a Python one. It also means somebody who was away for
+    /// four days gets those four days' postings the moment they come back -
+    /// see refresh.due, which treats a gap of a whole day as owed at once.
     ///
     /// Nothing is shown while it runs. It appears as jobs arriving, which is
     /// what was asked for; the reason it did or did not run is in the log.
@@ -989,7 +1137,9 @@ impl UnlatchedApp {
     }
 
     /// "Unlatched" for the built-in Default profile, "Unlatched - <name>"
-    /// otherwise, including the env-locked "(env)" pseudo-profile.
+    /// otherwise - including the env-locked "(env)" pseudo-profile, which
+    /// by construction is never a name a person can register under. See
+    /// profiles::ENV_PROFILE.
     pub fn window_title(&self) -> String {
         if self.profile_name == profiles::DEFAULT_PROFILE {
             "Unlatched".to_string()
@@ -1002,9 +1152,9 @@ impl UnlatchedApp {
     /// config, desktop settings) rooted at `home`, then refreshes every
     /// view and repoints the window title. Does not touch profiles.json:
     /// callers that are changing which profile is active register/persist
-    /// that first (see profiles::register_and_activate), so a failed
-    /// reopen here never leaves the registry pointing at a profile the app
-    /// could not actually load.
+    /// that first (see profiles::register_and_activate). By construction,
+    /// then, a failed reopen here cannot leave the registry pointing at a
+    /// profile the app was unable to load.
     pub fn switch_profile(
         &mut self,
         person: &str,
@@ -1023,8 +1173,9 @@ impl UnlatchedApp {
                 self.config_error = opened.config_error;
                 self.config_draft = ConfigDraft::from_config(&self.config);
                 self.config_status = None;
-                // Per profile, so switching searches brings that search's
-                // columns with it rather than carrying the last one's over.
+                // Per profile by construction - the layout is read from that
+                // home's desktop_settings.json - so switching searches brings
+                // that search's columns rather than carrying the last one's.
                 self.column_order = views::columns::from_keys(&opened.settings.column_order);
                 self.column_hidden =
                     views::columns::from_keys_lenient(&opened.settings.column_hidden);
@@ -1037,8 +1188,9 @@ impl UnlatchedApp {
                 self.resume_message = None;
 
                 self.triage_selected = None;
-                // A module opened from the previous profile's dashboard counts
-                // rows that do not exist in this one, so the switch lands on
+                // A module opened from the previous profile's dashboard
+                // counts rows that by construction do not exist in this one -
+                // the keys belong to another database - so the switch lands on
                 // the working queue rather than on somebody else's slice.
                 self.list_scope = ListScope::Triage;
                 self.triage_note_open = false;
@@ -1090,52 +1242,82 @@ impl UnlatchedApp {
         self.refresh_triage();
     }
 
-    fn sort_rows(rows: &mut [TriageRow], by: SortBy, desc: bool) {
-        // A missing value always sorts LAST regardless of direction. Sorting
-        // by salary and getting a screen of blanks at the top is the reader
-        // being punished for the employer not stating a figure.
+    /// Compare two rows on ONE key. The multi-key sort chains these.
+    fn cmp_by(a: &TriageRow, b: &TriageRow, by: SortBy, desc: bool) -> std::cmp::Ordering {
+        // A missing value always sorts LAST regardless of direction,
+        // by construction of the comparator below. Sorting by salary and getting
+        // a screen of blanks at the top is the reader being punished for the
+        // employer not stating a figure.
         fn opt_num(v: Option<f64>, desc: bool) -> (u8, f64) {
             match v {
                 Some(n) => (0, if desc { -n } else { n }),
                 None => (1, 0.0),
             }
         }
+        match by {
+            SortBy::Score => opt_num(a.job.score, desc)
+                .partial_cmp(&opt_num(b.job.score, desc))
+                .unwrap_or(std::cmp::Ordering::Equal),
+            SortBy::Salary => opt_num(a.job.salary_max.map(|v| v as f64), desc)
+                .partial_cmp(&opt_num(b.job.salary_max.map(|v| v as f64), desc))
+                .unwrap_or(std::cmp::Ordering::Equal),
+            SortBy::Fit => opt_num(a.job.coverage_pct, desc)
+                .partial_cmp(&opt_num(b.job.coverage_pct, desc))
+                .unwrap_or(std::cmp::Ordering::Equal),
+            // Newest first when descending, which is what a reader means
+            // by "sort by posted". The stored value is an age in days, so
+            // by construction the comparison has to be inverted to read
+            // that way.
+            SortBy::Posted => {
+                let age = |r: &TriageRow| {
+                    r.job
+                        .posted_at
+                        .as_deref()
+                        .and_then(crate::fmt::days_since_posted)
+                        .map(|d| d as f64)
+                };
+                opt_num(age(a), !desc)
+                    .partial_cmp(&opt_num(age(b), !desc))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            }
+            // Ascending means undecided first, which is the useful direction
+            // and therefore the default. The rank comes from status::sort_rank
+            // so by construction this cannot disagree with what the dropdown
+            // and the queue filter treat as settled.
+            SortBy::Status => {
+                let rank = |r: &TriageRow| {
+                    crate::status::sort_rank(r.status.as_deref().unwrap_or(""))
+                };
+                if desc { rank(b).cmp(&rank(a)) } else { rank(a).cmp(&rank(b)) }
+            }
+            SortBy::Company => {
+                let key = |r: &TriageRow| {
+                    r.company_name.clone().unwrap_or_default().to_lowercase()
+                };
+                if desc { key(b).cmp(&key(a)) } else { key(a).cmp(&key(b)) }
+            }
+            SortBy::Title => {
+                let key = |r: &TriageRow| r.job.title.to_lowercase();
+                if desc { key(b).cmp(&key(a)) } else { key(a).cmp(&key(b)) }
+            }
+        }
+    }
+
+    /// Sort by every key in turn, most significant first.
+    ///
+    /// STABLE UNDERNEATH. `sort_by` is a stable sort, so rows equal on every
+    /// key keep the order the query returned - which is score order. A list
+    /// that reshuffles equal rows between redraws reads as a glitch.
+    fn sort_rows_multi(rows: &mut [TriageRow], keys: &[(SortBy, bool)]) {
         rows.sort_by(|a, b| {
-            match by {
-                SortBy::Score => opt_num(a.job.score, desc)
-                    .partial_cmp(&opt_num(b.job.score, desc))
-                    .unwrap_or(std::cmp::Ordering::Equal),
-                SortBy::Salary => opt_num(a.job.salary_max.map(|v| v as f64), desc)
-                    .partial_cmp(&opt_num(b.job.salary_max.map(|v| v as f64), desc))
-                    .unwrap_or(std::cmp::Ordering::Equal),
-                SortBy::Fit => opt_num(a.job.coverage_pct, desc)
-                    .partial_cmp(&opt_num(b.job.coverage_pct, desc))
-                    .unwrap_or(std::cmp::Ordering::Equal),
-                // Newest first when descending, which is what a reader means
-                // by "sort by posted" - so the age in days is inverted.
-                SortBy::Posted => {
-                    let age = |r: &TriageRow| {
-                        r.job
-                            .posted_at
-                            .as_deref()
-                            .and_then(crate::fmt::days_since_posted)
-                            .map(|d| d as f64)
-                    };
-                    opt_num(age(a), !desc)
-                        .partial_cmp(&opt_num(age(b), !desc))
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                }
-                SortBy::Company => {
-                    let key = |r: &TriageRow| {
-                        r.company_name.clone().unwrap_or_default().to_lowercase()
-                    };
-                    if desc { key(b).cmp(&key(a)) } else { key(a).cmp(&key(b)) }
-                }
-                SortBy::Title => {
-                    let key = |r: &TriageRow| r.job.title.to_lowercase();
-                    if desc { key(b).cmp(&key(a)) } else { key(a).cmp(&key(b)) }
+            let mut ordering = std::cmp::Ordering::Equal;
+            for (by, desc) in keys {
+                ordering = Self::cmp_by(a, b, *by, *desc);
+                if ordering != std::cmp::Ordering::Equal {
+                    break;
                 }
             }
+            ordering
         });
     }
 
@@ -1143,13 +1325,46 @@ impl UnlatchedApp {
     /// starts descending, which is what a reader wants from every column here
     /// except the two alphabetical ones.
     pub fn sort_by_column(&mut self, column: SortBy) {
-        if self.triage_sort == column {
-            self.triage_sort_desc = !self.triage_sort_desc;
+        // NO MODIFIER KEY. The usual idiom for a second sort key is
+        // shift-click, which is invisible: nothing on a table says it is
+        // there, so the feature exists only for people who already expect it.
+        // Clicking promotes instead - the column you click becomes primary and
+        // the previous one drops to second - so sorting by status and then by
+        // posted date is two ordinary clicks in the order you say them.
+        if self.triage_sort.first().map(|(c, _)| *c) == Some(column) {
+            // Already primary: flip its direction rather than re-promoting it,
+            // which would be a click that appears to do nothing.
+            if let Some(first) = self.triage_sort.first_mut() {
+                first.1 = !first.1;
+            }
         } else {
-            self.triage_sort = column;
-            self.triage_sort_desc = !matches!(column, SortBy::Company | SortBy::Title);
+            let previous = self
+                .triage_sort
+                .iter()
+                .find(|(c, _)| *c == column)
+                .map(|(_, desc)| *desc);
+            // A column already in the sort keeps the direction it had. Losing
+            // it on promotion would silently reverse an order the person set.
+            let desc = previous.unwrap_or(!matches!(
+                column,
+                SortBy::Company | SortBy::Title | SortBy::Status
+            ));
+            self.triage_sort.retain(|(c, _)| *c != column);
+            self.triage_sort.insert(0, (column, desc));
+            self.triage_sort.truncate(MAX_SORT_KEYS);
         }
         self.refresh_triage();
+    }
+
+    /// Where `column` sits in the sort, if it is in it at all: 0 is primary.
+    ///
+    /// For the heading, which shows the position so a three-key sort is
+    /// readable rather than three arrows with no order to them.
+    pub fn sort_position(&self, column: SortBy) -> Option<(usize, bool)> {
+        self.triage_sort
+            .iter()
+            .position(|(c, _)| *c == column)
+            .map(|at| (at, self.triage_sort[at].1))
     }
 
     pub fn start_tutorial(&mut self) {
@@ -1157,30 +1372,34 @@ impl UnlatchedApp {
         self.tutorial_step = 0;
     }
 
-    /// Ends it AND remembers, so it never reappears uninvited. Skipping counts
-    /// as seeing it - somebody who skipped does not want it again next launch.
+    /// Ends it AND remembers, by writing the flag to the profile's settings -
+    /// so by construction it cannot reappear uninvited on a later launch.
+    /// Skipping counts as seeing it: somebody who skipped does not want it
+    /// again next time.
     pub fn end_tutorial(&mut self) {
         self.tutorial_active = false;
         self.settings.tutorial_seen = true;
         self.save_settings();
     }
 
-    /// Records that stored data changed, so every cached view reloads when next
-    /// drawn. Cheap: one increment, no queries.
+    /// Records that stored data changed, so every cached view reloads when
+    /// next drawn. Cheap by construction: one increment, no queries.
     ///
     /// Call this after ANY write. Missing it is the one way this design can
     /// still fail, which is why it lives in the small number of methods that
-    /// actually mutate rather than being sprinkled through the views.
+    /// actually mutate rather than being sprinkled through the views - see
+    /// cache_invalidation_tests, which holds every cache against sync_caches.
     pub fn mark_data_changed(&mut self) {
         self.data_version = self.data_version.wrapping_add(1);
     }
 
     /// Reloads whichever caches are stale. Called once per frame from `update`.
     ///
-    /// LAZY BY VIEW: only the caches the current screen reads are refreshed, so
-    /// a status change on Triage does not rebuild the keyword corpus. The
-    /// dashboard is the exception - its counts are the thing most often looked
-    /// at right after a change, and building them is a handful of COUNT queries.
+    /// LAZY BY VIEW: only the caches the current screen reads are refreshed,
+    /// so by construction a status change on Triage cannot rebuild the keyword
+    /// corpus. The dashboard is the exception - its counts are the thing most
+    /// often looked at right after a change, and building them is a handful of
+    /// COUNT queries.
     fn sync_caches(&mut self) {
         let version = self.data_version;
         if self.dashboard_loaded_at != version {
@@ -1238,11 +1457,11 @@ impl UnlatchedApp {
     /// Hours since `path` was last written, read fresh.
     ///
     /// WHY NOT THE ENGINE'S age_hours. That comes from `collectors --json`,
-    /// which runs when a profile opens and when config.json is reloaded - and
-    /// nowhere else. It was therefore a snapshot from launch: a file rewritten
-    /// by a collector at lunchtime left the dashboard still reporting the
-    /// morning's age, so nothing on the screen ever indicated the collection
-    /// had completed.
+    /// which by construction runs only when a profile opens and when
+    /// config.json is reloaded. It was therefore a snapshot from launch: a
+    /// file rewritten by a collector at lunchtime left the dashboard still
+    /// reporting the morning's age, so nothing on the screen ever indicated
+    /// the collection had completed.
     ///
     /// The engine still owns WHICH files exist and where; this owns only "has
     /// that path changed", which is one stat call and cannot drift from a
@@ -1271,14 +1490,16 @@ impl UnlatchedApp {
     /// arrived, so they answer for the wrong set and must be read again.
     ///
     /// Checked from the draw path, which is why it compares two small vectors
-    /// rather than touching the database: the READ is what costs, and it
-    /// happens once, when the background listing lands.
+    /// rather than touching the database. The READ is what costs, and
+    /// by construction it happens once - when the background listing lands.
     pub fn stamps_are_stale(&self) -> bool {
         self.handoffs.configured_ids() != self.collector_stamps_ids
     }
 
     /// Hours since the newest row from `source` arrived, from the stamps the
-    /// dashboard already read. None when that source has produced nothing.
+    /// dashboard already read - so by construction it costs no query on the
+    /// draw path. None when that source has produced nothing, which is not
+    /// the same as arriving long ago.
     pub fn rows_age_hours(&self, source: &str) -> Option<f64> {
         // THE ENGINE'S RECORD FIRST. It says when the file was taken in, which
         // is the question being asked. The row stamp below answers "when did a
@@ -1313,10 +1534,11 @@ impl UnlatchedApp {
     /// Configured collectors that have not delivered today, each with how long
     /// it has been and whether that is overdue yet.
     ///
-    /// ONE READER FOR BOTH SCREENS. The dashboard and the jobs list each carry
-    /// the freshness line, and two screens deciding "has this collector
-    /// delivered today" from two separate readings of the same stamps is how
-    /// they come to disagree in front of somebody.
+    /// ONE READER FOR BOTH SCREENS, so by construction they cannot disagree.
+    /// The dashboard and the jobs list each carry the freshness line, and two
+    /// screens deciding "has this collector delivered today" from two separate
+    /// readings of the same stamps is how they come to differ in front of
+    /// somebody.
     ///
     /// Empty when every configured collector has already delivered - and empty
     /// on a profile that has none, so nothing is drawn about collectors nobody
@@ -1325,7 +1547,7 @@ impl UnlatchedApp {
         // NO SQL HERE. This is called from the draw path, once per frame per
         // screen that shows the line. The stamps were read when the data
         // changed; only the clock is consulted now.
-        let now_local = crate::date::seconds_into_local_day(self.collector_offset);
+        let now_local = crate::date::seconds_into_local_day(self.local_offset);
         self.collector_stamps
             .iter()
             .cloned()
@@ -1345,9 +1567,13 @@ impl UnlatchedApp {
 
     pub fn refresh_dashboard(&mut self) {
         let external = self.handoffs.configured_ids();
-        // Read here, with the rest of the dashboard's data, so the draw path
-        // never touches the database for this.
-        self.collector_offset = crate::db::local_offset_secs(&self.conn);
+        // Read here, with the rest of the dashboard's data, so
+        // by construction the draw path never touches the database for it.
+        self.local_offset = crate::db::local_offset_secs(&self.conn);
+        // The clock every stamp is WRITTEN against, kept with the one the
+        // screens read. Both move at a daylight-saving change and they must
+        // not move separately.
+        crate::date::set_local_offset(self.local_offset);
         self.collector_stamps =
             crate::db::source_last_seen(&self.conn, &external).unwrap_or_default();
         self.collector_taken =
@@ -1364,10 +1590,10 @@ impl UnlatchedApp {
 
     /// Run what is in the box, and land on the results.
     ///
-    /// Clearing the box does NOT bounce the person somewhere else. Emptying a
-    /// field is how you edit it, and a view that jumps away mid-edit is a view
-    /// that cannot be corrected - it just shows nothing found until there is
-    /// something to find.
+    /// Clearing the box does NOT bounce the person somewhere else -
+    /// by construction, since the empty case runs the search rather than changing
+    /// view. Emptying a field is how you edit it, and a view that jumps away
+    /// mid-edit is one that cannot be corrected.
     pub fn run_search(&mut self) {
         self.search_terms = db::parse_search_terms(&self.search_query);
         self.view = View::Search;
@@ -1382,9 +1608,10 @@ impl UnlatchedApp {
     /// Make sure the opened row has its description, fetching it once.
     ///
     /// Called from the draw path, so it must do nothing on the frames where
-    /// there is nothing to do - which is almost all of them. The guard is the
-    /// point: without it this would be a query per frame, which is the shape
-    /// of problem it was written to remove.
+    /// there is nothing to do - by construction almost all of them, since a
+    /// description is fetched once per opened row. The guard is the point:
+    /// without it this is a query per frame, which is the shape of problem it
+    /// was written to remove.
     pub fn ensure_description(&mut self, key: &str) {
         let needs = self
             .triage_rows
@@ -1396,9 +1623,10 @@ impl UnlatchedApp {
         match db::description_for(&self.conn, key) {
             Ok(text) => {
                 if let Some(row) = self.triage_rows.iter_mut().find(|r| r.job.key == key) {
-                    // Store Some("") rather than None when a posting genuinely
-                    // has no description, so an empty one is not re-queried on
-                    // every frame for ever.
+                    // Store Some("") rather than None when a posting
+                    // genuinely has no description: by construction None is
+                    // the "not fetched yet" state, so leaving it there would
+                    // re-query an empty posting on every frame for ever.
                     row.job.description = Some(text.unwrap_or_default());
                 }
             }
@@ -1411,8 +1639,9 @@ impl UnlatchedApp {
     pub fn refresh_triage(&mut self) {
         // (The most recent collect date was read here to feed apply_filter's
         // "new since the last run" predicate. That lives in SQL now, in
-        // Module::NewSinceLastRun, so the query answers it against the whole
-        // table rather than against the rows this list happened to load.)
+        // Module::NewSinceLastRun, which by construction answers it against
+        // the whole table rather than against the rows this list happened to
+        // have loaded.)
         match db::list_jobs_for(
             &self.conn,
             self.list_scope,
@@ -1422,18 +1651,19 @@ impl UnlatchedApp {
             Ok(rows) => {
                 // Fold one-requisition-per-city down to a single row unless
                 // the person asked to see every location. Done here rather
-                // than in SQL so the survivor is the best-scoring posting of
-                // the set, which the query has already ordered for us.
+                // than in SQL because the query has already ordered by score,
+                // so by construction the survivor is the best-scoring posting
+                // of the set.
                 let mut rows = if self.triage_every_location {
                     rows
                 } else {
-                    // Collapse BEFORE sorting: the collapse keeps the first
-                    // row of each group and the query orders by score, so the
-                    // survivor is the best-scoring posting of the set however
-                    // the reader then chooses to sort.
+                    // Collapse BEFORE sorting. The collapse keeps the first
+                    // row of each group and the query orders by score, so
+                    // by construction the survivor is the best-scoring posting of
+                    // the set however the reader then chooses to sort.
                     db::collapse_locations(rows)
                 };
-                Self::sort_rows(&mut rows, self.triage_sort, self.triage_sort_desc);
+                Self::sort_rows_multi(&mut rows, &self.triage_sort);
                 self.triage_rows = rows;
                 if let Some(sel) = &self.triage_selected {
                     if !self.triage_rows.iter().any(|r| &r.job.key == sel) {
@@ -1471,12 +1701,13 @@ impl UnlatchedApp {
     pub fn refresh_keywords(&mut self) {
         match db::job_descriptions(&self.conn, !self.keywords_show_all) {
             Ok(corpus) => {
-                // THE RESUME THE APP HOLDS, not config.resume_path - which is
-                // the engine's LAST fallback and is never written by attaching.
-                // Reading it alone meant the ordinary setup path (attach on the
-                // Resumes tab, exactly as the walkthrough says) left this screen
-                // with no resume text at all, so every tracked skill reported as
-                // demanded-and-not-evidenced and COVERED was always empty.
+                // THE RESUME THE APP HOLDS, not config.resume_path - which
+                // is the engine's LAST fallback and, observed, is never
+                // written by attaching. Reading it alone meant the ordinary
+                // setup path (attach on the Resumes tab, exactly as the
+                // walkthrough says) left this screen with no resume text at
+                // all: every tracked skill reported as demanded-and-not-
+                // evidenced, and COVERED was always empty.
                 let (resume_text, gap) = views::keywords::load_resume_text(
                     crate::resumes::active_path(&self.active_home, &self.config)
                         .as_deref()
@@ -1501,8 +1732,8 @@ impl UnlatchedApp {
         if self.attachments_for == open {
             return;
         }
-        // A different job's files are on screen, so nothing that belongs to
-        // the last one may survive the switch.
+        // A different job's files are on screen, so by construction nothing
+        // belonging to the last one may survive the switch.
         self.attachment_message = None;
         self.attachments = match &open {
             Some(key) => crate::attachments::list_for(&self.conn, key).unwrap_or_default(),
@@ -1653,9 +1884,10 @@ impl UnlatchedApp {
     /// Where the save dialog opens: this profile's remembered folder, else
     /// Downloads, else wherever the dialog would have gone on its own.
     ///
-    /// A REMEMBERED FOLDER THAT NO LONGER EXISTS IS NOT USED. People move
-    /// drives and delete folders; falling back is better than a dialog that
-    /// opens somewhere arbitrary because the path it was given is gone.
+    /// A REMEMBERED FOLDER THAT NO LONGER EXISTS IS NOT USED - checked with
+    /// is_dir before it is offered, so by construction a stale path falls
+    /// through to the next choice. People move drives and delete folders, and
+    /// falling back beats a dialog opening somewhere arbitrary.
     pub fn download_start_dir(&self) -> Option<PathBuf> {
         let remembered = self
             .settings
@@ -1693,17 +1925,23 @@ impl UnlatchedApp {
 
     /// Open one posting wherever it is, switching scope if it takes that.
     ///
-    /// THE EARLIER ROUND IS USUALLY DELISTED, and Triage hides those by design.
-    /// Selecting the key in place would then change nothing on screen, which
-    /// reads as a dead button rather than as "that row is not in this list" -
-    /// so this moves to All jobs, which is the one scope that holds everything,
-    /// and says so plainly if the row is not even there.
+    /// THE EARLIER ROUND IS USUALLY DELISTED, and Triage hides those by
+    /// design. Selecting the key in place would then change nothing on screen
+    /// (by construction, since the row is not in that list), which reads as a
+    /// dead button rather than as "that row is not here". So this moves to All
+    /// jobs, the one scope that holds everything, and says so plainly if the
+    /// row is not even there.
     pub fn open_job_anywhere(&mut self, key: &str) {
         self.list_scope = ListScope::All;
         self.refresh_triage();
         if self.triage_rows.iter().any(|r| r.job.key == key) {
             self.triage_selected = Some(key.to_string());
             self.triage_expanded = Some(key.to_string());
+            // ARRIVING AT A LIST IS NOT THE SAME AS SEEING THE ROW. This lands
+            // on All jobs, which by construction can hold thousands of rows,
+            // so without the scroll the opened posting is somewhere below the
+            // fold and the click reads as having only changed screens.
+            self.scroll_to_selected = true;
         } else {
             self.triage_message = Some(format!(
                 "that earlier advertisement ({key}) is no longer on the board"
@@ -1719,8 +1957,9 @@ impl UnlatchedApp {
 
     /// Ask the engine which collectors this profile has, in the background.
     ///
-    /// Shares engine_invocation with start_process, so --home is guaranteed by
-    /// the same code rather than by this call site remembering it.
+    /// Shares engine_invocation with start_process, so --home is settled by
+    /// the same code for both - by construction this call site cannot forget
+    /// it, because it never writes it.
     pub fn refresh_handoffs(&mut self) {
         let (program, args) = engine_invocation(
             &self.engine_mode,
@@ -1736,6 +1975,18 @@ impl UnlatchedApp {
         self.triage_rows.iter().position(|r| &r.job.key == sel)
     }
 
+    /// Move the highlight by `delta` rows and BRING IT WITH YOU.
+    ///
+    /// THE SCROLL IS THE HALF THAT WAS MISSING. This set the selection and
+    /// nothing else, so on a list longer than the window the band walked off
+    /// the bottom edge and kept going: the keys still worked, the highlighted
+    /// row was simply somewhere the person could not see, and every status
+    /// keystroke after that landed on a row they were not looking at. Reported
+    /// 2026-09-04 on the installed build.
+    ///
+    /// The flag is the same one the Pipeline uses to open a job in the list,
+    /// and the table clears it after one frame - so by construction this
+    /// scrolls once rather than pinning the view against the scrollbar.
     pub fn move_selection(&mut self, delta: i32) {
         if self.triage_rows.is_empty() {
             return;
@@ -1743,6 +1994,7 @@ impl UnlatchedApp {
         let current = self.selected_index().unwrap_or(0) as i32;
         let next = (current + delta).clamp(0, self.triage_rows.len() as i32 - 1);
         self.triage_selected = Some(self.triage_rows[next as usize].job.key.clone());
+        self.scroll_to_selected = true;
     }
 
     pub fn set_status_for_selected(&mut self, status: &str) {
@@ -1752,9 +2004,10 @@ impl UnlatchedApp {
         self.set_status_for(&key, status);
     }
 
-    /// Opens the note prompt for one named row. The row dropdown uses this
-    /// rather than acting on the selection, so changing a status never depends
-    /// on which row happens to be highlighted.
+    /// Opens the note prompt for one named row. The row dropdown passes the
+    /// key explicitly rather than reading the selection, so by construction
+    /// changing a status cannot depend on which row happens to be
+    /// highlighted.
     pub fn set_status_for(&mut self, key: &str, status: &str) {
         let subject = self
             .triage_rows
@@ -1786,9 +2039,10 @@ impl UnlatchedApp {
         // before; the person is simply not stopped to ask about it. Same shape
         // as clearing a status, which has always skipped the prompt.
         //
-        // AN OFFER IS NEVER QUIET, whatever the setting says: that prompt is
-        // where pay and the offer date are captured and they exist nowhere
-        // else, so skipping it would drop the only figures the app keeps.
+        // AN OFFER IS NEVER QUIET, whatever the setting says. That prompt is
+        // where pay and the offer date are captured and by construction they
+        // exist nowhere else - no other screen writes them - so skipping it
+        // would drop the only figures the app keeps.
         if status != "offer" && !self.settings.asks_for_note(status) {
             self.pending_status = Some(PendingStatus {
                 keys,
@@ -1844,13 +2098,14 @@ impl UnlatchedApp {
             return;
         };
         let note = pending.note.trim();
-        // NULL, not "": a status change with nothing written about it must log
-        // no note at all, because the empty string is what the pipeline reads
-        // as "a note exists" and the dashboard would count as one.
+        // NULL, not "". A status change with nothing written about it must
+        // log no note at all: by construction the pipeline treats the empty
+        // string as "a note exists", and the dashboard would count it.
         let note_opt = (!note.is_empty()).then_some(note);
-        // Offer terms belong to an Offer. Typed into the boxes and then
-        // switched to another status, they are dropped rather than stored
-        // against a transition that cannot mean them.
+        // Offer terms belong to an Offer - by construction, since
+        // status::has_offer_fields is what admits them. Typed into the boxes
+        // and then switched to another status, they are dropped rather than
+        // stored against a transition that cannot mean them.
         let terms = if crate::status::has_offer_fields(&pending.status) {
             db::OfferTerms::from_inputs(&pending.pay, &pending.offer_date)
         } else {
@@ -1872,7 +2127,8 @@ impl UnlatchedApp {
         // LOCKED IS NOT LOST. A collect's closing passes hold the write lock
         // in one transaction, so this is a wait rather than a refusal - and
         // the person's typing is the last thing that should be discarded over
-        // it. Kept, and re-applied when the run finishes.
+        // it. Kept, and by construction re-applied when the run finishes:
+        // apply_deferred_status runs from the completion handler.
         if failed.as_deref().is_some_and(|e| e.contains("database is locked")) {
             self.deferred_status.push(pending);
             self.triage_message = Some(format!(
@@ -1890,9 +2146,9 @@ impl UnlatchedApp {
         // missing from this list once and its counts went stale on every status
         // change until the person pressed Refresh.
         self.mark_data_changed();
-        // The readable copy is refreshed on the action that CREATES the history
-        // worth keeping, so the backup is never older than the last thing the
-        // person did.
+        // The readable copy is refreshed on the action that CREATES the
+        // history worth keeping, so by construction the backup is never older
+        // than the last thing the person did.
         self.write_backup_copy();
     }
 
@@ -1910,8 +2166,10 @@ impl UnlatchedApp {
     /// that is what it is - scraped text from the employer's side, which the
     /// standing rule keeps away from any assistant.
     ///
-    /// ONCE PER JOB. Re-applying months later does not overwrite the first
-    /// snapshot or add a second: the point is the wording that was applied to.
+    /// ONCE PER JOB, by construction: the write is skipped when a snapshot
+    /// for that key already exists. Re-applying months later neither
+    /// overwrites the first nor adds a second - the point is the wording that
+    /// was actually applied to.
     fn snapshot_posting_if_applied(&mut self, key: &str, status: &str) {
         if status != crate::status::APPLIED {
             return;
@@ -1944,8 +2202,9 @@ impl UnlatchedApp {
             text.as_bytes(),
             crate::attachments::POSTING,
         ) {
-            // Not fatal and not silent: the status change itself succeeded,
-            // and a person who never sees this message still has their status.
+            // Not fatal and not silent. The status change itself already
+            // succeeded by construction - it is written before this runs - so
+            // a person who never sees this message still has their status.
             self.attachment_message = Some(format!("could not keep a copy of the posting: {e}"));
         }
     }
@@ -1956,9 +2215,9 @@ impl UnlatchedApp {
     }
 
     /// Puts a row back to "not set". Picking that from the dropdown is an
-    /// undo, so it removes the status rather than storing an empty one - a
-    /// blank status row would still count as a decision in every query that
-    /// filters on having one.
+    /// undo, so it removes the status row rather than storing an empty one:
+    /// by construction a present-but-blank status still counts as a decision
+    /// in every query that filters on having one.
     pub fn clear_status_for(&mut self, key: &str) {
         match db::clear_status(&self.conn, key) {
             Ok(()) => {
@@ -1974,13 +2233,13 @@ impl UnlatchedApp {
     /// Records a note that is not about a status change.
     ///
     /// APPENDS, and needs no status to exist first. This used to re-write the
-    /// job's current status in order to carry the note, which meant two things
-    /// that were both wrong: a job with no status could not be annotated at all
-    /// (job_status.status is NOT NULL, so there was nothing to write), and
-    /// every note on a job that DID have one appended a history row saying the
-    /// status had changed to the value it already held. A person who wrote
-    /// three notes about one application ended up with a timeline claiming
-    /// they had marked it Applied four times.
+    /// job's current status in order to carry the note, which was wrong twice
+    /// over - observed: a job with no status could not be annotated at all
+    /// (job_status.status is NOT NULL by construction, so there was nothing to
+    /// write), and every note on a job that DID have one appended a history
+    /// row saying the status had changed to the value it already held. Three
+    /// notes about one application produced a timeline claiming it had been
+    /// marked Applied four times.
     pub fn submit_note_for_selected(&mut self) {
         let Some(key) = self.triage_selected.clone() else {
             return;
@@ -2009,17 +2268,18 @@ impl UnlatchedApp {
         self.config_draft = ConfigDraft::from_config(&self.config);
         self.config_status = Some("reloaded from config.json".to_string());
         self.refresh_keywords();
-        // config.json is where collectors are declared, so a reload is exactly
-        // when the menu's list goes out of date.
+        // config.json is where collectors are declared by construction, so a
+        // reload of it is exactly when the menu's list goes out of date.
         self.refresh_handoffs();
     }
 
     pub fn save_config(&mut self) {
         match self.config_draft.to_config() {
             Ok(cfg) => {
-                // Compare BEFORE storing: what the search looks for is the
-                // only thing worth re-running over, so a changed timeout or
-                // a corrected API key saves quietly.
+                // Compare BEFORE storing. By construction only the search
+                // block changes which jobs match, so a changed timeout or a
+                // corrected API key saves quietly rather than offering a
+                // re-run that would return the same rows.
                 let search_changed = cfg.search != self.config.search
                     || cfg.sources != self.config.sources;
                 match config::save(&self.config_path, &cfg) {
@@ -2046,14 +2306,132 @@ impl UnlatchedApp {
     /// Runs the ENGINE rather than reimplementing the writer here. The export
     /// is a data guarantee, and two implementations of a guarantee is one that
     /// can disagree with itself - the CLI's version is the tested one.
+    /// Write the criteria out where a person will find them again.
+    ///
+    /// DOCUMENTS, NOT THE WORKING DIRECTORY. A file written beside the
+    /// executable is one somebody has to be told where to look for, and the
+    /// point of this feature is that they do not have to be told anything.
+    pub fn export_criteria(&mut self) {
+        let Some(target) = rfd::FileDialog::new()
+            .set_title("Save your criteria")
+            .set_file_name("unlatched-criteria.json")
+            .set_directory(paths::documents_dir().unwrap_or_else(|| self.active_home.clone()))
+            .save_file()
+        else {
+            return;
+        };
+        let args = vec![
+            "criteria".to_string(),
+            "--export".to_string(),
+            target.to_string_lossy().into_owned(),
+            "--json".to_string(),
+        ];
+        let (program, args) = engine_invocation(
+            &self.engine_mode,
+            &self.settings.python_invocation,
+            &self.active_home,
+            args,
+        );
+        self.criteria_message = match crate::criteria::run(&program, &args) {
+            Ok(_) => Some(format!("saved to {}", target.display())),
+            Err(e) => Some(format!("could not save: {e}")),
+        };
+    }
+
+    /// Pick a criteria file and work out what taking it in would do.
+    pub fn choose_criteria_file(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .set_title("Open a criteria file")
+            .add_filter("Criteria", &["json"])
+            .set_directory(paths::documents_dir().unwrap_or_else(|| self.active_home.clone()))
+            .pick_file()
+        else {
+            return;
+        };
+        self.begin_criteria_import(path);
+    }
+
+    /// Everything after the file picker.
+    ///
+    /// SPLIT OFF FROM IT so this half can be tested and driven: rfd opens a
+    /// native dialog, which no automated run can answer, and that would have
+    /// made the whole import path untestable from the outside.
+    pub fn begin_criteria_import(&mut self, path: std::path::PathBuf) {
+        self.criteria_message = None;
+        // Replace, verified as the engine's own default for `apply` and for
+        // the --mode argument, so the dialog opens on the mode a person gets
+        // from the command line too.
+        let mode = "replace".to_string();
+        let report = self.preview_criteria(&path, &mode);
+        self.criteria_import = Some(CriteriaImport { path, mode, report });
+    }
+
+    /// Ask again in the other mode, keeping the same file.
+    pub fn set_criteria_mode(&mut self, mode: &str) {
+        let Some(pending) = self.criteria_import.take() else {
+            return;
+        };
+        let report = self.preview_criteria(&pending.path, mode);
+        self.criteria_import = Some(CriteriaImport {
+            path: pending.path,
+            mode: mode.to_string(),
+            report,
+        });
+    }
+
+    fn preview_criteria(
+        &self,
+        path: &std::path::Path,
+        mode: &str,
+    ) -> Result<crate::criteria::Report, String> {
+        let (program, args) = engine_invocation(
+            &self.engine_mode,
+            &self.settings.python_invocation,
+            &self.active_home,
+            criteria_args(path, mode, true),
+        );
+        crate::criteria::run(&program, &args)
+    }
+
+    /// Take in the file the dialog is showing, in the mode it is showing.
+    ///
+    /// RUNS THE IMPORT AGAIN RATHER THAN APPLYING THE PREVIEW. The preview is
+    /// a description, and applying a description would mean a second
+    /// implementation of the merge on this side - which could then disagree
+    /// with the one the person was shown.
+    pub fn apply_criteria_import(&mut self) {
+        let Some(pending) = self.criteria_import.take() else {
+            return;
+        };
+        let (program, args) = engine_invocation(
+            &self.engine_mode,
+            &self.settings.python_invocation,
+            &self.active_home,
+            criteria_args(&pending.path, &pending.mode, false),
+        );
+        self.criteria_message = match crate::criteria::run(&program, &args) {
+            Ok(report) if report.is_empty() => {
+                Some("nothing to change - the criteria already match".to_string())
+            }
+            Ok(report) => {
+                // Reloaded, or the Config screen would keep showing the search
+                // that was there before the file arrived.
+                self.reload_config();
+                Some(format!("updated {}", report.changed.join(", ")))
+            }
+            Err(e) => Some(format!("could not import: {e}")),
+        };
+    }
+
     pub fn export_pipeline(&mut self) {
         let target = paths::downloads_dir()
             .map(|dir| paths::non_clobbering_path(&dir, "unlatched-pipeline.csv"))
             .unwrap_or_else(|| self.active_home.join(BACKUP_CSV_NAME));
         self.export_message = match self.run_export(&target) {
             Ok(()) => Some(format!("saved to {}", target.display())),
-            // Named, not swallowed. Somebody exporting is usually doing it
-            // because they are about to need it.
+            // Named, not swallowed - by construction the message carries the
+            // error's own text. Somebody exporting is usually doing it because
+            // they are about to need the file.
             Err(e) => Some(format!("could not export: {e}")),
         };
     }
@@ -2084,9 +2462,9 @@ impl UnlatchedApp {
     }
 
     fn run_export(&mut self, target: &Path) -> Result<(), String> {
-        // Shares engine_invocation with start_process, so --home is guaranteed
-        // by the same code (and the same tests) rather than by this call site
-        // remembering to do it.
+        // Shares engine_invocation with start_process, so --home is settled
+        // by the same code and the same tests - by construction this call site
+        // cannot forget it, because it never writes it.
         let (program, args) = engine_invocation(
             &self.engine_mode,
             &self.settings.python_invocation,
@@ -2118,14 +2496,15 @@ impl UnlatchedApp {
     /// Apply one status to every ticked row.
     ///
     /// Through the same `set_status_for` each row's dropdown uses, one row at
-    /// a time, so every one of them gets its own append-only log entry. A
-    /// single bulk UPDATE would be faster and would leave the history saying
-    /// nothing happened - and that history is what the Applied column, the
-    /// funnel and the response rate are all read from.
+    /// a time, so by construction every one gets its own append-only log
+    /// entry. A single bulk UPDATE would be faster and would leave the history
+    /// saying nothing happened - and that history is what the Applied column,
+    /// the funnel and the response rate are all read from.
     pub fn set_status_for_selection(&mut self, status: &str) {
-        // SORTED, so the same nine rows produce the same order every time. The
-        // set they come from has no order of its own, and the prompt's heading
-        // and the log's timestamps would otherwise shuffle between runs.
+        // SORTED, so the same nine rows produce the same order every time.
+        // By construction a HashSet has no order of its own, so the prompt's
+        // heading and the log's timestamps would otherwise shuffle between
+        // runs.
         let mut keys: Vec<String> = self.selected_keys.iter().cloned().collect();
         keys.sort();
         let count = keys.len();
@@ -2136,7 +2515,9 @@ impl UnlatchedApp {
     /// Open the retire confirmation for the current selection.
     ///
     /// Measures the applied count HERE, once, so the dialog can say what it
-    /// is about to cost instead of asking "are you sure" about a number.
+    /// is about to cost instead of asking "are you sure" about a number. Held
+    /// rather than recomputed while drawing, so by construction the figure the
+    /// person reads is the one the action was sized against.
     pub fn ask_to_retire_selection(&mut self) {
         let keys: Vec<String> = self.selected_keys.iter().cloned().collect();
         if keys.is_empty() {
@@ -2160,17 +2541,18 @@ impl UnlatchedApp {
             Err(e) => self.triage_message = Some(format!("could not remove: {e}")),
         }
         self.mark_data_changed();
-        // A removal changes the record as much as a status does - the export
-        // carries removed_on precisely so a thrown-away row is still
-        // recoverable from the copy.
+        // A removal changes the record as much as a status does, and
+        // by construction the export carries removed_on - so a thrown-away row
+        // is still recoverable from the copy.
         self.write_backup_copy();
     }
 
     /// Undo a grouping for the selected rows.
     ///
     /// The counterpart to Put back, and it exists for the same reason: a
-    /// judgement the person cannot reverse is one they have to trust blindly,
-    /// and this one decides whether a job they wanted is visible at all.
+    /// judgement the person cannot reverse is one they have to trust blindly.
+    /// Grouping hides rather than deletes - by construction, since it sets
+    /// duplicate_of rather than removing the row - so this can put it back.
     pub fn ungroup_selection(&mut self) {
         let keys: Vec<String> = self.selected_keys.iter().cloned().collect();
         match db::ungroup(&self.conn, &keys) {
@@ -2199,10 +2581,10 @@ impl UnlatchedApp {
     /// Record that the employer pulled ONE posting, from the row itself.
     ///
     /// The same fact as the bulk button, reachable where somebody triaging a
-    /// row at a time actually is. That button needs tick-boxes, so a person
-    /// working down the list with the Status dropdown never met it - and the
-    /// case it is for, an advert that closed between two collections, is one
-    /// they meet constantly.
+    /// row at a time actually is. That button needs tick-boxes
+    /// by construction, so a person working down the list with the Status
+    /// dropdown never met it - and the case it is for, an advert that closed
+    /// between two collections, is one they meet constantly.
     pub fn mark_taken_down(&mut self, key: &str) {
         match db::mark_taken_down(&self.conn, std::slice::from_ref(&key.to_string())) {
             Ok(_) => {
@@ -2222,11 +2604,12 @@ impl UnlatchedApp {
 
     /// Record that the employer pulled the selected postings.
     ///
-    /// NOT ROUTED THROUGH THE RETIRE CONFIRMATION. Removing a job is a
-    /// decision that needs a second thought because it hides something the
-    /// person still wanted; recording that an advert closed is reporting a
-    /// fact, and asking "are you sure the employer did that" would be asking
-    /// them to confirm the world.
+    /// NOT ROUTED THROUGH THE RETIRE CONFIRMATION. Removing a job hides
+    /// something the person still wanted and deserves a second thought;
+    /// recording that an advert closed is reporting a fact, and
+    /// by construction it is reversible - relist() clears delisted_at. Asking
+    /// "are you sure the employer did that" would be asking them to confirm
+    /// the world.
     pub fn mark_selection_taken_down(&mut self) {
         let keys: Vec<String> = self.selected_keys.iter().cloned().collect();
         match db::mark_taken_down(&self.conn, &keys) {
@@ -2265,17 +2648,20 @@ impl UnlatchedApp {
 
     /// Write the column layout back to this profile's settings file.
     ///
-    /// Called on every change from the gear rather than on closing it: there
-    /// is no Save button on that panel, so a person who rearranges their
-    /// columns and then closes the app has not asked for anything to be lost.
+    /// Called on every change from the gear rather than on closing it:
+    /// by construction that panel has no Save button, so a person who rearranges
+    /// their columns and then closes the app has not asked for anything to be
+    /// lost.
     pub fn save_column_layout(&mut self) {
         self.settings.column_order = views::columns::to_keys(&self.column_order);
         self.settings.column_hidden = views::columns::to_keys(&self.column_hidden);
         self.save_settings();
     }
 
-    /// True while an engine command is running, so a caller can say why it
-    /// is not doing the thing it offered rather than being refused silently.
+    /// True while an engine command is running - by construction the same
+    /// condition start_process and queue_process test - so a caller can say
+    /// why it is not doing the thing it offered rather than refusing in
+    /// silence.
     pub fn busy(&self) -> bool {
         self.running_process.is_some()
     }
@@ -2288,8 +2674,10 @@ impl UnlatchedApp {
 
     /// Starts an engine command. `subcommand_args` is just the verb and its
     /// own flags (e.g. `["collect", "--company", name]`), never the `-m
-    /// unlatched` prefix: that prefix, and which program is invoked at
-    /// all, depends on `self.engine_mode` and is decided here.
+    /// unlatched` prefix. That prefix, and which program is invoked at all,
+    /// is decided by engine_invocation from `self.engine_mode` - so
+    /// by construction a call site cannot get it wrong, because it never
+    /// writes it.
     /// Run it now. The caller has already established the engine is free.
     fn spawn_process(&mut self, label: &str, subcommand_args: Vec<String>) {
         let (program, args) = engine_invocation(
@@ -2315,7 +2703,9 @@ impl UnlatchedApp {
 
     /// Run it when the engine is free, rather than refusing.
     ///
-    /// FOR WHAT A PERSON ASKED FOR, never for scheduled work - see `pending`.
+    /// FOR WHAT A PERSON ASKED FOR, never for scheduled work -
+    /// by construction, since start_scheduled_refresh calls start_process
+    /// instead. See `pending`.
     pub fn queue_process(&mut self, label: &str, subcommand_args: Vec<String>) {
         if self.running_process.is_none() {
             self.spawn_process(label, subcommand_args);
@@ -2390,8 +2780,9 @@ impl UnlatchedApp {
                     wake_in = Some(secs);
                 } else if !line.trim().is_empty() {
                     // The wake-in marker is machinery, not something the
-                    // engine is telling anybody, so it never becomes the
-                    // sentence a person is shown.
+                    // engine is telling anybody, so by construction it is
+                    // filtered out before a line can become the sentence a
+                    // person is shown.
                     self.last_engine_line = Some(line.clone());
                 }
                 self.log_lines.push(line);
@@ -2418,20 +2809,21 @@ impl UnlatchedApp {
             // delistings. Naming two caches here was how the dashboard stayed
             // stale after every collect.
             self.mark_data_changed();
-            // And the lock is free now, so anything the person typed while it
-            // was held goes in.
+            // And the lock is free now - by construction, since the process
+            // that held it has just been cleared - so anything the person
+            // typed while it was held goes in.
             self.apply_deferred_status();
             self.report_add_job(&label, code);
             // THE NEXT THING SOMEBODY ASKED FOR. Started here rather than on
-            // the next frame so a queued add runs the moment the collect
-            // holding it up is done, with no window in which a scheduled
-            // refresh could take the engine first.
+            // the next frame, so by construction there is no window between
+            // the collect finishing and the queued add starting in which a
+            // scheduled refresh could take the engine first.
             if let Some((queued, args)) = self.pending.pop_front() {
                 self.spawn_process(&queued, args);
             }
         }
-        // Cap the log so an unbounded run cannot slowly grow the app's
-        // memory footprint across a long session.
+        // Cap the log: by construction a long run appends without limit, so
+        // without this the app's memory footprint grows across a session.
         // (see report_add_job below for what happens when an add fails)
         if self.log_lines.len() > 2000 {
             let drop = self.log_lines.len() - 2000;
@@ -2456,11 +2848,12 @@ impl UnlatchedApp {
         if label != ADD_JOB_LABEL {
             return;
         }
-        // THE STAGED POSTING TEXT GOES, whichever way the add ended. A pasted
-        // description is handed over as a file rather than an argument (see
-        // views::add_job), and nothing was removing it afterwards - so a copy
-        // of the last job somebody pasted sat in their profile folder next to
-        // the database indefinitely, for a reason no screen ever mentions.
+        // THE STAGED POSTING TEXT GOES, whichever way the add ended. A
+        // pasted description is handed over as a file rather than an argument
+        // (see views::add_job), and nothing was removing it afterwards -
+        // observed: a copy of the last job somebody pasted sat in their
+        // profile folder next to the database indefinitely, for a reason no
+        // screen ever mentions.
         // Deleted here rather than by the engine, because the engine is
         // pointed at whatever path it is given and must not delete a file
         // that might be the person's own.
@@ -2491,9 +2884,10 @@ impl UnlatchedApp {
 
 /// Build the exact command line for an engine subcommand.
 ///
-/// SEPARATE AND PUBLIC so it can be asserted on. The bug it fixes is invisible
-/// from outside - the command runs, exits zero, and writes to the wrong
-/// database - so the only way to catch it is to look at the arguments.
+/// SEPARATE AND PUBLIC so it can be asserted on - see
+/// engine_invocation_tests. The bug it fixes is invisible from outside: the
+/// command runs, exits zero, and writes to the wrong database, so
+/// by construction the only way to catch it is to look at the arguments.
 ///
 /// --home IS ALWAYS PASSED. It used to be omitted, leaving the engine to read
 /// UNLATCHED_HOME from this process's environment. That variable is set only
@@ -2525,17 +2919,19 @@ pub fn engine_invocation(
     }
 }
 
-/// The process label for an add. Matched on, so it lives in one place rather
-/// than being typed twice.
+/// The process label for an add. Matched on in report_add_job, so it lives in
+/// one place - by construction the two cannot drift apart.
 pub const ADD_JOB_LABEL: &str = "add a job";
 
 /// Where a pasted posting description is staged for the engine to read. Named
-/// once, so the writer and the clean-up cannot point at different files.
+/// once, so by construction the writer and the clean-up cannot point at
+/// different files.
 pub const STAGED_DESCRIPTION: &str = "pending-description.txt";
 
 /// The readable copy kept beside the database. Named so it is obvious what it
-/// is to somebody who finds the folder without the app - which is the whole
-/// situation it exists for.
+/// is to somebody who finds the folder without the app - which is
+/// by construction the situation it exists for, since anyone with the app would
+/// read the database instead.
 pub const BACKUP_CSV_NAME: &str = "pipeline-backup.csv";
 
 /// How long the engine says to wait before asking it about the schedule again.
@@ -2544,10 +2940,10 @@ pub const BACKUP_CSV_NAME: &str = "pipeline-backup.csv";
 /// computed here because the schedule has exactly one owner - refresh.py - and
 /// a Rust reimplementation would be a second one to drift from it.
 ///
-/// SECONDS RATHER THAN A TIMESTAMP, so this can be added to a MONOTONIC clock.
-/// A wall-clock time would have to be parsed and would then be wrong across a
-/// suspend, a timezone change, or the hour the clocks go back - three separate
-/// ways to sleep through a day's postings.
+/// SECONDS RATHER THAN A TIMESTAMP, so by construction it can be added to a
+/// MONOTONIC clock. A wall-clock time would have to be parsed and would then
+/// be wrong across a suspend, a timezone change, or the hour the clocks go
+/// back - three separate ways to sleep through a day's postings.
 ///
 /// A silly value is refused rather than obeyed: a bad parse that yielded zero
 /// would spin the engine, and one that yielded a week would look exactly like
@@ -2569,8 +2965,8 @@ impl eframe::App for UnlatchedApp {
         // guessing - the first measurement has to say WHICH frame is expensive.
         let perf_started = std::env::var_os("UNLATCHED_PERF").map(|_| std::time::Instant::now());
         // Applied every frame from the stored setting rather than once at
-        // startup, so switching theme takes effect immediately and a profile
-        // switch picks up that profile's own choice.
+        // startup, so by construction switching theme takes effect at once and
+        // a profile switch picks up that profile's own choice.
         if self.applied_dark != Some(self.settings.is_dark()) {
             self.applied_dark = Some(self.settings.is_dark());
             crate::theme::apply(ctx, self.settings.is_dark());
@@ -2580,10 +2976,10 @@ impl eframe::App for UnlatchedApp {
         // has to change that without a reload.
         crate::browse::use_browser(&self.settings.browser);
         if !self.window_title_set {
-            // Set once here rather than in main.rs's ViewportBuilder: the
-            // active profile (and therefore the title) is only known once
-            // UnlatchedApp::new has resolved the registry, and there is no
-            // egui::Context available yet at that point in main.rs.
+            // Set once here rather than in main.rs's ViewportBuilder.
+            // By construction the active profile - and therefore the title - is
+            // known only after UnlatchedApp::new has resolved the registry,
+            // and no egui::Context exists yet at that point in main.rs.
             self.window_title_set = true;
             ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.window_title()));
         }
@@ -2591,8 +2987,9 @@ impl eframe::App for UnlatchedApp {
         self.poll_process();
         // BEFORE anything draws. Reloading whichever caches are stale here,
         // rather than at each mutation site, is what makes a missed refresh
-        // impossible: a view cannot render from a snapshot older than the data
-        // because the check sits between the change and the paint.
+        // impossible by construction: the check sits between the change and
+        // the paint, so a view cannot render from a snapshot older than the
+        // data.
         self.sync_caches();
         // The open row's files, and whatever is needed to show the one being
         // looked at. Both are no-ops unless the answer has changed.
@@ -2600,8 +2997,9 @@ impl eframe::App for UnlatchedApp {
         if self.running_process.is_some() {
             ctx.request_repaint_after(std::time::Duration::from_millis(100));
         }
-        // An app left open all day would otherwise only ever see the schedule
-        // once, at launch, and the afternoon slot would never come round.
+        // An app left open all day would otherwise see the schedule once, at
+        // launch - by construction, since start_scheduled_refresh runs from
+        // the constructor - and the afternoon slot would never come round.
         //
         // WHEN TO ASK AGAIN IS THE ENGINE'S ANSWER, NOT A TIMER HERE. It
         // prints "[wake-in] N" seconds - the time until its own next anchor -
@@ -2646,13 +3044,13 @@ impl eframe::App for UnlatchedApp {
                 show_search_box(self, ui);
                 ui.add_space(4.0);
 
-                // THREE GROUPS: the jobs themselves, the tools that act on
-                // them, and the setup you touch once. The daily work is at the
-                // top; the things you set up once and rarely touch sit at the
-                // bottom, separated by space rather than jumbled in with them.
-                // Config sits directly above Settings because they are the
-                // same kind of errand. A flat list of every link is a list;
-                // this is a structure.
+                // THREE GROUPS, by construction: NAV_JOBS, NAV_TOOLS and
+                // NAV_SETUP - the jobs themselves, the tools that act on them,
+                // and the setup you touch once. Daily work at the top; the
+                // things you set up once sit at the bottom, separated by space
+                // rather than jumbled in. Config sits directly above Settings
+                // because they are the same kind of errand. A flat list of
+                // every link is a list; this is a structure.
                 if views::getting_started::needed(self) {
                     let (view, label) = NAV_GETTING_STARTED;
                     nav_entry(self, ui, view, label);
@@ -2682,15 +3080,17 @@ impl eframe::App for UnlatchedApp {
                 }
             });
 
-        // Drawn last so it covers everything, and it also stops the tutorial's
-        // own view switching from fighting a click underneath it.
+        // Drawn last, so by construction it covers everything - and that also
+        // stops the tutorial's own view switching from fighting a click
+        // underneath it.
         crate::tutorial::show(self, ctx);
 
-        // A RUN IS VISIBLE FROM EVERY SCREEN. It used to be visible from one -
-        // the log, on the Companies page - so a running collect was, from
+        // A RUN IS VISIBLE FROM EVERY SCREEN. It used to be visible from one
+        // - the log, on the Companies page - so a running collect was, from
         // anywhere else in the app, indistinguishable from nothing happening.
-        // A bottom strip rather than a line inside a view: it belongs to the
-        // window, not to whatever is being looked at.
+        // A bottom strip rather than a line inside a view, so by construction
+        // it belongs to the window rather than to whatever is being looked
+        // at.
         crate::views::running_bar::show(self, ctx);
 
         egui::CentralPanel::default().show(ctx, |ui| match self.view {
@@ -2715,13 +3115,13 @@ impl eframe::App for UnlatchedApp {
         // confirmation the person has not answered must not be stranded by
         // navigating somewhere else.
         views::triage::confirm_retire_window(self, ctx);
-        // Drawn from update() rather than from the Triage view, because a
-        // status can be set from the bulk bar on All jobs and from the row
-        // dropdown on either list. A prompt that only existed on one screen
-        // would silently swallow the change made from the other.
+        // Drawn from update() rather than from the Triage view: a status can
+        // be set from the bulk bar on All jobs and from the row dropdown on
+        // either list, so by construction a prompt living on one screen would
+        // silently swallow the change made from the other.
         views::triage::status_note_window(self, ctx);
-        // Rendered outside the central panel so navigating to another view
-        // does not strand a prompt the person has not answered yet.
+        // Rendered outside the central panel, so by construction navigating to
+        // another view cannot strand a prompt the person has not answered.
         views::config_view::show_run_prompt(self, ctx);
 
         if let Some(started) = perf_started {
@@ -2754,9 +3154,9 @@ fn show_profile_switcher(app: &mut UnlatchedApp, ui: &mut egui::Ui, ctx: &egui::
     let combo_response = ui
         .add_enabled_ui(!locked, |ui| {
             // WHO. Picking a person moves to their first search rather than
-            // keeping the current search name, because two people rarely name
-            // their hunts the same thing and a stale name would resolve to
-            // nothing.
+            // keeping the current search name: searches are named per person
+            // by construction, so a name carried across would usually resolve
+            // to nothing.
             egui::ComboBox::from_id_source("person_switcher")
                 .width(150.0)
                 .selected_text(app.active_person.clone())
@@ -2847,6 +3247,58 @@ fn show_profile_switcher(app: &mut UnlatchedApp, ui: &mut egui::Ui, ctx: &egui::
 }
 
 #[cfg(test)]
+mod keyboard_scroll_tests {
+    /// MOVING THE HIGHLIGHT HAS TO MOVE THE VIEW WITH IT.
+    ///
+    /// THE BUG THIS GUARDS, reported 2026-09-04 on the installed build:
+    /// move_selection set `triage_selected` and nothing else, so on a list
+    /// longer than the window the band walked off the bottom edge and kept
+    /// going. The keys still worked - the highlighted row was simply somewhere
+    /// the person could not see - and every status keystroke after that landed
+    /// on a row they were not looking at.
+    ///
+    /// READ FROM THE SOURCE, like cache_invalidation_tests below and for the
+    /// same reason: calling move_selection needs a whole app - a profile
+    /// registry, a database and an egui context - none of which exist in a
+    /// unit test here. Blunt, and it is the only thing that can assert the
+    /// scroll was not simply forgotten again.
+    #[test]
+    fn moving_the_selection_by_keyboard_also_scrolls_to_it() {
+        const SOURCE: &str = include_str!("app.rs");
+        let body = SOURCE
+            .split("pub fn move_selection(&mut self, delta: i32) {")
+            .nth(1)
+            .expect("move_selection was renamed")
+            .split("\n    }")
+            .next()
+            .expect("move_selection has no body");
+        assert!(
+            body.contains("scroll_to_selected = true"),
+            "move_selection changes the highlight without bringing it into view"
+        );
+    }
+
+    /// The counterpart: a row opened from another screen lands on All jobs,
+    /// which can hold thousands of rows. Selecting it without scrolling reads
+    /// as a click that only changed screens.
+    #[test]
+    fn opening_a_job_from_elsewhere_scrolls_to_it() {
+        const SOURCE: &str = include_str!("app.rs");
+        let body = SOURCE
+            .split("pub fn open_job_anywhere(&mut self, key: &str) {")
+            .nth(1)
+            .expect("open_job_anywhere was renamed")
+            .split("\n    }")
+            .next()
+            .expect("open_job_anywhere has no body");
+        assert!(
+            body.contains("scroll_to_selected = true"),
+            "open_job_anywhere selects a row it never brings into view"
+        );
+    }
+}
+
+#[cfg(test)]
 mod cache_invalidation_tests {
     /// Every cache this app holds must be reachable from `sync_caches`.
     ///
@@ -2859,9 +3311,9 @@ mod cache_invalidation_tests {
     /// Adding a sixth cached view and forgetting to add it to `sync_caches`
     /// reintroduces exactly the original defect for that one view, silently.
     /// Reading our own source is blunt, but it is the only way to assert
-    /// "nothing was left out" without a full app instance - which needs a
-    /// profile registry, a database and an egui context, none of which exist
-    /// in a unit test here.
+    /// "nothing was left out" without a full app instance - which
+    /// by construction needs a profile registry, a database and an egui context,
+    /// none of which exist in a unit test here.
     const SOURCE: &str = include_str!("app.rs");
 
     fn body_of(function: &str) -> &'static str {
@@ -2962,8 +3414,9 @@ mod cache_invalidation_tests {
     fn every_view_that_shows_the_jobs_list_reloads_it() {
         // The sibling test above proves every CACHE is consulted. It cannot
         // prove every VIEW reaches the arm that consults it - and that is the
-        // gap that shipped: Search rendered the jobs list, was absent from
-        // sync_caches, and showed a status the app had already changed.
+        // gap that shipped, observed: Search rendered the jobs list, was
+        // absent from sync_caches, and showed a status the app had already
+        // changed.
         //
         // Any view whose draw path calls list_jobs_for is showing that list.
         let sync = body_of("fn sync_caches");
@@ -2979,8 +3432,9 @@ mod cache_invalidation_tests {
     #[test]
     fn every_cache_is_stamped_after_the_startup_load() {
         // The constructor loads all five eagerly because the landing view is
-        // chosen from what they contain. Without stamping, sync_caches would
-        // find them stale on the first frame and repeat all five queries.
+        // chosen from what they contain. Without stamping, sync_caches finds
+        // them stale on the first frame by construction - views start at 0,
+        // data at 1 - and repeats all five queries.
         let new_body = body_of("pub fn new()");
         for field in ["triage_loaded_at", "dashboard_loaded_at"] {
             assert!(
@@ -3003,10 +3457,11 @@ mod engine_invocation_tests {
 
     #[test]
     fn every_engine_command_names_the_home_it_is_for() {
-        // The whole defect. Without --home the engine reads UNLATCHED_HOME from
-        // the app's environment, which is absent whenever a registry profile is
-        // active - so a collect could write into the default profile while the
-        // person watched a different one fail to change.
+        // The whole defect. Without --home the engine reads UNLATCHED_HOME
+        // from the app's environment, which by construction is absent whenever
+        // a registry profile is active - so a collect could write into the
+        // default profile while the person watched a different one fail to
+        // change.
         let bundled = EngineMode::Bundled(PathBuf::from("engine.exe"));
         let args = args_for(&bundled, "D:/people/dana/hr");
         assert_eq!(&args[..2], ["--home", "D:/people/dana/hr"]);
@@ -3014,9 +3469,9 @@ mod engine_invocation_tests {
 
     #[test]
     fn home_comes_before_the_subcommand() {
-        // --home is a top-level argument on the engine's parser; argparse will
-        // not accept it after the verb, so ordering is load-bearing rather than
-        // cosmetic.
+        // --home is a top-level argument on the engine's parser, and argparse
+        // by construction will not accept it after the verb - so the ordering
+        // here is load-bearing rather than cosmetic.
         let bundled = EngineMode::Bundled(PathBuf::from("engine.exe"));
         let args = args_for(&bundled, "D:/x");
         assert_eq!(args, ["--home", "D:/x", "collect"]);
@@ -3075,7 +3530,7 @@ mod sort_tests {
                 row("no salary", "Acme", Some(90.0), None),
                 row("has salary", "Nimbus", Some(80.0), Some(120_000)),
             ];
-            UnlatchedApp::sort_rows(&mut rows, SortBy::Salary, desc);
+            UnlatchedApp::sort_rows_multi(&mut rows, &[(SortBy::Salary, desc)]);
             assert_eq!(rows[0].job.title, "has salary", "desc={desc}");
         }
     }
@@ -3086,9 +3541,9 @@ mod sort_tests {
             row("low", "Acme", Some(60.0), None),
             row("high", "Nimbus", Some(95.0), None),
         ];
-        UnlatchedApp::sort_rows(&mut rows, SortBy::Score, true);
+        UnlatchedApp::sort_rows_multi(&mut rows, &[(SortBy::Score, true)]);
         assert_eq!(rows[0].job.title, "high");
-        UnlatchedApp::sort_rows(&mut rows, SortBy::Score, false);
+        UnlatchedApp::sort_rows_multi(&mut rows, &[(SortBy::Score, false)]);
         assert_eq!(rows[0].job.title, "low");
     }
 
@@ -3098,8 +3553,86 @@ mod sort_tests {
             row("b", "zeta", Some(1.0), None),
             row("a", "Alpha", Some(1.0), None),
         ];
-        UnlatchedApp::sort_rows(&mut rows, SortBy::Company, false);
+        UnlatchedApp::sort_rows_multi(&mut rows, &[(SortBy::Company, false)]);
         assert_eq!(rows[0].company_name.as_deref(), Some("Alpha"));
+    }
+
+    /// THE SORT THAT WAS ASKED FOR: undecided first, newest of those on top.
+    ///
+    /// One key cannot say this. Sorted by posted alone, a job passed on last
+    /// month sits above one that arrived this morning; sorted by status alone,
+    /// the undecided rows are in whatever order the query returned.
+    #[test]
+    fn status_then_posted_keeps_undecided_rows_on_top() {
+        let mut rows = vec![
+            row("passed today", "Acme", None, None),
+            row("undecided old", "Nimbus", None, None),
+            row("undecided today", "Vex", None, None),
+        ];
+        rows[0].status = Some("pass".to_string());
+        rows[0].job.posted_at = Some("2026-09-04".to_string());
+        rows[1].job.posted_at = Some("2020-01-01".to_string());
+        rows[2].job.posted_at = Some("2026-09-04".to_string());
+
+        UnlatchedApp::sort_rows_multi(
+            &mut rows,
+            &[(SortBy::Status, false), (SortBy::Posted, true)],
+        );
+        assert_eq!(rows[0].job.title, "undecided today");
+        assert_eq!(rows[1].job.title, "undecided old");
+        // The settled row falls to the bottom even though it is the newest,
+        // which is the whole point of the first key.
+        assert_eq!(rows[2].job.title, "passed today");
+    }
+
+    /// A LATER KEY ONLY BREAKS TIES. If the second key could reorder rows the
+    /// first key had already separated, "status then posted" would not mean
+    /// what it says.
+    #[test]
+    fn a_second_key_never_overrides_the_first() {
+        let mut rows = vec![
+            row("settled newest", "Acme", None, None),
+            row("open oldest", "Nimbus", None, None),
+        ];
+        rows[0].status = Some("no_offer".to_string());
+        rows[0].job.posted_at = Some("2026-09-04".to_string());
+        rows[1].job.posted_at = Some("2019-01-01".to_string());
+        UnlatchedApp::sort_rows_multi(
+            &mut rows,
+            &[(SortBy::Status, false), (SortBy::Posted, true)],
+        );
+        assert_eq!(rows[0].job.title, "open oldest");
+    }
+
+    /// Clicking a heading promotes it and pushes the previous primary down,
+    /// which is what makes a two-key sort reachable without a modifier.
+    #[test]
+    fn clicking_a_heading_promotes_it_and_keeps_the_old_one() {
+        let mut keys = vec![(SortBy::Status, false), (SortBy::Posted, true)];
+        // Simulating sort_by_column's list surgery, which is the part that
+        // has to be right; the method itself needs an app to call.
+        let column = SortBy::Score;
+        keys.retain(|(c, _)| *c != column);
+        keys.insert(0, (column, true));
+        keys.truncate(MAX_SORT_KEYS);
+        assert_eq!(keys[0].0, SortBy::Score);
+        assert_eq!(keys[1].0, SortBy::Status);
+        assert_eq!(keys.len(), 3);
+    }
+
+    /// THE CAP HOLDS. A fourth column pushes the least significant one out
+    /// rather than growing a sort nobody can read.
+    #[test]
+    fn the_sort_never_grows_past_three_keys() {
+        let mut keys = vec![
+            (SortBy::Status, false),
+            (SortBy::Posted, true),
+            (SortBy::Score, true),
+        ];
+        keys.insert(0, (SortBy::Company, false));
+        keys.truncate(MAX_SORT_KEYS);
+        assert_eq!(keys.len(), MAX_SORT_KEYS);
+        assert!(!keys.iter().any(|(c, _)| *c == SortBy::Score));
     }
 
     #[test]
@@ -3110,7 +3643,7 @@ mod sort_tests {
         ];
         rows[0].job.posted_at = Some("2020-01-01".to_string());
         rows[1].job.posted_at = Some("2026-08-01".to_string());
-        UnlatchedApp::sort_rows(&mut rows, SortBy::Posted, true);
+        UnlatchedApp::sort_rows_multi(&mut rows, &[(SortBy::Posted, true)]);
         assert_eq!(rows[0].job.title, "new");
     }
 

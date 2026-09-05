@@ -13,6 +13,7 @@ mod attachments;
 mod browse;
 mod collectors;
 mod config;
+mod criteria;
 mod config_draft;
 mod date;
 mod db;

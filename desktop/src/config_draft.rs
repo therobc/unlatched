@@ -6,7 +6,8 @@
 // every field that failed validation.
 
 use crate::config::{
-    AgentApiConfig, Config, CredentialsConfig, FetchConfig, SearchConfig, UsajobsCredentials,
+    AgentApiConfig, CollectorEntry, Config, CredentialsConfig, FetchConfig, SearchConfig,
+    UsajobsCredentials,
     KNOWN_SOURCES,
 };
 use std::collections::BTreeMap;
@@ -85,6 +86,10 @@ pub struct ConfigDraft {
     pub refresh_weekdays_only: bool,
     pub usajobs_email: String,
     pub usajobs_api_key: String,
+    /// Edited in place by the Collectors section, not parsed out of text
+    /// fields like the rest of this struct: an entry is a record, and the
+    /// screen edits the record.
+    pub collectors: Vec<CollectorEntry>,
 }
 
 /// Is this way of working ticked?
@@ -147,6 +152,7 @@ impl ConfigDraft {
             refresh_weekdays_only: cfg.refresh.weekdays_only,
             usajobs_email: cfg.credentials.usajobs.email.clone().unwrap_or_default(),
             usajobs_api_key: cfg.credentials.usajobs.api_key.clone().unwrap_or_default(),
+            collectors: cfg.collectors.clone(),
         }
     }
 
@@ -274,6 +280,48 @@ impl ConfigDraft {
         let usajobs_email = self.usajobs_email.trim().to_string();
         let usajobs_api_key = self.usajobs_api_key.trim().to_string();
 
+        let mut collectors: Vec<CollectorEntry> = Vec::new();
+        let mut seen: Vec<String> = Vec::new();
+        for entry in &self.collectors {
+            let has_id = !entry.id.trim().is_empty();
+            let has_path = !entry.path.trim().is_empty();
+            // A WHOLLY blank row is what an empty Add button leaves behind, and
+            // blocking every other field on the screen over it would be absurd.
+            // A HALF-filled one is somebody who started and stopped - dropping
+            // that silently would lose what they typed.
+            if !has_id && !has_path {
+                continue;
+            }
+            if !has_path {
+                errors.push(format!(
+                    "Collector {:?} needs the path to the file it writes.",
+                    entry.id.trim()
+                ));
+                continue;
+            }
+            let ident = match crate::config::normalise_collector_id(&entry.id) {
+                Ok(ident) => ident,
+                Err(message) => {
+                    errors.push(message);
+                    continue;
+                }
+            };
+            if seen.contains(&ident) {
+                errors.push(format!(
+                    "Collector {ident:?} is listed more than once. Two entries \
+                     sharing an id would put two files' jobs under one name."
+                ));
+                continue;
+            }
+            seen.push(ident.clone());
+            collectors.push(CollectorEntry {
+                id: ident,
+                path: entry.path.trim().to_string(),
+                label: entry.label.trim().to_string(),
+                ..entry.clone()
+            });
+        }
+
         if !errors.is_empty() {
             return Err(errors);
         }
@@ -342,6 +390,7 @@ impl ConfigDraft {
                     },
                 },
             },
+            collectors,
         })
     }
 }
@@ -404,6 +453,91 @@ pub fn parse_times(raw: &str) -> Result<Vec<String>, String> {
         .into_iter()
         .map(|(h, m)| format!("{h:02}:{m:02}"))
         .collect())
+}
+
+#[cfg(test)]
+mod collector_tests {
+    use super::ConfigDraft;
+    use crate::config::{CollectorEntry, Config};
+
+    /// SAVING A BROKEN ENTRY IS REFUSED, not silently corrected. The engine
+    /// would report it hours later, on a screen nobody is looking at.
+    #[test]
+    fn a_collector_with_an_unusable_id_fails_the_save() {
+        let mut draft = ConfigDraft::from_config(&Config::default());
+        draft.collectors.push(CollectorEntry {
+            id: "has space".to_string(),
+            path: "C:/handoff/partner.json".to_string(),
+            enabled: true,
+            ..CollectorEntry::default()
+        });
+        let errors = draft.to_config().unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("has space")), "{errors:?}");
+    }
+
+    /// TWO ENTRIES CANNOT SHARE A NAMESPACE. Verified in collectors.configured:
+    /// the second entry is skipped and a line is appended to `problems`, which
+    /// this app does show - in the collectors menu, on a later visit. Until
+    /// then both entries sit on the Config screen looking configured while one
+    /// of them never runs.
+    #[test]
+    fn two_collectors_cannot_share_an_id() {
+        let mut draft = ConfigDraft::from_config(&Config::default());
+        for path in ["C:/a.json", "C:/b.json"] {
+            draft.collectors.push(CollectorEntry {
+                id: "Partner".to_string(),
+                path: path.to_string(),
+                enabled: true,
+                ..CollectorEntry::default()
+            });
+        }
+        let errors = draft.to_config().unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("more than once")), "{errors:?}");
+    }
+
+    /// The id is stored normalised, because that is the form the engine writes
+    /// into jobs.source. Verified in importer.check_collector_id, which returns
+    /// the stripped and lower-cased value and records that everything
+    /// downstream uses what it returns. Saving "MyBoard" and matching on
+    /// "myboard" later would look like the collector had never run.
+    #[test]
+    fn a_saved_collector_id_is_lowercased() {
+        let mut draft = ConfigDraft::from_config(&Config::default());
+        draft.collectors.push(CollectorEntry {
+            id: "MyBoard".to_string(),
+            path: "C:/handoff/partner.json".to_string(),
+            enabled: true,
+            ..CollectorEntry::default()
+        });
+        let cfg = draft.to_config().unwrap();
+        assert_eq!(cfg.collectors[0].id, "myboard");
+    }
+
+    /// A row somebody added and did not fill in is DROPPED rather than
+    /// refused. An Add button leaves a blank behind, and that is not a reason
+    /// to block every other field on the screen from saving.
+    #[test]
+    fn a_blank_collector_row_is_dropped_not_refused() {
+        let mut draft = ConfigDraft::from_config(&Config::default());
+        draft.collectors.push(CollectorEntry::default());
+        let cfg = draft.to_config().expect("a blank row blocked the save");
+        assert!(cfg.collectors.is_empty());
+    }
+
+    /// A HALF-FILLED row is a different thing from a blank one: somebody
+    /// started and stopped. Dropping it would lose what they typed with
+    /// nothing on screen to say so - by construction, since the drop branch
+    /// pushes no message.
+    #[test]
+    fn a_half_filled_collector_row_is_refused() {
+        let mut draft = ConfigDraft::from_config(&Config::default());
+        draft.collectors.push(CollectorEntry {
+            id: "partner".to_string(),
+            ..CollectorEntry::default()
+        });
+        let errors = draft.to_config().unwrap_err();
+        assert!(errors.iter().any(|e| e.contains("file")), "{errors:?}");
+    }
 }
 
 #[cfg(test)]

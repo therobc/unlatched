@@ -225,10 +225,12 @@ mod tests {
     fn a_good_file_round_trips() {
         let dir = dir_for("round-trip");
         let path = dir.join("desktop_settings.json");
-        let mut settings = DesktopSettings::default();
-        settings.theme = DARK.to_string();
-        settings.column_order = vec!["title".to_string(), "company".to_string()];
-        settings.browser = "D:/browsers/thing.exe".to_string();
+        let settings = DesktopSettings {
+            theme: DARK.to_string(),
+            column_order: vec!["title".to_string(), "company".to_string()],
+            browser: "D:/browsers/thing.exe".to_string(),
+            ..DesktopSettings::default()
+        };
         save(&path, &settings).unwrap();
         assert_eq!(load(&path), settings);
         let _ = fs::remove_dir_all(&dir);

@@ -215,6 +215,41 @@ pub struct CredentialsConfig {
     pub usajobs: UsajobsCredentials,
 }
 
+/// One configured handoff collector, as `config.json` holds it.
+///
+/// MODELLED SO IT CAN BE EDITED ON A SCREEN. Adding a collector meant opening
+/// config.json in a text editor, which is the one setup step in this app that
+/// still required one.
+///
+/// `rest` IS THE IMPORTANT FIELD. `config::save` merges over what is on disk,
+/// but arrays are replaced WHOLE - deliberately, because a list here is a
+/// complete answer and element-wise merging would make removing one
+/// impossible. So a collector entry modelled with only the four fields this
+/// screen shows would silently delete `schedule`, `we_may_refetch` and
+/// `pushes_closures` the moment anybody pressed Save. Flattening the unknown
+/// keys back out keeps them, and `a_collector_keeps_the_fields_this_screen_
+/// does_not_model` is the guard.
+#[derive(Serialize, Deserialize, Clone, Debug, Default, PartialEq)]
+pub struct CollectorEntry {
+    /// The namespace: it becomes jobs.source and the prefix on every key the
+    /// collector writes, so two senders never overwrite each other.
+    pub id: String,
+    /// What the menu calls it. Falls back to the id when empty.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub label: String,
+    /// The file this collector leaves for us. Read, never written.
+    pub path: String,
+    #[serde(default = "default_enabled")]
+    pub enabled: bool,
+    /// Every other key the engine understands and this screen does not.
+    #[serde(flatten)]
+    pub rest: serde_json::Map<String, serde_json::Value>,
+}
+
+fn default_enabled() -> bool {
+    true
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[serde(default)]
 pub struct Config {
@@ -239,6 +274,44 @@ pub struct Config {
     pub agent_api: AgentApiConfig,
     pub refresh: RefreshConfig,
     pub credentials: CredentialsConfig,
+    /// Programs that hand rows over in a file. Empty on a profile that has
+    /// none, which is most of them.
+    #[serde(default)]
+    pub collectors: Vec<CollectorEntry>,
+}
+
+/// A collector id, normalised, or a sentence saying what is wrong with it.
+///
+/// THE SAME RULE THE ENGINE APPLIES, deliberately duplicated rather than
+/// deferred to. Verified against importer.check_collector_id: 1-32 characters
+/// of a-z, 0-9, underscore or hyphen, first character a letter or digit. A bad
+/// entry does not raise there - collectors.configured collects it into
+/// `problems` and carries on - so it surfaces in the collectors menu, a
+/// different screen and a later moment than the one where the id was typed.
+/// Checked here, a typo is a message beside the field.
+///
+/// LOWERCASED, NOT REFUSED, matching that function, which strips and
+/// lower-cases before matching and returns the cleaned value; its own note
+/// records that everything downstream uses what it returns rather than what it
+/// was handed.
+pub fn normalise_collector_id(raw: &str) -> Result<String, String> {
+    let cleaned = raw.trim().to_ascii_lowercase();
+    let usable = (1..=32).contains(&cleaned.chars().count())
+        && cleaned
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '-')
+        && cleaned
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_lowercase() || c.is_ascii_digit());
+    if usable {
+        Ok(cleaned)
+    } else {
+        Err(format!(
+            "Collector id {raw:?} is not usable: 1-32 characters of a-z, 0-9, \
+             underscore or hyphen, starting with a letter or digit."
+        ))
+    }
 }
 
 impl Default for Config {
@@ -257,6 +330,7 @@ impl Default for Config {
             agent_api: AgentApiConfig::default(),
             refresh: RefreshConfig::default(),
             credentials: CredentialsConfig::default(),
+            collectors: Vec::new(),
         }
     }
 }
@@ -385,6 +459,71 @@ fn merge(base: serde_json::Value, overlay: serde_json::Value) -> serde_json::Val
 
 #[cfg(test)]
 mod tests {
+
+    /// THE ID RULE, CHECKED AGAINST THE ENGINE'S. Every case here was read off
+    /// importer.check_collector_id and verified against it: the colon case is
+    /// the one that function names as its reason for existing, because "a
+    /// collector that could put a colon in its own id could claim another
+    /// collector's namespace". The front end must not accept what the engine
+    /// will reject.
+    #[test]
+    fn a_collector_id_is_checked_the_way_the_engine_checks_it() {
+        assert_eq!(normalise_collector_id("partner").unwrap(), "partner");
+        assert_eq!(normalise_collector_id("  MyBoard  ").unwrap(), "myboard");
+        assert_eq!(normalise_collector_id("board-2_x").unwrap(), "board-2_x");
+
+        for bad in [
+            "", "   ", "_leading", "-leading", "has space", "has:colon", "has/slash",
+        ] {
+            assert!(normalise_collector_id(bad).is_err(), "{bad:?} was accepted");
+        }
+        assert!(normalise_collector_id(&"a".repeat(33)).is_err());
+        assert!(normalise_collector_id(&"a".repeat(32)).is_ok());
+    }
+
+
+    /// SAVING FROM THIS SCREEN MUST NOT EAT THE ENGINE'S FIELDS.
+    ///
+    /// `merge` replaces arrays whole, so a collector entry round-tripped
+    /// through a struct that models four keys would come back as four keys -
+    /// and `schedule`, `we_may_refetch` and `pushes_closures` would be gone
+    /// from a file the person only meant to rename something in. Silently:
+    /// the file still parses and the collector still runs, just on every
+    /// refresh instead of at 13:00.
+    #[test]
+    fn a_collector_keeps_the_fields_this_screen_does_not_model() {
+        let raw = serde_json::json!({
+            "id": "partner",
+            "label": "Partner app",
+            "path": "C:/handoff/partner.json",
+            "enabled": true,
+            "schedule": ["13:00"],
+            "we_may_refetch": false,
+            "pushes_closures": true
+        });
+        let entry: CollectorEntry = serde_json::from_value(raw).unwrap();
+        assert_eq!(entry.id, "partner");
+        assert_eq!(entry.rest.len(), 3, "unmodelled keys were dropped on read");
+
+        let back = serde_json::to_value(&entry).unwrap();
+        assert_eq!(back["schedule"], serde_json::json!(["13:00"]));
+        assert_eq!(back["we_may_refetch"], serde_json::json!(false));
+        assert_eq!(back["pushes_closures"], serde_json::json!(true));
+    }
+
+    /// The smallest entry the engine accepts is id plus path - every other
+    /// field has a default there, so this side must not demand more than the
+    /// contract does.
+    #[test]
+    fn the_smallest_usable_entry_reads() {
+        let entry: CollectorEntry = serde_json::from_value(serde_json::json!({
+            "id": "partner", "path": "C:/handoff/partner.json"
+        }))
+        .unwrap();
+        assert!(entry.enabled, "a collector with no enabled key is on");
+        assert!(entry.label.is_empty());
+    }
+
     use super::*;
 
     /// `name` keeps each test in its own folder: they run in parallel, and

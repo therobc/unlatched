@@ -598,7 +598,7 @@ pub fn days_since_posted(raw: &str) -> Option<i64> {
 /// The year is left off deliberately: a job search runs in months, the column
 /// is narrow, and a year on every row is noise that pushes the part that
 /// varies off the edge. The full date is on the hover.
-pub fn short_date(raw: &str) -> String {
+pub fn short_date(raw: &str, offset_secs: i64) -> String {
     const MONTHS: [&str; 12] = [
         "Jan", "Feb", "Mar", "Apr", "May", "Jun",
         "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -606,6 +606,11 @@ pub fn short_date(raw: &str) -> String {
     if raw.len() < 10 {
         return String::new();
     }
+    // THE LOCAL DAY, not the stored one. Every caller of this is showing a
+    // moment a person acted at, and their evening is already tomorrow in UTC:
+    // 199 of 630 statuses in one real profile were displayed a day late,
+    // measured 2026-09-05.
+    let raw = &crate::date::local_date(raw, offset_secs);
     let month: usize = match raw.get(5..7).and_then(|m| m.parse::<usize>().ok()) {
         Some(m) if (1..=12).contains(&m) => m,
         _ => return String::new(),
@@ -623,15 +628,15 @@ mod short_date_tests {
 
     #[test]
     fn reads_as_a_date_a_person_would_write() {
-        assert_eq!(short_date("2026-07-24T13:02:11+00:00"), "24 Jul");
-        assert_eq!(short_date("2026-01-05"), "5 Jan");
+        assert_eq!(short_date("2026-07-24T13:02:11+00:00", 0), "24 Jul");
+        assert_eq!(short_date("2026-01-05", 0), "5 Jan");
     }
 
     #[test]
     fn nonsense_yields_nothing_rather_than_a_wrong_date() {
-        assert_eq!(short_date(""), "");
-        assert_eq!(short_date("not-a-date"), "");
-        assert_eq!(short_date("2026-13-01"), "");
+        assert_eq!(short_date("", 0), "");
+        assert_eq!(short_date("not-a-date", 0), "");
+        assert_eq!(short_date("2026-13-01", 0), "");
     }
 }
 

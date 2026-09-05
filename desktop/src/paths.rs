@@ -78,6 +78,25 @@ pub fn downloads_dir() -> Option<PathBuf> {
     dir.is_dir().then_some(dir)
 }
 
+/// The person's Documents folder, or None if it cannot be found.
+///
+/// None for the same reason downloads_dir returns it: somebody who has
+/// relocated Documents would otherwise be told a file went somewhere it did
+/// not. The caller falls back to the profile folder, which always exists
+/// because the app just read a database out of it.
+///
+/// UNTESTED, like downloads_dir beside it, and for a reason worth writing
+/// down rather than leaving as an omission: the only branch reads an
+/// environment variable that is global to the process, so a test would have to
+/// mutate USERPROFILE and would race anything else running.
+pub fn documents_dir() -> Option<PathBuf> {
+    let base = env::var("USERPROFILE")
+        .or_else(|_| env::var("HOME"))
+        .ok()?;
+    let dir = PathBuf::from(base).join("Documents");
+    dir.is_dir().then_some(dir)
+}
+
 /// A path inside `dir` for `name` that does not already exist, by adding
 /// " (2)", " (3)" and so on before the extension - the convention every
 /// browser uses, so it needs no explanation.

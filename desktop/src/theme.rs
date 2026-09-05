@@ -37,6 +37,26 @@ pub const TEXT_LABEL: f32 = 10.5;
 /// the same constraint the status palette follows.
 pub const ACCENT: egui::Color32 = egui::Color32::from_rgb(59, 130, 246);
 
+/// The band behind a row that is TICKED for a bulk action.
+///
+/// NOT THE SELECTION COLOUR. The blue band is the row the arrow keys are on -
+/// one row, moving as you read - and the tick is a different fact: a set you
+/// are assembling, which stays put while the cursor moves through it.
+/// By construction the two can be on screen at once and on different rows, so one
+/// colour for both would make "where am I" and "what have I chosen"
+/// indistinguishable at a glance.
+///
+/// Amber rather than another blue, because ACCENT is the selection and any
+/// nearby shade of it reads as a slightly different selection.
+///
+/// BOTH THEMES FROM ONE DEFINITION. The alpha differs because the ground it
+/// sits on does - the same value over a light background is either invisible
+/// or shouting.
+pub fn ticked_row_fill(dark: bool) -> egui::Color32 {
+    let amber = egui::Color32::from_rgb(217, 119, 6);
+    amber.gamma_multiply(if dark { 0.30 } else { 0.18 })
+}
+
 pub fn apply(ctx: &egui::Context, dark: bool) {
     let mut visuals = if dark {
         egui::Visuals::dark()
