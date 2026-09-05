@@ -93,24 +93,102 @@ def read(path: Path) -> dict[str, Any]:
     return data
 
 
-def apply(cfg: dict[str, Any], incoming: dict[str, Any]) -> list[str]:
-    """Merge criteria into `cfg` in place. Returns which blocks changed.
+# How an incoming list meets one that is already there.
+#
+# TWO ANSWERS, BOTH RIGHT, WHICH IS WHY THE PERSON PICKS. Somebody keeping one
+# search in two tools wants the union - a title added in the other app should
+# arrive without deleting the ones typed here. Somebody handed a colleague's
+# file wants exactly that file. This function did only the second,
+# by construction: it merged at KEY level, so a list arrived whole and replaced
+# what was there. The choice is what the ticket asks be made visible.
+MODES = ("merge", "replace")
+
+
+def _combine(current: Any, incoming: Any, mode: str) -> Any:
+    """One key's new value.
+
+    LISTS ARE THE ONLY PLACE THE MODE SHOWS. A floor, a currency or a tick box
+    holds one answer, and two answers cannot both be kept - so under either
+    mode the incoming one wins. A list holds several, and there the question
+    "as well as, or instead of" is real.
+    """
+    if mode == "merge" and isinstance(current, list) and isinstance(incoming, list):
+        # Existing entries first and in their own order: a merge must read as
+        # an addition to what the person built, not as a reshuffle of it.
+        out = list(current)
+        out.extend(item for item in incoming if item not in out)
+        return out
+    return incoming
+
+
+def apply(cfg: dict[str, Any], incoming: dict[str, Any],
+          mode: str = "replace") -> list[str]:
+    """Bring criteria into `cfg` in place. Returns which blocks changed.
 
     Block by block, and only blocks the file actually carries: a file with just
     `search` must not blank somebody's skills vocabulary. Within a block the
     incoming keys win, and keys the sender does not know about are left alone -
     so an older exporter cannot silently drop a setting a newer app added.
+
+    `mode` decides what happens to a LIST. Defaults to "replace", which is what
+    this function did before the choice existed, so a caller that does not pass
+    one gets the behaviour it already had.
     """
+    if mode not in MODES:
+        msg = f"mode has to be one of {', '.join(MODES)}, not {mode!r}"
+        raise CriteriaError(msg)
     changed = []
     for block in BLOCKS:
         if block not in incoming:
             continue
         current = cfg.get(block)
         if isinstance(current, dict) and isinstance(incoming[block], dict):
-            merged = {**current, **incoming[block]}
+            merged = dict(current)
+            for key, value in incoming[block].items():
+                merged[key] = _combine(current.get(key), value, mode)
         else:
             merged = incoming[block]
         if merged != current:
             cfg[block] = merged
             changed.append(block)
     return changed
+
+
+def preview(cfg: dict[str, Any], incoming: dict[str, Any],
+            mode: str = "replace") -> list[dict[str, Any]]:
+    """What an import would do to each key, without doing any of it.
+
+    SHOWN BEFORE ANYTHING IS WRITTEN, because a criteria file is somebody
+    else's idea of the search and the two are not the same document. "3 blocks
+    changed" does not tell a person whether their salary floor is about to move
+    - which is exactly the thing they would have wanted to know first.
+
+    One entry per key that would actually change, carrying the old and new
+    values so the caller can word it however suits its screen.
+    """
+    before = json.loads(json.dumps({b: cfg.get(b) for b in BLOCKS}))
+    after = json.loads(json.dumps(before))
+    apply(after, incoming, mode)
+    rows: list[dict[str, Any]] = []
+    for block in BLOCKS:
+        old_block = before.get(block) or {}
+        new_block = after.get(block) or {}
+        if not isinstance(old_block, dict) or not isinstance(new_block, dict):
+            if old_block != new_block:
+                rows.append({"block": block, "key": "", "was": old_block,
+                             "becomes": new_block, "added": 0, "removed": 0})
+            continue
+        for key in sorted(set(old_block) | set(new_block)):
+            was = old_block.get(key)
+            becomes = new_block.get(key)
+            if was == becomes:
+                continue
+            added = removed = 0
+            if isinstance(was, list) or isinstance(becomes, list):
+                was_list = was if isinstance(was, list) else []
+                new_list = becomes if isinstance(becomes, list) else []
+                added = len([x for x in new_list if x not in was_list])
+                removed = len([x for x in was_list if x not in new_list])
+            rows.append({"block": block, "key": key, "was": was,
+                         "becomes": becomes, "added": added, "removed": removed})
+    return rows

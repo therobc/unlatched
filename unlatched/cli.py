@@ -316,8 +316,9 @@ def _collect(args: argparse.Namespace) -> int:
         companies = [c for c in companies if c["ats"] == args.source]
     if getattr(args, "origin", None):
         # An employer added before the column existed has an empty origin and
-        # is honestly unknown, so it matches nothing rather than being guessed
-        # into the set somebody is about to fetch on behalf of.
+        # is honestly unknown, so by construction it matches no --origin value
+        # rather than being guessed into the set somebody is about to fetch on
+        # behalf of.
         companies = [c for c in companies
                      if (c["origin"] or "") == args.origin]
 
@@ -326,33 +327,35 @@ def _collect(args: argparse.Namespace) -> int:
     summary = []
 
     # A DURABLE RECORD, because the stdout lines below live only in the
-    # desktop's in-memory log and vanish when it closes. An eleven-hour run had
-    # to be reconstructed from row timestamps afterwards, and those can only
-    # show where a run got to - never which employer it was stuck on.
+    # desktop's in-memory log and by construction vanish when it closes.
+    # Observed: an eleven-hour run had to be reconstructed from row timestamps
+    # afterwards, and those can only show where a run got to - never which
+    # employer it was stuck on.
     log = runlog_mod.RunLog(args.home, "collect")
     ceiling = _run_ceiling_minutes(cfg)
     employer_budget = _employer_budget_minutes(cfg)
     title_include = [t for t in ((cfg.get("search") or {}).get("title_include") or []) if t]
     fetch_mod.set_run_deadline(ceiling)
     # Both kinds of work, because the run does both: employers with their own
-    # boards, then the whole-board sources that belong to no employer. A header
-    # counting only the first read "0 employer(s)" over a run that collected
-    # 139 postings.
+    # boards, then the whole-board sources that belong to no employer.
+    # Observed: a header counting only the first read "0 employer(s)" over a
+    # run that collected 139 postings.
     board_sources = (0 if (args.company or args.source)
                      else len(sources.search_sources(registry)))
     log.start(len(companies), board_sources, ceiling)
 
-    # Read ONCE for the whole run rather than asked per posting: the question
-    # is only ever "was this key here before this run started", and a run reads
-    # thousands of postings.
+    # Read ONCE for the whole run rather than asked per posting.
+    # By construction the question is only ever "was this key here before this run
+    # started", and a run reads thousands of postings.
     known = db.all_job_keys(con)
     keep_all = bool(getattr(args, "keep_unqualified", False))
 
     reached = 0
     cut_short = False
     # PER RUN, NOT PER EMPLOYER. A network outage makes every board look quiet
-    # at once, which is exactly when re-probing fifty careers sites would be
-    # both useless and rude - see rediscover.MAX_HEALS_PER_RUN.
+    # at once by construction - every request fails - which is exactly when
+    # re-probing fifty careers sites would be both useless and rude. See
+    # rediscover.MAX_HEALS_PER_RUN.
     heals = 0
     for company in companies:
         # BETWEEN EMPLOYERS is where the loop can act on the ceiling; the
@@ -375,20 +378,19 @@ def _collect(args: argparse.Namespace) -> int:
         if enabled.get(ats_name) is False:
             continue
         collector = registry[ats_name]
-        # ANNOUNCED BEFORE THE FETCH, not only after it. The result line below
-        # says what a company yielded, which is no help while that company is
-        # the one taking the time - a paged Workday board can hold a run for
-        # minutes, and a log whose last line is the PREVIOUS employer looks
-        # like a run that has stalled. Two lines per company is cheap; not
-        # knowing whether the app is working is not.
+        # ANNOUNCED BEFORE THE FETCH, not only after it. The result line
+        # below says what a company yielded, which by construction cannot help
+        # while that company is the one taking the time - a paged Workday board
+        # can hold a run for minutes, and a log whose last line is the PREVIOUS
+        # employer looks like a run that has stalled.
         # Each employer gets its own allowance, so one that hangs costs its
         # budget rather than the run. See fetch.set_employer_deadline.
         fetch_mod.set_employer_deadline(employer_budget)
         log.employer_start(company["name"], ats_name)
         # Collectors that can use the title filter get it, so they can decide
         # which postings are worth a per-posting detail request. Measured on a
-        # real Oracle tenant: 907 postings, 7 passing the filter - 500 requests
-        # to keep 7, and ten minutes of every run.
+        # real Oracle tenant: 907 postings, 7 of them passing the filter - 500
+        # requests to keep 7, and ten minutes of every run.
         # Annotated, because the two entries have different types: a list
         # of titles and an integer offset.
         extra: dict[str, Any] = ({"title_include": title_include}
@@ -450,15 +452,17 @@ def _collect(args: argparse.Namespace) -> int:
                 "company_id": company["id"],
                 "title": job.title,
                 "location": job.location,
-                # The seat this posting advertises, so a re-advertisement
-                # under a new posting id is recognisable as the same opening.
+                # The seat this posting advertises. Built from employer,
+                # title and location rather than from the posting id, so
+                # by construction a re-advertisement under a new id lands on the
+                # same seat.
                 "seat": reposts.seat_key(company["name"], job.title,
                                           job.location or ""),
                 "url": job.url,
                 "posted_at": job.posted,
                 "fetched_at": now,
-                # Every run stamps this, so a posting the board stops
-                # returning stops advancing and falls behind.
+                # Every run stamps this, so by construction a posting the
+                # board stops returning stops advancing and falls behind.
                 "last_seen": now,
                 "description": job.description,
                 # Carried from the collector, not re-derived from the key -
@@ -467,11 +471,11 @@ def _collect(args: argparse.Namespace) -> int:
                 "employment_type": job.employment_type,
             })
             # NOTHING IS NOT AN ANSWER. An empty description means this run
-            # did not fetch one - because the title filter skipped it, or the
-            # board returned a posting without a body - and writing it would
-            # erase text already collected. Measured: 417 rows blanked on the
-            # first run after the pre-filter shipped. upsert_job takes a
-            # partial dict, so the column is simply left out.
+            # did not fetch one - the title filter skipped it, or the board
+            # returned a posting without a body - and writing it would erase
+            # text already collected. Counted: 417 rows blanked on the first
+            # run after the pre-filter shipped. upsert_job takes a partial
+            # dict, so by construction the column is simply left out.
             if not fields.get("description"):
                 fields.pop("description", None)
             db.upsert_job(con, job.key(), fields)
@@ -486,18 +490,18 @@ def _collect(args: argparse.Namespace) -> int:
                   "collected": collected, "qualified": qualified,
                   "stored": stored}
         # This board answered, so anything of theirs we did NOT see this time
-        # is off the board. Guarded on the collector having actually
-        # succeeded: an errored fetch reached `continue` above and never gets
-        # here, because absence after a failure means we did not look.
+        # is off the board. Guarded on the collector having succeeded -
+        # by construction an errored fetch took `continue` above and never reaches
+        # here - because absence after a failure means we did not look.
         delisted = db.mark_delisted(con, int(company["id"]), now)
         if delisted:
             entry["delisted"] = delisted
 
-        # SELF-HEALING. An employer that changes ATS does not announce it: the
-        # stored reference simply stops returning postings and the employer
-        # goes quiet for ever. Counting the quiet runs here - the one place
-        # that knows a board answered - is what turns that silence into a
-        # fact something can act on.
+        # SELF-HEALING. An employer that changes ATS does not announce it:
+        # the stored reference simply stops returning postings and the employer
+        # goes quiet for ever. Counting the quiet runs here - by construction
+        # the one place that knows a board answered - is what turns that
+        # silence into a fact something can act on.
         #
         # ONLY REACHED AFTER A SUCCESSFUL COLLECT, for the same reason
         # mark_delisted is: an errored fetch took `continue` above, and
@@ -524,20 +528,21 @@ def _collect(args: argparse.Namespace) -> int:
                           f"{finding.was_ats} -> {finding.now_ats} "
                           f"after {quiet} empty collections")
             else:
-                # SAID OUT LOUD. A board that has been silent for three runs
-                # and could not be re-found is the state a person most needs
-                # to know about, and it is the one that otherwise looks
-                # identical to an employer who is simply not hiring.
+                # SAID OUT LOUD. A board silent for three runs that could not
+                # be re-found is the state a person most needs to know about,
+                # and by construction it is indistinguishable on screen from an
+                # employer who is simply not hiring.
                 entry["quiet"] = quiet
                 log.line(f"     {company['name']}  QUIET for {quiet} runs, "
                          f"re-probe found nothing")
         cap = getattr(collector, "MAX_COLLECTED", None)
         if isinstance(cap, int) and collected >= cap:
-            # WHAT HITTING THE CEILING MEANS depends on whether this collector
-            # walks its backlog. For one that does, the rest arrives over the
-            # next few runs and saying "may hold more" alone reads as a
-            # permanent limit. For one that does not, it IS a permanent limit,
-            # and softening it would be the more expensive lie.
+            # WHAT HITTING THE CEILING MEANS depends on whether this
+            # collector walks its backlog - by construction, WANTS_BACKFILL.
+            # For one that does, the rest arrives over the next few runs and
+            # "may hold more" alone reads as a permanent limit. For one that
+            # does not, it IS a permanent limit, and softening it would be the
+            # more expensive lie.
             entry["note"] = (
                 f"stopped at this source's {cap}-posting ceiling; "
                 + ("the rest is read over the next few runs"
@@ -553,16 +558,18 @@ def _collect(args: argparse.Namespace) -> int:
                   f"{collected} collected, {qualified} qualified"
                   f"{_not_kept(collected, stored)}{note}")
 
-    # Search sources (USAJOBS) are not tied to any one company - they run
-    # once each, after the company loop, driven by config.search itself.
-    # --company/--source narrow the board loop above to one company/ATS;
-    # a search source has neither, so it only runs on an unnarrowed call.
+    # Search sources (USAJOBS) are not tied to any one company - they run once
+    # each, after the company loop, driven by config.search itself.
+    # --company/--source narrow the board loop above to one company or ATS;
+    # by construction a search source has neither, so it only runs on an
+    # unnarrowed call.
     if not args.company and not args.source:
         for name, mod in sources.search_sources(registry).items():
             if enabled.get(name) is False:
                 continue
-            # Same ceiling as the employer loop. A whole-board source pages
-            # through one host and can hang exactly as an employer can.
+            # Same ceiling as the employer loop - by construction the same
+            # run_expired() check. A whole-board source pages through one host
+            # and can hang exactly as an employer can.
             if fetch_mod.run_expired():
                 cut_short = True
                 break
@@ -645,8 +652,9 @@ def _collect(args: argparse.Namespace) -> int:
                         print(f"{'':<32} [{name}] not all read - {line}")
             if fetch_mod.employer_expired():
                 # NAMED, not silently short. An employer that ran out of time
-                # returns whatever it had, which is indistinguishable from a
-                # small board unless somebody says otherwise.
+                # returns whatever it had, which by construction is
+                # indistinguishable from a small board unless somebody says
+                # so.
                 entry["note"] = (f"stopped at this employer's {employer_budget:g}-minute "
                                   "budget; more may be available")
                 log.line(f"     {name}  BUDGET reached at {employer_budget:g} min")
@@ -658,19 +666,19 @@ def _collect(args: argparse.Namespace) -> int:
                       f"{qualified} qualified"
                       f"{_not_kept(collected, stored)}{note}")
 
-    # Seats are only comparable once the whole run has landed - a posting
-    # collected today is a repost of one collected weeks ago, and that is a
-    # cross-row fact.
+    # Seats are only comparable once the whole run has landed: a posting
+    # collected today is a repost of one collected weeks ago, and
+    # by construction that is a cross-row fact rather than a per-row one.
     reposts.annotate(con)
     # THE RUN FINISHED. Written here, at the end, and only here: a collect that
     # is killed, crashes, or is closed with the app never reaches this line, so
     # the marker distinguishes a completed run from an abandoned one.
     #
     # WHY A MARKER AT ALL, when last_collected already exists: that reads
-    # MAX(fetched_at), which advances DURING a run. A collect that died 10% in
-    # left a recent timestamp, so due() reported the anchor satisfied and the
-    # other 90% of boards went uncollected until the next anchor, with nothing
-    # anywhere saying so.
+    # MAX(fetched_at), which by construction advances DURING a run. Observed: a
+    # collect that died 10% in left a recent timestamp, so due() reported the
+    # anchor satisfied and the other 90% of boards went uncollected until the
+    # next anchor, with nothing anywhere saying so.
     missed = len(companies) - reached
     if cut_short:
         # NOT MARKED COMPLETE, deliberately. The marker is what due() reads to
@@ -680,7 +688,8 @@ def _collect(args: argparse.Namespace) -> int:
         # COLLECT_COMPLETED_KEY was added to stop, and a ceiling that ignored
         # it would have reintroduced it from a new direction.
         # NAMES THE STAGE. Stopping during the board sources leaves missed at
-        # zero, and "0 employer(s) not reached" reads like nothing was lost.
+        # zero by construction - every employer was reached - and "0
+        # employer(s) not reached" then reads like nothing was lost.
         where = ("with every employer reached, during the whole-board sources"
                  if missed == 0 else f"with {missed} employer(s) not reached")
         note = (f"stopped at the {_run_ceiling_minutes(cfg):g}-minute ceiling "
@@ -795,8 +804,9 @@ def cmd_screen(args: argparse.Namespace) -> int:
         if fields["qualified"] != row["qualified"]:
             changed += 1
         results.append({"key": row["key"], **fields})
-    # After every row is written, not per row: a seat's history is a
-    # comparison across rows, so it can only be settled once they all exist.
+    # After every row is written, not per row: by construction a seat's
+    # history is a comparison across rows, so it can only be settled once they
+    # all exist.
     reposts.annotate(con)
     con.close()
     if args.json:
@@ -839,14 +849,15 @@ def cmd_show(args: argparse.Namespace) -> int:
     con.close()
     out = _row(row)
     if out is None:
-        # Unreachable: `row` was already checked above. `_row` still
-        # returns Optional because it also serves the may-be-empty `st`
-        # lookup two lines down - this satisfies that honestly instead of
-        # asserting past it.
+        # Unreachable: `row` was already checked above. `_row` still returns
+        # Optional because it also serves the may-be-empty `st` lookup two
+        # lines down - enforced by the type, so this satisfies the checker
+        # honestly instead of asserting past it.
         raise RuntimeError("unreachable: row was checked above")
     out["status"] = _row(st)
-    # A one-line summary, not the full breakdown - `unlatched requirements`
-    # is where a reader goes for evidence strings and profile comparison.
+    # A one-line summary, not the full breakdown - by construction
+    # `unlatched requirements` is the command carrying evidence strings and
+    # profile comparison.
     reqs = requirements_mod.extract(row["description"] or "")
     out["requirements_summary"] = requirements_mod.summarize(reqs)
     if args.json:
@@ -972,9 +983,10 @@ def cmd_resume(args: argparse.Namespace) -> int:
         else:
             print(f"attached as {record['role']}: {record['file']}")
             if not record["readable"]:
-                # Stored anyway - it is their document - but a format we
-                # cannot read scores every skill as missing, and they should
-                # hear that from us rather than infer it from a zero.
+                # Stored anyway - it is their document - but by construction
+                # a format we cannot read scores every skill as missing, and
+                # they should hear that from us rather than infer it from a
+                # zero.
                 print("  NOTE: this format cannot be read for keyword matching. "
                       "Attach a .txt, .md or .docx copy as well to get a Fit score.")
         return 0
@@ -1010,8 +1022,8 @@ def cmd_recheck(args: argparse.Namespace) -> int:
     cfg = config.load(args.home)
     con = db.connect(args.home)
     if args.status:
-        # The same list recheck itself will use, so the count and the run
-        # describe one population - see manual.recheck_status.
+        # The same list recheck itself will use, so by construction the count
+        # and the run describe one population - see manual.recheck_status.
         state = manual_mod.recheck_status(
             con, sources=manual_mod.recheckable_sources(cfg))
         con.close()
@@ -1030,11 +1042,12 @@ def cmd_recheck(args: argparse.Namespace) -> int:
         print(f"  taken down: {key}")
     # NO "back up" LINE. `recheck` has no un-delisting branch any more - a 200
     # from a sign-in wall taking a dead posting OUT of delisted was worse than
-    # useless - so it returns no such key, and reading one here raised
-    # KeyError on every run that was not --json.
+    # useless - so by construction it returns no such key. Observed: reading
+    # one here raised KeyError on every run that was not --json.
     if result["unreadable"]:
-        # Named, not silent: "could not read" and "gone" must never look the
-        # same to the person deciding whether to follow up.
+        # Named, not silent. By construction the two produce the same empty
+        # result, so "could not read" and "gone" would look identical to the
+        # person deciding whether to follow up.
         print(f"  could not read {len(result['unreadable'])} - left as they were")
     return 0
 
@@ -1072,12 +1085,13 @@ def cmd_add(args: argparse.Namespace) -> int:
         return 1
 
     # What the person already DID about this job. Without a way to carry it,
-    # an import brings the posting across and loses the fact that they applied
-    # - which is the one thing the record exists to prevent them repeating.
+    # an import brings the posting across and by construction loses the fact
+    # that they applied - the one thing the record exists to stop them
+    # repeating.
     #
-    # Only ever SET. An existing status is a decision made in the app, and a
-    # later import must not overwrite or clear it: the sender knows what it
-    # gathered, not what has happened here since.
+    # Only ever SET, never cleared. An existing status is a decision made in
+    # the app, and by construction the sender knows what it gathered rather
+    # than what has happened here since.
     recorded = (args.status or "").strip().lower()
     if recorded:
         existing = con.execute(
@@ -1097,8 +1111,9 @@ def cmd_add(args: argparse.Namespace) -> int:
     if result["fetched"]:
         print("  filled in from the posting page")
     elif not result["has_description"]:
-        # Said plainly, because the person will otherwise wonder why the
-        # Fit column is empty for this one row.
+        # Said plainly: by construction a row imported without a description
+        # has no coverage to score, so the Fit column is empty and nothing else
+        # on screen explains why.
         print("  no description, so there is no keyword match for this one -"
               " paste it in with --description-file to get a Fit score")
     return 0
@@ -1133,19 +1148,26 @@ def cmd_criteria(args: argparse.Namespace) -> int:
         print(f"could not read {args.import_from}: {e}", file=sys.stderr)
         return 1
 
-    changed = criteria.apply(cfg, incoming)
+    # Computed BEFORE anything is applied, which is by construction the only
+    # moment it can be: `apply` mutates `cfg` in place, so afterwards there is
+    # no "was" left to compare against.
+    rows = criteria.preview(cfg, incoming, args.mode)
+
+    changed = criteria.apply(cfg, incoming, args.mode)
     if changed and not args.dry_run:
         problems = config.validate(cfg)
         if problems:
             for problem in problems:
                 print(f"error: {problem}", file=sys.stderr)
-            # Nothing is saved. Criteria arriving from another tool get the
-            # same validation a person's own edit does - an import is not a
-            # reason to accept a search that cannot run.
+            # Nothing is saved. Criteria arriving from another tool go
+            # through config.validate, the same call a person's own edit does -
+            # so by construction an import cannot accept a search that an edit
+            # would refuse.
             return 1
         config.save(cfg, args.home)
 
-    result = {"changed": changed, "applied": bool(changed) and not args.dry_run}
+    result = {"changed": changed, "applied": bool(changed) and not args.dry_run,
+              "mode": args.mode, "preview": rows}
     if args.json:
         _print_json(result)
         return 0
@@ -1154,6 +1176,12 @@ def cmd_criteria(args: argparse.Namespace) -> int:
         return 0
     verb = "would change" if args.dry_run else "updated"
     print(f"{verb}: {', '.join(changed)}")
+    for row in rows:
+        where = f"{row['block']}.{row['key']}" if row["key"] else row["block"]
+        if row["added"] or row["removed"]:
+            print(f"  {where}: +{row['added']} -{row['removed']}")
+        else:
+            print(f"  {where}: {row['was']!r} -> {row['becomes']!r}")
     return 0
 
 
@@ -1219,7 +1247,8 @@ def cmd_import(args: argparse.Namespace) -> int:
     try:
         rows = importer.read_rows(path)
         result = importer.import_all(con, cfg, rows, resume_text=resume_text)
-        # Seats are cross-row facts, so they are recomputed once the whole
+        # Seats are cross-row facts by construction - a repost is a
+        # comparison against other rows - so they are recomputed once the whole
         # import has landed rather than per row.
         reposts.annotate(con)
         if args.dedupe:
@@ -1432,13 +1461,13 @@ def cmd_closures(args: argparse.Namespace) -> int:
 def cmd_prune(args: argparse.Namespace) -> int:
     """Delete postings that never matched and that nobody ever looked at.
 
-    REPORTS BY DEFAULT AND DELETES ONLY ON --apply. This is the one command in
-    the program that destroys rows, and the counts are the whole basis for
-    agreeing to it - a person should be able to see what would go without
-    risking that seeing it is what makes it go.
+    REPORTS BY DEFAULT AND DELETES ONLY ON --apply. By construction this is
+    the one command in the program that destroys rows, and the counts are the
+    whole basis for agreeing to it - a person should be able to see what would
+    go without risking that seeing it is what makes it go.
 
-    Takes a backup beside the database first, so a prune run on the wrong
-    profile is an inconvenience rather than a loss.
+    Takes a backup beside the database first, so by construction a prune run
+    on the wrong profile is an inconvenience rather than a loss.
     """
     con = db.connect(args.home)
     try:
@@ -1507,8 +1536,9 @@ def cmd_delist(args: argparse.Namespace) -> int:
         if stamp is not None:
             db.close_untouched_delisted(con, [args.key], at=stamp)
         # `changed` is False when it already said this. Reported rather than
-        # hidden so a caller re-running a sweep can tell "99 closed" from
-        # "99 already known to be closed".
+        # hidden, because by construction the two produce the same row count
+        # and a caller re-running a sweep could not otherwise tell "99 closed"
+        # from "99 already known to be closed".
         result = {"key": args.key, "delisted_at": stamp,
                   "changed": bool(row["delisted_at"]) != bool(stamp)}
     finally:
@@ -1600,9 +1630,10 @@ def _apply_closures(con: sqlite3.Connection, keys: list[str],
         row = con.execute(
             "SELECT delisted_at FROM jobs WHERE key = ?", (key,)).fetchone()
         if row is None:
-            # THE SAME FUNCTION the import uses on a row, not a second copy of
-            # the rule: the sender names a posting the same way in both lists,
-            # so the two normalisations have to be the same one.
+            # THE SAME FUNCTION the import uses on a row, not a second copy
+            # of the rule - by construction the sender names a posting the same
+            # way in both lists, so two normalisations would be two chances to
+            # disagree.
             key = importer.namespaced_key(collector, raw)
             row = con.execute(
                 "SELECT delisted_at FROM jobs WHERE key = ?", (key,)).fetchone()
@@ -1680,10 +1711,10 @@ def _collector_is_due(args: argparse.Namespace,
             return False
         db.set_meta(con, collector.seen_marker, now.isoformat())
     except sqlite3.Error as e:
-        # The same posture as the rest of this path: a scheduling question that
-        # cannot be answered must not take the refresh down with it. Looking is
-        # the safe direction to fail in - an unchanged file is refused by
-        # fingerprint anyway.
+        # The same posture as the rest of this path: a scheduling question
+        # that cannot be answered must not take the refresh down with it.
+        # Looking is the safe direction to fail in - by construction an
+        # unchanged file is refused by fingerprint anyway.
         print(f"{collector.name}: could not read its schedule state: {e}",
               file=sys.stderr)
         return True
@@ -1737,27 +1768,28 @@ def _ingest_one(args: argparse.Namespace, cfg: dict[str, Any],
         if not force and db.get_meta(con, collector.marker) == fingerprint:
             # WE DEMONSTRABLY HOLD THIS FILE - the fingerprint is the one we
             # recorded when we took it. A profile that did so before the
-            # take-in stamp existed has no record of WHEN, and nothing would
-            # ever write one: the file never changes again, so this branch is
-            # the only one it will ever reach. Without this it reads as "not
-            # taken in yet" for ever, which is the exact complaint that found
+            # take-in stamp existed has no record of WHEN, and by construction
+            # nothing would ever write one: the file never changes again, so
+            # this branch is the only one it can reach. Without this it reads
+            # as "not taken in yet" for ever, which is the complaint that found
             # the bug.
             #
             # THE TIME RECORDED IS NOW, WHICH IS NOT WHEN IT ARRIVED. It is the
-            # first moment we can prove we hold it. Wrong once, by less than
-            # the age of the file, and corrected by the next real take-in.
+            # first moment we can prove we hold it - wrong once, by at most the
+            # age of the file, and corrected by the next real take-in.
             if db.get_meta(con, collector.taken_marker) is None:
                 db.set_meta(con, collector.taken_marker, status_mod.now_iso())
                 con.commit()
-            # THE DEAD-COLLECTOR CASE, and the only place it is visible. An
-            # unchanged file usually just means the sender has not run yet,
-            # which is silent by design. A file that has not been regenerated in
-            # over a day means the sender STOPPED - and from here those two look
-            # identical, because a stale file still exists and still parses. The
-            # sender's own stamp is the only thing that separates them.
+            # THE DEAD-COLLECTOR CASE, and by construction the only place it
+            # is visible. An unchanged file usually means the sender has not
+            # run yet, which is silent by design. A file not regenerated in
+            # over a day means the sender STOPPED - and from here the two are
+            # indistinguishable, because a stale file still exists and still
+            # parses. The sender's own stamp is the only thing separating
+            # them.
             if age is not None and age > STALE_HANDOFF_HOURS:
-                # NAMED, because with several collectors "a handoff is stale"
-                # does not say which one stopped.
+                # NAMED, because with several collectors "a handoff is
+                # stale" by construction does not say which one stopped.
                 print(f"{collector.name}: handoff at {path} was written "
                       f"{age:.0f}h ago and has not changed since - the sender "
                       "may have stopped", file=sys.stderr)
@@ -1766,14 +1798,16 @@ def _ingest_one(args: argparse.Namespace, cfg: dict[str, Any],
         result = importer.import_all(
             con, cfg, rows, resume_text=_load_resume_text(cfg, args.home),
             collector=collector.id)
-        # Seats are cross-row facts, so they are recomputed once the whole
-        # handoff has landed rather than per row - same as cmd_import.
+        # Seats are cross-row facts by construction, so they are recomputed
+        # once the whole handoff has landed rather than per row - same as
+        # cmd_import.
         reposts.annotate(con)
-        # Closures land AFTER the import on purpose: import_row calls relist()
-        # on every row it stores, so a closure applied first would be cleared by
-        # the import that follows and a row present in BOTH lists would come out
-        # live. The sender's closure is the later fact, so it wins.
-        # Asserted by test_a_row_present_in_both_lists_ends_closed.
+        # Closures land AFTER the import on purpose: import_row calls
+        # relist() on every row it stores, so by construction a closure applied
+        # first would be cleared by the import that follows and a row present
+        # in BOTH lists would come out live. The sender's closure is the later
+        # fact, so it wins. Asserted by
+        # test_a_row_present_in_both_lists_ends_closed.
         result["closed"], result["closed_unknown"] = _apply_closures(
             con, importer.read_closures(path), collector.id)
         # Marked only after the import lands. If this write fails the file is
@@ -1781,16 +1815,17 @@ def _ingest_one(args: argparse.Namespace, cfg: dict[str, Any],
         # importing twice is idempotent, missing a handoff is not recoverable.
         db.set_meta(con, collector.marker, fingerprint)
         # WHEN, beside WHAT. Written here rather than derived later from the
-        # rows: a handoff carrying only closures moves no row's fetched_at, and
-        # a reader inferring "taken in" from that concluded the file had never
-        # been read - see the dashboard's handoff line.
+        # rows: by construction a handoff carrying only closures moves no row's
+        # fetched_at, and a reader inferring "taken in" from that concluded the
+        # file had never been read - see the dashboard's handoff line.
         db.set_meta(con, collector.taken_marker, status_mod.now_iso())
         # Carried out even on a good run so the caller can SHOW the age rather
         # than only warn at a threshold. None means the sender stamped nothing,
-        # which is not the same as fresh and must not be displayed as if it were.
+        # which by construction is not the same as fresh and must not be
+        # displayed as if it were.
         result["age_hours"] = age
-        # PER COLLECTOR, so a caller with several of them can say which
-        # arrived, which is stale, and which brought nothing.
+        # PER COLLECTOR, so by construction a caller with several of them can
+        # say which arrived, which is stale, and which brought nothing.
         result["sources"] = [{"id": collector.id, "name": collector.name,
                               "imported": result.get("imported", 0),
                               "age_hours": age, "path": str(path)}]
@@ -1799,9 +1834,9 @@ def _ingest_one(args: argparse.Namespace, cfg: dict[str, Any],
         print(f"{collector.name}: could not take in {path}: {e}", file=sys.stderr)
         return None
     finally:
-        # Guarded because connect() is now inside the try and may never have
-        # returned. An unguarded close() here would raise from the finally and
-        # mask whatever actually went wrong.
+        # Guarded because connect() is inside the try and by construction may
+        # never have returned. An unguarded close() here would raise from the
+        # finally and mask whatever actually went wrong.
         if con is not None:
             con.close()
     result["path"] = str(path)
@@ -1850,8 +1885,9 @@ def cmd_ingest(args: argparse.Namespace) -> int:
         return 0
     print(f"took in {result['imported']} row(s) from {result['path']}")
     age = result.get("age_hours")
-    # "not stamped" is printed rather than skipped: a caller who sees no age line
-    # at all cannot tell whether the file was fresh or simply unverifiable.
+    # "not stamped" is printed rather than skipped: by construction a caller
+    # who sees no age line at all cannot tell whether the file was fresh or
+    # simply unverifiable.
     print("written {}".format(
         f"{age:.1f}h ago" if age is not None else "at an unstated time"))
     print(f"closed {result['closed']} posting(s)")
@@ -1900,9 +1936,10 @@ def _check_handoff(args: argparse.Namespace, path: Path) -> int:
         return 1 if report["problems"] else 0
     print(f"{report['path']}: {report['format']}, {report['jobs']} job(s), "
           f"{report['closed']} closure(s)")
-    # SAID EITHER WAY. A file with no stamp is not an error, but it is one this
-    # app cannot check for staleness - so a dead collector using it would look
-    # healthy, and silence here is what would let that happen.
+    # SAID EITHER WAY. A file with no stamp is not an error, but
+    # by construction it is one this app cannot check for staleness - so a dead
+    # collector using it would look healthy, and silence here is what would let
+    # that happen.
     print("  written   {}".format(
         report["generated_at"] or "not stated, so its age cannot be checked"))
     for problem in report["problems"]:
@@ -1936,9 +1973,10 @@ def cmd_collectors(args: argparse.Namespace) -> int:
             except (OSError, json.JSONDecodeError, ValueError):
                 # A file that cannot be read is not a fatal condition for a
                 # LISTING. The menu still has to offer the pull - which is how
-                # somebody finds out what is wrong with it. "" is the same
-                # answer as a file that carries no stamp: age unknowable, which
-                # handoff_age_hours reports as None rather than as fresh.
+                # somebody finds out what is wrong with it. "" is
+                # by construction the same answer as a file carrying no stamp: age
+                # unknowable, which handoff_age_hours reports as None rather
+                # than as fresh.
                 stamp = ""
             entries.append({
                 "id": c.id, "name": c.name, "enabled": c.enabled,
@@ -1968,9 +2006,9 @@ def cmd_collectors(args: argparse.Namespace) -> int:
         print("  written   {}".format(
             f"{age:.1f}h ago" if age is not None else "at an unstated time"))
     for problem in problems:
-        # On stderr and never merged into the list above: an entry that could
-        # not be used is not a collector, and printing it as one would offer a
-        # pull that cannot happen.
+        # On stderr and never merged into the list above: by construction an
+        # entry that could not be used is not a collector, and printing it as
+        # one would offer a pull that cannot happen.
         print(problem, file=sys.stderr)
     return 0
 
@@ -2014,22 +2052,23 @@ def cmd_refresh(args: argparse.Namespace) -> int:
     if args.check or not due:
         return _refresh_result(args, due, why, wake_in)
 
-    # SAID ON THE DUE PATH TOO. This line is how the desktop learns when to ask
-    # again, and it was printed only when a refresh was NOT owed - so on the
-    # day one ran, the app finished the collect knowing nothing about its next
-    # anchor, and anything showing "next look" had nothing to show. Printed
-    # BEFORE the work rather than after it, so a run that is killed part-way
-    # has still told the caller when to come back.
+    # SAID ON THE DUE PATH TOO. This line is how the desktop learns when to
+    # ask again, and it was printed only when a refresh was NOT owed -
+    # observed: on the day one ran, the app finished the collect knowing
+    # nothing about its next anchor, and anything showing "next look" had
+    # nothing to show. Printed BEFORE the work rather than after it, so
+    # by construction a run killed part-way has still told the caller when to come
+    # back.
     if not args.json:
         print(f"[wake-in] {int(wake_in)}")
 
     if not args.json:
         print(f"refreshing: {why}")
-    # Handed-over rows come in FIRST, so they are present when the dedupe runs
-    # at the end. Taking them in afterwards would leave them ungrouped until the
-    # next day, showing the same job twice every morning - the failure an earlier change
-    # exists to stop, and the same ordering mistake as rebalance-before-find.
-    # Order asserted by test_refresh_takes_the_handoff_before_grouping.
+    # Handed-over rows come in FIRST, so by construction they are present when
+    # the dedupe runs at the end. Taking them in afterwards would leave them
+    # ungrouped until the next day, showing the same job twice every morning -
+    # the same ordering mistake as rebalance-before-find. Order asserted by
+    # test_refresh_takes_the_handoff_before_grouping.
     taken = ingest_pending(args, cfg)
     if taken and not args.json:
         print(f"took in {taken['imported']} handed-over row(s)")
@@ -2088,12 +2127,13 @@ def group_new_duplicates(args: argparse.Namespace) -> None:
             closures_mod.hand_back(con, config.load(args.home))
         finally:
             con.close()
-    # NARROWED to what can actually fail here rather than caught broadly: every
-    # statement above is either opening the database or running SQL against it,
-    # so the anticipated failures are a locked or unwritable file (OSError) and
-    # a statement error (sqlite3.Error). A bare `except Exception` would also
-    # swallow a bug in the keeper rule - which is the one failure that must
-    # never be quiet, because folding away the wrong row is invisible.
+    # NARROWED to what can actually fail here rather than caught broadly:
+    # by construction every statement above is either opening the database or
+    # running SQL against it, so the anticipated failures are a locked or
+    # unwritable file (OSError) and a statement error (sqlite3.Error). A bare
+    # `except Exception` would also swallow a bug in the keeper rule - the one
+    # failure that must never be quiet, because folding away the wrong row is
+    # invisible.
     except (sqlite3.Error, OSError) as e:
         if not args.json:
             print(f"grouping duplicates failed (collection kept): {e}",
@@ -2181,9 +2221,10 @@ def cmd_brief(args: argparse.Namespace) -> int:
     # A resume is optimised for a SEARCH, not for one posting, and a search
     # routinely spans titles that want different words - "Implementation
     # Consultant" postings ask for things "Help Desk" postings never mention.
-    # One flat list of gaps hides that, and an agent working from it writes a
-    # resume that is average for everything and strong for nothing. So the
-    # gaps are also broken down by the search term that found the job.
+    # By construction one flat list of gaps cannot show that, and an agent
+    # working from it writes a resume average for everything and strong for
+    # nothing. So the gaps are also broken down by the search term that found
+    # the job.
     by_title: dict[str, dict[str, int]] = {}
     counts: dict[str, int] = {}
     terms = [t for t in ((cfg.get("search") or {}).get("title_include") or []) if t]
@@ -2224,8 +2265,8 @@ def cmd_brief(args: argparse.Namespace) -> int:
         "LEFT JOIN companies c ON c.id = j.company_id "
         "ORDER BY a.id ASC LIMIT ?", (ATTACHMENTS_IN_BRIEF + 1,)).fetchall()]
     con3.close()
-    # ANNOUNCED, NOT SILENT. A list that stops at a cap without saying so reads
-    # as "this is all of them".
+    # ANNOUNCED, NOT SILENT. By construction a list that stops at a cap
+    # without saying so is indistinguishable from a complete one.
     attachments_truncated = len(attachment_rows) > ATTACHMENTS_IN_BRIEF
     attachment_rows = attachment_rows[:ATTACHMENTS_IN_BRIEF]
     listed_attachments = []
@@ -2252,8 +2293,9 @@ def cmd_brief(args: argparse.Namespace) -> int:
             {"skill": skill, "wanted_by_jobs": count}
             for skill, count in sorted(tally.items(), key=lambda kv: (-kv[1], kv[0]))
         ],
-        # Ranked within each slice, so an agent can see that one group of
-        # titles wants words another group never asks for.
+        # Ranked within each slice, so by construction an agent can see that
+        # one group of titles wants words another group never asks for - a
+        # single ranking would average them together.
         "gaps_by_search_term": [
             {
                 "term": term,
@@ -2443,8 +2485,8 @@ def cmd_keywords(args: argparse.Namespace) -> int:
     cfg = config.load(args.home)
     con = db.connect(args.home)
     where = "" if args.all else " WHERE jobs.qualified = 1"
-    # The employer travels with each description so mined demand can count
-    # companies rather than postings.
+    # The employer travels with each description, so by construction mined
+    # demand can count companies rather than postings.
     # S608: `where` is one of the two literals chosen above, never caller
     # text, so the interpolation carries no injection surface.
     sql = ("SELECT jobs.description, companies.name AS company_name FROM jobs "  # noqa: S608
@@ -2565,10 +2607,10 @@ def cmd_status_import(args: argparse.Namespace) -> int:
     con.close()
     print(f"imported {result['status_rows']} status rows, "
           f"{result['log_rows']} log entries")
-    # SAID OUT LOUD, because "0 log entries" after re-importing a file is
-    # indistinguishable from a failed import otherwise. Re-importing is now a
-    # no-op rather than a way to double your own application history, and the
-    # person should be able to see that is what happened.
+    # SAID OUT LOUD, because by construction "0 log entries" after
+    # re-importing a file is indistinguishable from a failed import.
+    # Re-importing is a no-op rather than a way to double your own application
+    # history, and the person should be able to see that is what happened.
     already = result.get("log_duplicates", 0) + result.get("note_duplicates", 0)
     if already:
         print(f"  {already} entr{'y was' if already == 1 else 'ies were'} "
@@ -2725,6 +2767,9 @@ def build_parser() -> argparse.ArgumentParser:
                     help="read criteria from this file and apply them")
     sp.add_argument("--dry-run", action="store_true",
                     help="say what an import would change, and change nothing")
+    sp.add_argument("--mode", choices=criteria.MODES, default="replace",
+                    help="what an incoming LIST does to one already here: "
+                         "replace it, or add to it (default: replace)")
     sp.add_argument("--json", action="store_true")
 
     sp = sub.add_parser("forget-company",

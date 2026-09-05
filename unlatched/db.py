@@ -287,7 +287,25 @@ ADDED_JOB_COLUMNS = (("source", "TEXT"), ("employment_type", "TEXT"),
 # table's first release. Mirrors ADDED_STATUS_LOG_COLUMNS in the desktop's
 # db.rs - the schema is a shared contract, and a column only one side migrates
 # is how the two halves drift apart.
-ADDED_STATUS_LOG_COLUMNS = (("pay", "TEXT"), ("offer_date", "TEXT"))
+# `set_by` records WHO: "person" or "app", NULL for rows written before the
+# column existed. The two-way sync's convergence rule needs it - a hand mark has
+# to survive a machine write that arrives with a later clock - and nothing
+# recorded it before: closures.py notes that a person marking a posting closed
+# and a collector pushing the same closure both just set delisted_at.
+#
+# NOT BACKFILLED, on purpose. Who set the existing rows is unknown, and writing
+# "app" across them would erase provenance for the ones most likely to be a
+# person's. NULL is a third answer.
+ADDED_STATUS_LOG_COLUMNS = (("pay", "TEXT"), ("offer_date", "TEXT"),
+                            ("set_by", "TEXT"))
+
+# What goes in `set_by`. The desktop writes SET_BY_PERSON for everything -
+# verified 2026-09-05: all three of its writers are reached only from UI
+# actions. This half writes SET_BY_APP for the automatic paths (a collect that
+# finds a posting gone, an ingest carrying a sender's own status) and
+# SET_BY_PERSON for the `status` verb, which is somebody typing a decision.
+SET_BY_PERSON = "person"
+SET_BY_APP = "app"
 
 # WHERE A COMPANY CAME FROM. Mirrors ADDED_COMPANY_COLUMNS in the desktop.
 #

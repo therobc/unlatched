@@ -28,7 +28,7 @@ package itself never generates.
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
@@ -36,7 +36,19 @@ if TYPE_CHECKING:
 
 
 def now_iso() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    """The local wall clock with its offset: "2026-09-05T14:46:41-04:00".
+
+    LOCAL, NOT UTC, matching desktop/src/date.rs::now_iso. Both halves write
+    job_status and job_status_log, so a disagreement here is a disagreement
+    inside one column of one database.
+
+    astimezone() with no argument attaches THIS MACHINE'S zone, asked of the
+    operating system, so it is right wherever the app is installed and on both
+    sides of a daylight-saving change. The offset is kept on the stamp: a bare
+    local time is ambiguous across that change and unusable for the
+    cross-tool comparison the collector needs.
+    """
+    return datetime.now().astimezone().isoformat(timespec="seconds")
 
 
 # THE VOCABULARY, mirroring desktop/src/status.rs.
@@ -49,11 +61,12 @@ def now_iso() -> str:
 # two halves is exactly the failure that test exists to catch, and this file
 # and that one are edited by different hands weeks apart.
 FLOW = ("applied", "interviewed", "offer", "accepted_offer", "hired",
-        "offer_withdrawn", "declined_offer", "no_offer", "pass")
+        "offer_withdrawn", "declined_offer", "no_offer", "rejection_email",
+        "no_response", "pass")
 
 # Closed the loop, either way.
-SETTLED = ("hired", "offer_withdrawn", "declined_offer", "no_offer", "pass",
-           "closed")
+SETTLED = ("hired", "offer_withdrawn", "declined_offer", "no_offer",
+           "rejection_email", "no_response", "pass", "closed")
 
 # What the app writes onto a taken-down posting nobody ever judged.
 #
@@ -72,8 +85,12 @@ CLOSED = "closed"
 # rather than the current status, so a job since marked No Offer still counts:
 # somebody clearing out rejections is removing exactly the rows worth warning
 # about.
+# Rejection Email and No Response are both here: each of them is an
+# application that WAS sent, and the difference between them is whether
+# anybody answered - not whether it happened.
 PROVES_APPLIED = ("applied", "interviewed", "offer", "accepted_offer", "hired",
-                  "offer_withdrawn", "declined_offer", "no_offer")
+                  "offer_withdrawn", "declined_offer", "no_offer",
+                  "rejection_email", "no_response")
 
 # Statuses renamed since they were first written, applied on open by
 # db._migrate_status_tables. Mirrors status::RENAMES in the desktop.

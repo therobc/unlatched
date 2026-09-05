@@ -162,6 +162,17 @@ DEFAULTS: dict[str, Any] = {
     "ingest": {
         "path": None,
     },
+    # Programs that hand jobs over in a file. Verified in collectors._entry:
+    # an entry needs an id and a path, and collectors.DEFAULTS supplies the
+    # rest - label, enabled, schedule, we_may_refetch, pushes_closures.
+    #
+    # DECLARED HERE THOUGH `configured` TREATS A MISSING KEY AS EMPTY. It was
+    # read by this half and written by the desktop while being declared by
+    # neither, so a fresh config.json gave no sign the feature existed and the
+    # schema comparison between the two halves reported it as a stray. Empty
+    # is the same answer the reader already gave; the difference is that it is
+    # now written down.
+    "collectors": [],
     # Daily refresh, ON by default and switchable off per search.
     # Decided 2026-08-05: setting up or changing a search and pressing Search is
     # the deliberate act; once a search exists, keeping it current is what
