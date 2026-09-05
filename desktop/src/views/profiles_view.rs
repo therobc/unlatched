@@ -34,6 +34,9 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     ui.add_space(12.0);
     your_data(app, ui);
     ui.add_space(12.0);
+    criteria(app, ui);
+    show_criteria_preview(app, ui);
+    ui.add_space(12.0);
     which_build(ui);
     ui.add_space(12.0);
 
@@ -53,7 +56,9 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
         return;
     }
 
-    if ui.button("New profile").clicked() {
+    if crate::access::tag(ui.button("New profile"), egui::WidgetType::Button, "profiles-new")
+        .clicked()
+    {
         app.show_new_profile_modal = true;
         app.new_profile_draft = NewProfileDraft::default();
     }
@@ -192,7 +197,9 @@ fn show_removal_confirmation(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
             );
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                if ui.button("Cancel").clicked() {
+                if crate::access::tag(ui.button("Cancel"), egui::WidgetType::Button,
+                    "profiles-delete-cancel").clicked()
+                {
                     close = true;
                 }
                 if ui
@@ -241,8 +248,20 @@ fn appearance(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
         // `a.clicked() || b.clicked()` the short-circuit skips drawing the
         // second one on any frame the first is clicked, so the Dark option
         // would vanish for a frame exactly when it was being chosen.
-        let chose_light = ui.radio_value(&mut dark, false, "Light").clicked();
-        let chose_dark = ui.radio_value(&mut dark, true, "Dark").clicked();
+        let chose_light = crate::access::tag_with_value(
+            ui.radio_value(&mut dark, false, "Light"),
+            egui::WidgetType::RadioButton,
+            "theme-light",
+            if dark { "false" } else { "true" },
+        )
+        .clicked();
+        let chose_dark = crate::access::tag_with_value(
+            ui.radio_value(&mut dark, true, "Dark"),
+            egui::WidgetType::RadioButton,
+            "theme-dark",
+            if dark { "true" } else { "false" },
+        )
+        .clicked();
         if chose_light || chose_dark {
             app.settings.theme = if dark {
                 settings::DARK.to_string()
@@ -281,9 +300,17 @@ fn opening_links(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
         egui::ComboBox::from_id_source("browser_choice")
             .selected_text(crate::browse::label(&choice))
             .show_ui(ui, |ui| {
-                ui.selectable_value(&mut choice, String::new(), "System default");
+                crate::access::tag(
+                    ui.selectable_value(&mut choice, String::new(), "System default"),
+                    egui::WidgetType::SelectableLabel,
+                    "browser-system-default",
+                );
                 for (name, path) in &installed {
-                    ui.selectable_value(&mut choice, path.clone(), name);
+                    crate::access::tag(
+                        ui.selectable_value(&mut choice, path.clone(), name),
+                        egui::WidgetType::SelectableLabel,
+                        format!("browser-{}", crate::access::slug(name)),
+                    );
                 }
             });
         if ui
@@ -326,6 +353,156 @@ fn opening_links(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
 /// architecture and also a single point of loss, so the way out has to be
 /// somewhere a person can find on the day they need it - which is not a day
 /// they will spend reading documentation.
+/// Moving the search between this app and another tool.
+///
+/// ON SETTINGS RATHER THAN CONFIG, beside "Your data": what this writes is a
+/// file about the search, not part of the search. Somebody on the Config
+/// screen is editing what they are looking for; somebody here is moving it.
+fn criteria(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
+    ui.strong("Your criteria, in another tool");
+    ui.horizontal(|ui| {
+        if crate::access::tag(
+            ui.button("Save to a file"),
+            egui::WidgetType::Button,
+            "criteria-export",
+        )
+        .on_hover_text(
+            "The titles, skills, places and floors - what you are looking for. \
+             No keys, no resume, no schedule: those belong to this install, not \
+             to the search.",
+        )
+        .clicked()
+        {
+            app.export_criteria();
+        }
+        if crate::access::tag(
+            ui.button("Take one in"),
+            egui::WidgetType::Button,
+            "criteria-import",
+        )
+        .on_hover_text("Shows you what it would change before anything happens.")
+        .clicked()
+        {
+            app.choose_criteria_file();
+        }
+        if let Some(message) = &app.criteria_message {
+            ui.weak(message);
+        }
+    });
+}
+
+/// What a criteria file would do, before it does it.
+///
+/// A CENTRED WINDOW, built the same way show_removal_confirmation is: egui
+/// 0.28 has no modal, so what is behind stays clickable. What this DOES
+/// guarantee is that the dialog never closes by accident - it carries no X
+/// (egui only draws one when given an `open` flag) and nothing outside the
+/// Cancel and apply branches clears `criteria_import`. That matters here
+/// because this is the one moment the change is visible, and a dialog that
+/// closed on a stray click would take that moment away while applying
+/// nothing, which reads as the app having ignored the file.
+fn show_criteria_preview(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
+    let Some(pending) = &app.criteria_import else {
+        return;
+    };
+    let mut close = false;
+    let mut apply = false;
+    let mut switch_to: Option<String> = None;
+    let mode = pending.mode.clone();
+
+    egui::Window::new("Take in these criteria")
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ui.ctx(), |ui| {
+            ui.weak(pending.path.display().to_string());
+            ui.add_space(6.0);
+
+            match &pending.report {
+                Err(why) => {
+                    // The engine's own sentence. It names what is wrong with
+                    // the file - format, version, or carrying none of the
+                    // three blocks - which is what somebody needs to fix it.
+                    ui.colored_label(egui::Color32::LIGHT_RED, why);
+                }
+                Ok(report) if report.is_empty() => {
+                    ui.label("Nothing would change - these criteria already match yours.");
+                }
+                Ok(report) => {
+                    ui.horizontal(|ui| {
+                        ui.label("Lists in this file:");
+                        for (value, label, hint) in [
+                            ("replace", "replace mine",
+                             "Your titles, skills and places become the ones in the file."),
+                            ("merge", "add to mine",
+                             "Anything new in the file is added. Nothing of yours is removed."),
+                        ] {
+                            let chosen = mode == value;
+                            if crate::access::tag_with_value(
+                                ui.selectable_label(chosen, label),
+                                egui::WidgetType::RadioButton,
+                                format!("criteria-mode-{value}"),
+                                if chosen { "true" } else { "false" },
+                            )
+                            .on_hover_text(hint)
+                            .clicked()
+                            {
+                                switch_to = Some(value.to_string());
+                            }
+                        }
+                    });
+                    ui.add_space(6.0);
+                    ui.label(format!(
+                        "{} change{}:",
+                        report.preview.len(),
+                        if report.preview.len() == 1 { "" } else { "s" }
+                    ));
+                    egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
+                        egui::Grid::new("criteria_preview")
+                            .num_columns(2)
+                            .striped(true)
+                            .show(ui, |ui| {
+                                for change in &report.preview {
+                                    ui.label(change.where_it_is());
+                                    ui.label(change.what_happens());
+                                    ui.end_row();
+                                }
+                            });
+                    });
+                }
+            }
+
+            ui.add_space(10.0);
+            ui.horizontal(|ui| {
+                let can_apply = matches!(&pending.report, Ok(r) if !r.is_empty());
+                let label = if mode == "merge" { "Add these" } else { "Replace mine" };
+                if crate::access::tag(
+                    ui.add_enabled(can_apply, egui::Button::new(label)),
+                    egui::WidgetType::Button,
+                    "criteria-apply",
+                )
+                .clicked()
+                {
+                    apply = true;
+                }
+                if crate::access::tag(ui.button("Cancel"), egui::WidgetType::Button, "criteria-cancel")
+                    .clicked()
+                {
+                    close = true;
+                }
+            });
+        });
+
+    if let Some(mode) = switch_to {
+        app.set_criteria_mode(&mode);
+    } else if apply {
+        app.apply_criteria_import();
+    } else if close {
+        app.criteria_import = None;
+        app.criteria_message = None;
+    }
+}
+
 fn your_data(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     ui.strong("Your data");
     ui.horizontal(|ui| {
@@ -452,7 +629,13 @@ const TOUR_LENGTH: &str = "two minutes";
 fn help(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     ui.strong("Help");
     ui.horizontal(|ui| {
-        if ui.button("Run the walkthrough again").clicked() {
+        if crate::access::tag(
+            ui.button("Run the walkthrough again"),
+            egui::WidgetType::Button,
+            "settings-run-walkthrough",
+        )
+        .clicked()
+        {
             app.start_tutorial();
         }
         ui.weak(format!("a guided tour of the app, about {TOUR_LENGTH}"));

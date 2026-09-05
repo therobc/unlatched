@@ -281,7 +281,9 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
             app.keywords_show_all = true;
             app.refresh_keywords();
         }
-        if ui.button("Refresh").clicked() {
+        if crate::access::tag(ui.button("Refresh"), egui::WidgetType::Button, "keywords-refresh")
+            .clicked()
+        {
             app.refresh_keywords();
         }
     });

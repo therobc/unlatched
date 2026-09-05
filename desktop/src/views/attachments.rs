@@ -40,6 +40,10 @@ pub struct Files<'a> {
     /// Where the last download went, or None if none has. Shown so the person
     /// can see which folder this profile is using without opening a dialog.
     pub download_dir: Option<&'a str>,
+    /// This machine's UTC offset, for the dates below. Passed rather than
+    /// looked up: db::local_offset_secs is a query, and this runs while a
+    /// frame is already drawing.
+    pub local_offset: i64,
 }
 
 /// The teaching line under the paste button.
@@ -53,13 +57,31 @@ pub fn show(ui: &mut egui::Ui, files: &Files<'_>) -> Action {
     let mut action = Action::None;
 
     ui.horizontal(|ui| {
-        if ui.button("Attach a file").clicked() {
+        if crate::access::tag(
+            ui.button("Attach a file"),
+            egui::WidgetType::Button,
+            "attachments-attach-file",
+        )
+        .clicked()
+        {
             action = Action::Attach;
         }
-        if ui.button("Paste a screenshot").clicked() {
+        if crate::access::tag(
+            ui.button("Paste a screenshot"),
+            egui::WidgetType::Button,
+            "attachments-paste-screenshot",
+        )
+        .clicked()
+        {
             action = Action::Paste;
         }
-        if ui.button("Add a link").clicked() {
+        if crate::access::tag(
+            ui.button("Add a link"),
+            egui::WidgetType::Button,
+            "attachments-add-link",
+        )
+        .clicked()
+        {
             action = Action::AddLink;
         }
     });
@@ -95,7 +117,7 @@ pub fn show(ui: &mut egui::Ui, files: &Files<'_>) -> Action {
         .auto_shrink([false, false])
         .show(ui, |ui| {
             for row in files.rows {
-                if let Some(chosen) = attachment_row(ui, row) {
+                if let Some(chosen) = attachment_row(ui, row, files.local_offset) {
                     action = chosen;
                 }
             }
@@ -103,7 +125,11 @@ pub fn show(ui: &mut egui::Ui, files: &Files<'_>) -> Action {
     action
 }
 
-fn attachment_row(ui: &mut egui::Ui, row: &Attachment) -> Option<Action> {
+fn attachment_row(
+    ui: &mut egui::Ui,
+    row: &Attachment,
+    local_offset: i64,
+) -> Option<Action> {
     let mut action = None;
     ui.horizontal(|ui| {
         ui.label(icon_for(row.kind));
@@ -143,7 +169,7 @@ fn attachment_row(ui: &mut egui::Ui, row: &Attachment) -> Option<Action> {
         // WHEN, because attachments belong to the job rather than to one
         // application: re-applying months later adds a second resume beside
         // the first, and the date is what tells them apart.
-        ui.weak(fmt::short_date(&row.added_at))
+        ui.weak(fmt::short_date(&row.added_at, local_offset))
             .on_hover_text(format!("added {} for {}", row.added_at, row.key));
 
         // WHO WROTE IT, ON SCREEN. A protection nobody can see is one nobody
@@ -164,15 +190,35 @@ fn attachment_row(ui: &mut egui::Ui, row: &Attachment) -> Option<Action> {
                 crate::attachments::MINE,
             )
         };
-        if ui.small_button(badge).on_hover_text(hover).clicked() {
+        if crate::access::tag(
+            ui.small_button(badge),
+            egui::WidgetType::Button,
+            format!("attachment-trust-{}", row.id),
+        )
+        .on_hover_text(hover)
+        .clicked()
+        {
             action = Some(Action::SetTrust(row.id, next));
         }
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.small_button("Remove").clicked() {
+            if crate::access::tag(
+                ui.small_button("Remove"),
+                egui::WidgetType::Button,
+                format!("attachment-remove-{}", row.id),
+            )
+            .clicked()
+            {
                 action = Some(Action::Remove(row.id));
             }
-            if row.stored_name.is_some() && ui.small_button("Download").clicked() {
+            if row.stored_name.is_some()
+                && crate::access::tag(
+                    ui.small_button("Download"),
+                    egui::WidgetType::Button,
+                    format!("attachment-download-{}", row.id),
+                )
+                .clicked()
+            {
                 action = Some(Action::Download(row.id));
             }
         });

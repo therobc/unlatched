@@ -75,7 +75,13 @@ fn drop_target(app: &mut UnlatchedApp, ui: &mut egui::Ui, role: &str, title: &st
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 ui.label("Drop a file here");
-                if ui.button("Browse...").clicked() {
+                if crate::access::tag(
+                    ui.button("Browse..."),
+                    egui::WidgetType::Button,
+                    "resumes-browse",
+                )
+                .clicked()
+                {
                     if let Some(path) = rfd::FileDialog::new()
                         .add_filter("Resume", &["docx", "txt", "md", "pdf"])
                         .pick_file()
@@ -183,7 +189,13 @@ fn versions_list(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     }
 
     ui.add_space(6.0);
-    if ui.button("Open the resumes folder").clicked() {
+    if crate::access::tag(
+        ui.button("Open the resumes folder"),
+        egui::WidgetType::Button,
+        "resumes-open-folder",
+    )
+    .clicked()
+    {
         // The person may want to hand a copy to an assistant, or keep one.
         // Opening the folder is the least surprising way to offer that.
         let _ = std::process::Command::new("explorer").arg(&dir).spawn();

@@ -142,7 +142,13 @@ pub const COLUMNS: &[ColumnSpec] = &[
     // dropdown AND the how-long-since figure beside it. At 110 the figure was
     // clipped to its first letter - "today" rendered as a lone "t", which
     // reads as a rendering fault rather than as information.
-    col(ColumnId::Status, "status", "Status", 155.0, 110.0),
+    ColumnSpec {
+        // Sortable, and by MEANING rather than by label - see
+        // status::sort_rank. Sorting this column is how somebody keeps
+        // the rows they have not decided about at the top.
+        sort: Some(SortBy::Status),
+        ..col(ColumnId::Status, "status", "Status", 155.0, 110.0)
+    },
     col(ColumnId::Applied, "applied", "Applied", 95.0, 75.0),
     col(ColumnId::FoundAt, "found_at", "Found at", 150.0, 90.0),
 ];
@@ -325,7 +331,9 @@ pub fn settings_panel(
 
     ui.add_space(8.0);
     ui.separator();
-    if ui.button("Reset to default").clicked() {
+    if crate::access::tag(ui.button("Reset to default"), egui::WidgetType::Button, "columns-reset")
+        .clicked()
+    {
         *order = default_order();
         hidden.clear();
         changed = true;

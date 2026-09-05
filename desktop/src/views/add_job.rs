@@ -147,7 +147,9 @@ pub fn show(app: &mut UnlatchedApp, ctx: &egui::Context) {
                 {
                     submit = true;
                 }
-                if ui.button("Cancel").clicked() {
+                if crate::access::tag(ui.button("Cancel"), egui::WidgetType::Button, "add-job-cancel")
+                    .clicked()
+                {
                     close = true;
                 }
             });

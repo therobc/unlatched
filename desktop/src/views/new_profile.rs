@@ -70,7 +70,13 @@ pub fn show(app: &mut UnlatchedApp, ctx: &egui::Context) {
                     egui::WidgetType::TextEdit,
                     "new-profile-folder",
                 );
-                if ui.button("Browse...").clicked() {
+                if crate::access::tag(
+                    ui.button("Browse..."),
+                    egui::WidgetType::Button,
+                    "new-profile-browse-folder",
+                )
+                .clicked()
+                {
                     if let Some(dir) = rfd::FileDialog::new().pick_folder() {
                         app.new_profile_draft.home = dir.to_string_lossy().into_owned();
                     }
@@ -78,8 +84,18 @@ pub fn show(app: &mut UnlatchedApp, ctx: &egui::Context) {
             });
             ui.horizontal(|ui| {
                 ui.label("Resume (optional):");
-                ui.text_edit_singleline(&mut app.new_profile_draft.resume_path);
-                if ui.button("Browse...").clicked() {
+                crate::access::text_field(
+                    ui,
+                    &mut app.new_profile_draft.resume_path,
+                    "new-profile-resume-path",
+                );
+                if crate::access::tag(
+                    ui.button("Browse..."),
+                    egui::WidgetType::Button,
+                    "new-profile-browse-resume",
+                )
+                .clicked()
+                {
                     if let Some(file) = rfd::FileDialog::new()
                         .add_filter("Resume", &["docx", "txt", "md"])
                         .pick_file()
@@ -95,10 +111,14 @@ pub fn show(app: &mut UnlatchedApp, ctx: &egui::Context) {
 
             ui.separator();
             ui.horizontal(|ui| {
-                if ui.button("Create").clicked() {
+                if crate::access::tag(ui.button("Create"), egui::WidgetType::Button,
+                    "new-profile-create").clicked()
+                {
                     create_clicked = true;
                 }
-                if ui.button("Cancel").clicked() {
+                if crate::access::tag(ui.button("Cancel"), egui::WidgetType::Button,
+                    "new-profile-cancel").clicked()
+                {
                     cancel_clicked = true;
                 }
             });

@@ -11,9 +11,15 @@ use crate::fmt;
 
 pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     let mut open_in_list: Option<String> = None;
+    // Read once for the whole screen. Every stamp below is a moment the person
+    // acted at their own clock, and this is what turns a stored instant back
+    // into that.
+    let offset = app.local_offset;
     ui.horizontal(|ui| {
         ui.heading("Pipeline");
-        if ui.button("Refresh").clicked() {
+        if crate::access::tag(ui.button("Refresh"), egui::WidgetType::Button, "pipeline-refresh")
+            .clicked()
+        {
             app.refresh_pipeline();
         }
     });
@@ -132,7 +138,7 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                         if items.len() > 1 || items.iter().any(|i| !i.note.is_empty()) {
                             for item in &items {
                                 ui.horizontal(|ui| {
-                                    stamp(ui, &item.at);
+                                    stamp(ui, &item.at, offset);
                                     if item.note_only {
                                         ui.weak("note");
                                     } else {
@@ -310,8 +316,8 @@ pub fn timeline(
 /// "2026-07-15T09:0..." - the ISO separator and a severed clock, in monospace,
 /// on every line of every card. The exact stamp is still one hover away for
 /// anyone who wants it.
-fn stamp(ui: &mut egui::Ui, at: &str) {
-    let short = fmt::short_date(at);
+fn stamp(ui: &mut egui::Ui, at: &str, offset_secs: i64) {
+    let short = fmt::short_date(at, offset_secs);
     if short.is_empty() {
         return;
     }

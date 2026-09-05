@@ -78,7 +78,8 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                             .employment_types
                             .iter()
                             .any(|t| t == key);
-                        if ui.checkbox(&mut on, *label).changed() {
+                        let name = format!("config-employment-{key}");
+                        if crate::access::tick(ui, &mut on, label, &name).changed() {
                             if on {
                                 app.config_draft.employment_types.push((*key).to_string());
                             } else {
@@ -95,11 +96,19 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
 
                 ui.horizontal(|ui| {
                     ui.label("Salary floor (blank = none):");
-                    ui.text_edit_singleline(&mut app.config_draft.salary_floor);
+                    crate::access::text_field(
+                        ui,
+                        &mut app.config_draft.salary_floor,
+                        "config-salary-floor",
+                    );
                 });
                 ui.horizontal(|ui| {
                     ui.label("Fallback floor (blank = none):");
-                    ui.text_edit_singleline(&mut app.config_draft.salary_alt_floor);
+                    crate::access::text_field(
+                        ui,
+                        &mut app.config_draft.salary_alt_floor,
+                        "config-fallback-floor",
+                    );
                 })
                 .response
                 .on_hover_text(
@@ -109,15 +118,18 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                 );
                 ui.horizontal(|ui| {
                     ui.label("Currency:");
-                    ui.text_edit_singleline(&mut app.config_draft.currency);
+                    crate::access::text_field(ui, &mut app.config_draft.currency, "config-currency");
                 });
                 ui.separator();
 
                 ui.label("Ways of working you would take:");
                 ui.horizontal_wrapped(|ui| {
-                    ui.checkbox(&mut app.config_draft.work_remote, "Remote");
-                    ui.checkbox(&mut app.config_draft.work_hybrid, "Hybrid");
-                    ui.checkbox(&mut app.config_draft.work_onsite, "On-site");
+                    crate::access::tick(ui, &mut app.config_draft.work_remote, "Remote",
+                        "config-work-remote");
+                    crate::access::tick(ui, &mut app.config_draft.work_hybrid, "Hybrid",
+                        "config-work-hybrid");
+                    crate::access::tick(ui, &mut app.config_draft.work_onsite, "On-site",
+                        "config-work-onsite");
                 })
                 .response
                 .on_hover_text(
@@ -183,9 +195,11 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
             // inside "Search" and nobody found them - the times were only
             // ever changed from the CLI.
             let when_this_search_runs = ui.collapsing("When this search runs", |ui| {
-            ui.checkbox(
+            crate::access::tick(
+                ui,
                 &mut app.config_draft.refresh_daily,
                 "Refresh this search daily",
+                "config-refresh-daily",
             )
             .on_hover_text(
                 "Pressing Search is always deliberate. This keeps an existing search \
@@ -216,9 +230,11 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                     "Runs when the app is open. If it was closed, it catches up the \
                      next time you open it.",
                 );
-                ui.checkbox(
+                crate::access::tick(
+                    ui,
                     &mut app.config_draft.refresh_weekdays_only,
                     "Skip weekends",
+                    "config-skip-weekends",
                 )
                 .on_hover_text(
                     "Measured across 8,331 postings: 69% land Monday to Wednesday, \
@@ -278,7 +294,7 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                                 .sources
                                 .entry((*name).to_string())
                                 .or_insert(true);
-                            ui.checkbox(enabled, *name);
+                            crate::access::tick(ui, enabled, name, &format!("config-source-{name}"));
                             count += 1;
                             if count % 3 == 0 {
                                 ui.end_row();
@@ -299,9 +315,11 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
             egui::CollapsingHeader::new("Adding jobs by link")
                 .open(if focus { Some(true) } else { None })
                 .show(ui, |ui| {
-                    ui.checkbox(
+                    crate::access::tick(
+                        ui,
                         &mut app.config_draft.read_added_links,
                         "Read the page when I add a job by link",
+                        "config-read-added-links",
                     )
                     .on_hover_text(
                         "On, the app opens the link once and fills in the title, \
@@ -334,7 +352,12 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                     .entry("usajobs".to_string())
                     .or_insert(true);
                 let ticked = *usajobs_on;
-                ui.checkbox(usajobs_on, "Search federal jobs for this profile");
+                crate::access::tick(
+                    ui,
+                    usajobs_on,
+                    "Search federal jobs for this profile",
+                    "config-usajobs-on",
+                );
                 if ticked && !usajobs_ready {
                     ui.colored_label(
                         egui::Color32::from_rgb(217, 164, 65),
@@ -357,14 +380,19 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                 );
                 ui.horizontal(|ui| {
                     ui.label("USAJOBS email (the one you registered with):");
-                    ui.text_edit_singleline(&mut app.config_draft.usajobs_email);
+                    crate::access::text_field(
+                        ui,
+                        &mut app.config_draft.usajobs_email,
+                        "config-usajobs-email",
+                    );
                 });
                 ui.horizontal(|ui| {
                     ui.label("USAJOBS API key:");
-                    ui.add(
+                    let key_box = ui.add(
                         egui::TextEdit::singleline(&mut app.config_draft.usajobs_api_key)
                             .password(true),
                     );
+                    crate::access::tag(key_box, egui::WidgetType::TextEdit, "config-usajobs-key");
                 });
                 // Say which of the two storage states this machine is in
                 // rather than implying a guarantee the platform may not
@@ -385,10 +413,128 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
             crate::access::tag(job_sources_that_need_a_key.header_response,
                 egui::WidgetType::Button, "config-section-job-sources-that-need-a-key");
 
+            let collectors = ui.collapsing("Collectors", |ui| {
+                ui.label(
+                    "Other programs that hand jobs over in a file. Unlatched reads \
+                     the file; it never writes one.",
+                );
+                // ADDED AT ALL because there was no way to add a collector
+                // except by editing config.json in a text editor. Verified
+                // before writing this: the Sources block above holds tick
+                // boxes for the built-in collectors and nothing else on this
+                // screen wrote a `collectors` entry, and the Config struct had
+                // no field for one to write into.
+                let mut remove: Option<usize> = None;
+                for (index, entry) in app.config_draft.collectors.iter_mut().enumerate() {
+                    ui.separator();
+                    ui.horizontal(|ui| {
+                        let tick = ui.checkbox(&mut entry.enabled, "Use this one");
+                        crate::access::tag_with_value(
+                            tick,
+                            egui::WidgetType::Checkbox,
+                            format!("collector-enabled-{index}"),
+                            if entry.enabled { "true" } else { "false" },
+                        );
+                        // Remove is deliberately not a confirm: what it
+                        // discards is four fields on a screen that has not
+                        // saved yet, and Reload puts them all back.
+                        if crate::access::tag(
+                            ui.button("Remove"),
+                            egui::WidgetType::Button,
+                            format!("collector-remove-{index}"),
+                        )
+                        .clicked()
+                        {
+                            remove = Some(index);
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Name:");
+                        let field = ui.text_edit_singleline(&mut entry.id);
+                        crate::access::tag_with_value(
+                            field,
+                            egui::WidgetType::TextEdit,
+                            format!("collector-id-{index}"),
+                            &entry.id,
+                        );
+                        ui.label("a-z, 0-9, _ or -");
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Shown as:");
+                        let field = ui.text_edit_singleline(&mut entry.label);
+                        crate::access::tag_with_value(
+                            field,
+                            egui::WidgetType::TextEdit,
+                            format!("collector-label-{index}"),
+                            &entry.label,
+                        );
+                        ui.label("optional");
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("File:");
+                        let field = ui.add(
+                            egui::TextEdit::singleline(&mut entry.path)
+                                .desired_width(content_width * 0.6),
+                        );
+                        crate::access::tag_with_value(
+                            field,
+                            egui::WidgetType::TextEdit,
+                            format!("collector-path-{index}"),
+                            &entry.path,
+                        );
+                    });
+                    if !entry.rest.is_empty() {
+                        // SAID OUT LOUD rather than hidden. This screen edits
+                        // four fields; verified in the engine's
+                        // collectors.DEFAULTS, an entry may carry three more -
+                        // schedule, we_may_refetch, pushes_closures. Somebody
+                        // who cannot see them here has no way to tell a save
+                        // kept them.
+                        let mut kept: Vec<&str> =
+                            entry.rest.keys().map(String::as_str).collect();
+                        kept.sort_unstable();
+                        ui.label(format!(
+                            "Also set in config.json, kept as it is: {}",
+                            kept.join(", ")
+                        ));
+                    }
+                }
+                if let Some(index) = remove {
+                    app.config_draft.collectors.remove(index);
+                }
+                ui.separator();
+                if crate::access::tag(
+                    ui.button("Add a collector"),
+                    egui::WidgetType::Button,
+                    "collector-add",
+                )
+                .clicked()
+                {
+                    // enabled: true, matching the engine's own default for an
+                    // entry with no `enabled` key - verified in
+                    // collectors.DEFAULTS. Adding a row that arrived switched
+                    // off would also mean the same entry behaved differently
+                    // depending on whether it was typed here or into the file.
+                    app.config_draft.collectors.push(crate::config::CollectorEntry {
+                        enabled: true,
+                        ..Default::default()
+                    });
+                }
+                if app.config_draft.collectors.is_empty() {
+                    ui.label("None configured.");
+                }
+            });
+            crate::access::tag(collectors.header_response,
+                egui::WidgetType::Button, "config-section-collectors");
+
             let agent_api_optional = ui.collapsing("Agent API (optional)", |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Base URL:");
-                    ui.text_edit_singleline(&mut app.config_draft.agent_base_url);
+                    crate::access::text_field(
+                        ui,
+                        &mut app.config_draft.agent_base_url,
+                        "config-agent-base-url",
+                    );
                 });
                 ui.horizontal(|ui| {
                     ui.label("API key:");
@@ -399,7 +545,11 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                 });
                 ui.horizontal(|ui| {
                     ui.label("Model:");
-                    ui.text_edit_singleline(&mut app.config_draft.agent_model);
+                    crate::access::text_field(
+                        ui,
+                        &mut app.config_draft.agent_model,
+                        "config-agent-model",
+                    );
                 });
             });
             crate::access::tag(agent_api_optional.header_response,
@@ -408,10 +558,11 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
 
     ui.separator();
     ui.horizontal(|ui| {
-        if ui.button("Save").clicked() {
+        if crate::access::tag(ui.button("Save"), egui::WidgetType::Button, "config-save").clicked() {
             app.save_config();
         }
-        if ui.button("Reload").clicked() {
+        if crate::access::tag(ui.button("Reload"), egui::WidgetType::Button, "config-reload").clicked()
+        {
             app.reload_config();
         }
         if let Some(status) = &app.config_status {
@@ -457,7 +608,13 @@ fn tag_editor_with_suggestions(
     if !picks.is_empty() {
         wrapped_row(ui, width, |ui| {
             for place in picks {
-                if ui.small_button(place).clicked() {
+                if crate::access::tag(
+                    ui.small_button(place),
+                    egui::WidgetType::Button,
+                    format!("place-suggestion-{}", crate::access::slug(place)),
+                )
+                .clicked()
+                {
                     field.input = place.to_string();
                     field.commit();
                 }
@@ -607,10 +764,22 @@ pub fn show_run_prompt(app: &mut UnlatchedApp, ctx: &egui::Context) {
             );
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                if ui.button("Not now").clicked() {
+                if crate::access::tag(
+                    ui.button("Not now"),
+                    egui::WidgetType::Button,
+                    "config-saved-not-now",
+                )
+                .clicked()
+                {
                     close = true;
                 }
-                if ui.button("Run search").clicked() {
+                if crate::access::tag(
+                    ui.button("Run search"),
+                    egui::WidgetType::Button,
+                    "config-saved-run-search",
+                )
+                .clicked()
+                {
                     run = true;
                     close = true;
                 }

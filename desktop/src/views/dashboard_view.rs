@@ -158,28 +158,6 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
             ui.colored_label(colour, clause);
         }
 
-        // Right next to the freshness line, because that line is what a
-        // person reads to decide whether the list in front of them is
-        // current - and for hand-added links it would otherwise be
-        // answering for the boards only (decided 2026-08-06).
-        // Cached, not queried while drawing (see UnlatchedApp::manual_links).
-        let links = app.manual_links;
-        if links.stale_since_collect {
-            ui.add_space(10.0);
-            ui.colored_label(
-                egui::Color32::from_rgb(217, 164, 65),
-                format!(
-                    "{} added link{} not re-checked",
-                    links.total,
-                    if links.total == 1 { "" } else { "s" }
-                ),
-            )
-            .on_hover_text(
-                "Links you added by hand are re-read only when you ask, on the \
-                 Triage screen. The scheduled refresh covers the employer boards \
-                 and job sources the app ships with.",
-            );
-        }
         ui.add_space(10.0);
         // "OF N COLLECTED" WAS TRUE AND STOPPED BEING TRUE. It counted stored
         // rows, which was the same number as postings read back when a collect
@@ -197,12 +175,16 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
              list only holds what was kept.",
         );
 
-        // THE EXTERNAL COLLECTOR'S FILE, hard right, and LAST in this row.
-        // A right-to-left layout claims the remaining width, so anything added
-        // after it has nowhere to go - placed earlier, it silently pushed the
-        // match counts off the end of the header.
-        collector_file_status(app, ui);
     });
+
+    // THE STALENESS ROW, under the buttons that act on it.
+    //
+    // Both of these say the same kind of thing - something you rely on has
+    // gone stale - and both were on the header, where the handoff had to be
+    // pinned hard right to stop it pushing the match counts off the end. A
+    // warning competing with five other things for one line is a warning
+    // nobody reads.
+    staleness_row(app, ui);
 
     // Acted on OUTSIDE the closure above - see the note where it is declared.
     if let Some((label, args)) = pending_collector.take() {
@@ -222,7 +204,13 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                      rest of this screen fills in once there are jobs to talk about.",
                 );
                 ui.add_space(4.0);
-                if ui.button("Go to Companies").clicked() {
+                if crate::access::tag(
+                    ui.button("Go to Companies"),
+                    egui::WidgetType::Button,
+                    "dashboard-go-companies",
+                )
+                .clicked()
+                {
                     app.view = View::Companies;
                 }
             });
@@ -260,7 +248,13 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                         ui.add_space(2.0);
                         ui.weak("Counted across the jobs worth having. Work the true ones in.");
                         ui.horizontal(|ui| {
-                            if ui.small_button("Open Keywords").clicked() {
+                            if crate::access::tag(
+                                ui.small_button("Open Keywords"),
+                                egui::WidgetType::Button,
+                                "dashboard-open-keywords",
+                            )
+                            .clicked()
+                            {
                                 app.view = View::Keywords;
                             }
                         });
@@ -517,7 +511,13 @@ fn pipeline_doughnut(app: &mut UnlatchedApp, ui: &mut egui::Ui, stats: &Dashboar
             }
             ui.add_space(4.0);
             ui.horizontal(|ui| {
-                if ui.small_button("Open Pipeline").clicked() {
+                if crate::access::tag(
+                    ui.small_button("Open Pipeline"),
+                    egui::WidgetType::Button,
+                    "dashboard-open-pipeline",
+                )
+                .clicked()
+                {
                     app.view = View::Pipeline;
                 }
             });
@@ -653,6 +653,66 @@ fn funnel(ui: &mut egui::Ui, stats: &DashboardStats) {
 ///
 /// Nothing is drawn when no collector is configured, so a profile that has
 /// never set one up gets no vocabulary it did not ask for.
+/// The two "this has gone stale" notices, on one line beneath the buttons.
+///
+/// LEFT TO RIGHT and in the order somebody acts on them: what another program
+/// left for us, then what we were asked to re-read. By construction neither
+/// half draws anything when there is nothing to say, and the row itself asks
+/// both before it starts - so a profile with no collectors and no added links
+/// gets no empty row rather than a gap.
+fn staleness_row(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
+    // Measured before drawing, because a row that reserved space for two
+    // notices and then drew none would leave a gap that reads as a rendering
+    // fault rather than as good news.
+    let links = app.manual_links;
+    let has_links = links.stale_since_collect;
+    let has_collector = collector_file_lines(app).is_some();
+    if !has_links && !has_collector {
+        return;
+    }
+
+    ui.horizontal(|ui| {
+        collector_file_status(app, ui);
+        if has_links && has_collector {
+            ui.add_space(14.0);
+        }
+        if has_links {
+            crate::access::tag_with_value(
+                ui.colored_label(
+                    egui::Color32::from_rgb(217, 164, 65),
+                    format!(
+                        "{} added link{} not re-checked",
+                        links.total,
+                        if links.total == 1 { "" } else { "s" }
+                    ),
+                ),
+                egui::WidgetType::Label,
+                "dashboard-added-links-stale",
+                links.total.to_string(),
+            )
+            .on_hover_text(
+                "Links you added by hand are re-read only when you ask: \
+                 Collect -> Added links, here or on the jobs list. The scheduled \
+                 refresh covers the employer boards and job sources the app \
+                 ships with.",
+            );
+        }
+    });
+    ui.add_space(2.0);
+}
+
+/// Whether there is a collector file worth saying anything about.
+///
+/// SPLIT OUT SO THE ROW CAN ASK BEFORE IT DRAWS. collector_file_status writes
+/// straight into the ui, so calling it to find out whether it has anything is
+/// how an empty row gets drawn - by construction the only way to know first is
+/// to ask a function that draws nothing.
+fn collector_file_lines(app: &UnlatchedApp) -> Option<usize> {
+    let (collectors, _) = app.handoffs.ready()?;
+    let live = collectors.iter().filter(|c| c.enabled).count();
+    (live > 0).then_some(live)
+}
+
 fn collector_file_status(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     let Some((collectors, _)) = app.handoffs.ready() else {
         return;
@@ -681,9 +741,11 @@ fn collector_file_status(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
         crate::fmt::clock_after(now, left.as_secs() as i64)
     });
 
-    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-        // Reversed, so the first collector still reads leftmost.
-        for entry in live.iter().rev() {
+    // LEFT TO RIGHT since this moved off the header. It was right-to-left to
+    // pin it against the far edge of a crowded row; on its own line that would
+    // strand it across the screen from the notice beside it.
+    ui.horizontal(|ui| {
+        for entry in live.iter() {
             // THE FILE, RE-STATTED, not the age the engine reported when this
             // profile opened. That one never moved, so a collector finishing
             // at lunchtime changed nothing on this screen.
@@ -854,7 +916,13 @@ fn coverage(app: &mut UnlatchedApp, ui: &mut egui::Ui, stats: &DashboardStats) {
     }
     ui.add_space(4.0);
     ui.horizontal(|ui| {
-        if ui.small_button("Open Companies").clicked() {
+        if crate::access::tag(
+            ui.small_button("Open Companies"),
+            egui::WidgetType::Button,
+            "dashboard-open-companies",
+        )
+        .clicked()
+        {
             app.view = View::Companies;
         }
     });

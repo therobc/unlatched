@@ -201,7 +201,13 @@ fn copyable(ui: &mut egui::Ui, text: &str) {
                     egui::Label::new(egui::RichText::new(text).monospace()).selectable(true),
                 );
             });
-        if ui.small_button("Copy").clicked() {
+        if crate::access::tag(
+            ui.small_button("Copy"),
+            egui::WidgetType::Button,
+            "agent-copy-reply",
+        )
+        .clicked()
+        {
             ui.ctx().copy_text(text.to_string());
         }
     });
@@ -264,7 +270,13 @@ fn endpoint_card(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
             ui.add_space(7.0);
             ui.horizontal(|ui| {
                 ui.weak("Set it as agent_api.base_url on");
-                if ui.small_button("Config").clicked() {
+                if crate::access::tag(
+                    ui.small_button("Config"),
+                    egui::WidgetType::Button,
+                    "agent-go-to-config",
+                )
+                .clicked()
+                {
                     go_to_config = true;
                 }
             });
@@ -283,7 +295,9 @@ fn endpoint_card(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
             ui.horizontal(|ui| {
                 // Verifying beats guessing. A wrong address otherwise shows up
                 // much later as a suggestion that silently never arrives.
-                if ui.button("Test connection").clicked() {
+                if crate::access::tag(ui.button("Test connection"), egui::WidgetType::Button, "agent-test-connection")
+                    .clicked()
+                {
                     test_requested = true;
                 }
                 ui.weak("asks the endpoint what models it has");

@@ -1,7 +1,8 @@
-// Triage: the qualified-jobs queue. Fast keyboard-driven review is the
-// point, so the table stays a single self-scrolling widget (never a plain
-// Grid inside a ScrollArea) and row identity always travels as jobs.key,
-// never as a position in the currently displayed list.
+// Triage: the qualified-jobs queue. Fast keyboard-driven review is the point,
+// so the table stays a single self-scrolling widget (never a plain Grid inside
+// a ScrollArea) and row identity always travels as jobs.key - by construction
+// a key names the same job however the list re-sorts, which a position does
+// not.
 
 use eframe::egui::{self, Key};
 use egui_extras::{Column, TableBuilder};
@@ -13,20 +14,19 @@ use crate::views::columns;
 /// How much of the pane the job list may take.
 ///
 /// Was two thirds, to leave room for the description panel pinned at the
-/// bottom. That panel is gone - postings now open inside the list - so the
-/// list gets the whole pane, and the third that used to sit empty below it is
-/// list again.
+/// bottom. That panel is gone - postings now open inside the list - so
+/// by construction the third that used to sit empty below it is list again.
 const TABLE_SHARE_OF_HEIGHT: f32 = 1.0;
 
 // The status vocabulary lives in crate::status. It used to be a table here,
 // which is why five other files each grew their own copy of it.
 //
-// "No longer open" is NOT in the dropdown any more. It was a status somebody
-// had to set by hand for a fact the app already knows: a board taking a
-// posting down sets jobs.delisted_at, and the row now says so BESIDE whatever
-// the person marked rather than instead of it. Storing it as a status made
-// "taken down" and "applied" mutually exclusive, when the row that matters
-// most is precisely the one that is both.
+// "No longer open" is NOT in the dropdown any more - by construction, since
+// the dropdown is built from status::FLOW and `closed` is not in it. It was a
+// status somebody had to set by hand for a fact the app already knows: a board
+// taking a posting down sets jobs.delisted_at, and the row says so BESIDE
+// whatever the person marked. Storing it as a status made "taken down" and
+// "applied" mutually exclusive, when the row that matters most is both.
 use crate::status::NOT_SET;
 
 /// Height the open row gains for its description. Fixed rather than measured:
@@ -43,26 +43,27 @@ const EXPANDED_EXTRA: f32 = 460.0;
 /// A thin band so the table never sits flush against the window frame.
 ///
 /// The 30px strip that used to sit beside this reserved room for a
-/// column-settings gear. That control is in the toolbar now, and a margin
-/// nothing uses only teaches the next reader that the table is meant to stop
-/// short of the edge.
+/// column-settings gear. That control is in the toolbar now, so
+/// by construction the strip reserved space for nothing - and a margin nothing
+/// uses only teaches the next reader that the table is meant to stop short of
+/// the edge.
 const EDGE_BAND: f32 = 10.0;
 
 /// All jobs: everything still worth seeing, taken-down postings included.
 ///
-/// THE PARAGRAPH THAT USED TO OPEN THIS DESCRIBED A RULE THAT IS GONE. It said
-/// All jobs "shows everything that has NOT been taken down - and keeps a
-/// taken-down posting visible anyway if it was applied to", which was true
-/// until a closure started writing a status: a posting nobody had acted on
+/// THE PARAGRAPH THAT USED TO OPEN THIS DESCRIBED A RULE THAT IS GONE. It
+/// said All jobs "shows everything that has NOT been taken down - and keeps a
+/// taken-down posting visible anyway if it was applied to", which held until a
+/// closure started writing a status - observed: a posting nobody had acted on
 /// then left Triage as settled AND left All jobs at the same instant, landing
-/// on no screen at all. db::list_jobs_for records that change and
-/// list_all_jobs no longer filters on delisted_at at all - so the paragraph
-/// was documenting the defect rather than the design.
+/// on no screen at all. list_all_jobs no longer filters on delisted_at, so the
+/// paragraph was documenting the defect rather than the design.
 pub fn show_all_jobs(app: &mut UnlatchedApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     // THE RAIL ENTRY OWNS THE MODE NOW. Removed used to be a toggle on this
-    // screen and nothing else - so a person with 29 removed jobs had no way to
-    // find them without noticing a chip in the toolbar of a screen they might
-    // never open. It is its own entry; arriving at All jobs means All jobs.
+    // screen and nothing else - observed on a live profile holding 29 removed
+    // jobs whose owner had no way to find them without noticing a chip in the
+    // toolbar of a screen they might never open. It is its own entry now, so
+    // arriving at All jobs means All jobs.
     app.show_retired = false;
     show_scope(app, ui, ctx);
 }
@@ -70,17 +71,18 @@ pub fn show_all_jobs(app: &mut UnlatchedApp, ui: &mut egui::Ui, ctx: &egui::Cont
 /// What the person took out of their lists. Reversible, and nothing was deleted.
 pub fn show_removed(app: &mut UnlatchedApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     app.show_retired = true;
-    // Two scopes of one table, so entering either leaves the other.
+    // Two scopes of one table, so by construction entering either leaves the
+    // other - there is one list_scope, not two flags.
     app.show_duplicates = false;
     show_scope(app, ui, ctx);
 }
 
 /// Results for what is typed in the rail.
 ///
-/// Renders through the same show_list as every other list, so a result carries
-/// the identical columns, actions and bulk operations. A search whose rows you
-/// cannot act on is a lookup, not a list - and the point of finding a posting
-/// is usually to do something to it.
+/// Renders through the same show_list as every other list, so by construction
+/// a result carries the identical columns, actions and bulk operations. A
+/// search whose rows you cannot act on is a lookup rather than a list, and the
+/// point of finding a posting is usually to do something to it.
 pub fn show_search(app: &mut UnlatchedApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     // The scope is normally set by run_search. Re-asserting it here keeps any
     // other route in - a restored session, a stray view change - honest about
@@ -142,8 +144,9 @@ fn show_list(
 ) {
     // THE OPENED ROW PAYS FOR ITS OWN TEXT. Lists carry a 400-character
     // preview (see SELECT_TRIAGE_COLUMNS); the full description is fetched
-    // once, here, for whichever row is open. Before the table, because the row
-    // closures borrow app.triage_rows immutably for the whole draw.
+    // once, here, for whichever row is open. Before the table because the row
+    // closures borrow app.triage_rows immutably for the whole draw -
+    // enforced by the type, not by convention.
     if let Some(key) = app.triage_expanded.clone() {
         app.ensure_description(&key);
     }
@@ -173,12 +176,12 @@ fn show_list(
     let pending = app.collectors_pending();
 
     ui.horizontal(|ui| {
-        // THE HEADING CARRIES THE ROW COUNT as its accessible value. The list
-        // and the dashboard card that opens it are built from one WHERE
+        // THE HEADING CARRIES THE ROW COUNT as its accessible value. The
+        // list and the dashboard card that opens it are built from one WHERE
         // clause, and this is what lets that be PROVEN through the running app
         // rather than only in a unit test: the harness reads what the card
-        // claims, clicks it, and reads what the list actually holds. Two
-        // different code paths - count_module and list_module_jobs - so the
+        // claims, clicks it, and reads what the list holds. Two different code
+        // paths by construction - count_module and list_module_jobs - so the
         // comparison can genuinely fail.
         crate::access::tag_with_value(
             ui.heading(heading),
@@ -244,29 +247,20 @@ fn show_list(
         }
         if links.any() {
             let busy = app.running_process.is_some();
-            // ENABLED WHILE A COLLECT RUNS, because this queues now
-            // rather than being refused. Greying it out decided FOR
-            // somebody that their request had to wait, without saying so;
-            // letting them press it and reporting where it sits is the
-            // same wait with the person in charge of it.
-            let ready = links.due > 0;
+            // ENABLED WHILE A COLLECT RUNS, because this calls queue_process
+            // rather than start_process - so by construction it waits rather
+            // than being refused. Greying it out decided FOR somebody that
+            // their request had to wait, without saying so; letting them press
+            // it and reporting where it sits is the same wait with the person
+            // in charge of it.
+            // Through the shared rule: by construction this button and the
+            // Collect entry read the same answer, so they cannot disagree
+            // about whether a check is due.
+            let (ready, hover) =
+                crate::views::collect_menu::added_links_offer(links.due, busy);
             let response = ui
                 .add_enabled(ready, egui::Button::new(format!("Check added links ({})", links.total)));
-            // THE REASON HAS TO BE THE REAL ONE. This said "Nothing is due
-            // yet" whenever it was greyed, including while a collect was
-            // running - so a person whose links WERE due was told the
-            // opposite, and the only true explanation was on another screen.
-            if response
-                .on_hover_text(if !ready {
-                    "Each added link is checked at most once a day. Nothing is due yet."
-                } else if busy {
-                    "Re-reads the links you added by hand. A run is in \
-                     progress, so this starts when it finishes."
-                } else {
-                    "Re-reads the links you added by hand: still live, or taken down?"
-                })
-                .clicked()
-            {
+            if response.on_hover_text(hover).clicked() {
                 app.queue_process("check added links", vec!["recheck".to_string()]);
             }
         }
@@ -278,8 +272,9 @@ fn show_list(
             let removed = app.retired_count;
             if removed > 0 || app.show_retired {
                 let mut showing = app.show_retired;
-                // The visible text carries a COUNT, so it is a different string
-                // every time somebody removes a job - unusable as an identifier.
+                // The visible text carries a COUNT, so by construction it is
+                // a different string every time somebody removes a job -
+                // unusable as an identifier.
                 let response = crate::access::tag_with_value(
                     ui.toggle_value(&mut showing, format!("Removed ({removed})"))
                         .on_hover_text(
@@ -291,11 +286,11 @@ fn show_list(
                     format!("{removed} removed"),
                 );
                 if response.changed() {
-                    // SWITCHES THE VIEW rather than setting the flag, because
-                    // the flag is now decided by whichever rail entry is open.
-                    // Kept as a chip as well as a rail entry: it carries the
-                    // count, which is what tells somebody there is anything in
-                    // there to go back to.
+                    // SWITCHES THE VIEW rather than setting the flag:
+                    // by construction the flag is decided by whichever rail entry
+                    // is open. Kept as a chip as well, because the chip
+                    // carries the count - which is what tells somebody there
+                    // is anything in there to go back to.
                     app.view = if showing {
                         crate::app::View::Removed
                     } else {
@@ -306,10 +301,12 @@ fn show_list(
                 }
             }
 
-            // Grouping is a JUDGEMENT the app made on the person's behalf, and
-            // the only one of its kind - everything else here is either their
-            // decision or a fact from the employer. So it has to be inspectable
-            // and undoable, or it is a merge that quietly disappeared a job.
+            // Grouping is a JUDGEMENT the app made on the person's behalf,
+            // and the only one of its kind - everything else here is either
+            // their decision or a fact from the employer. It stays inspectable
+            // and undoable by construction, since it sets a column rather than
+            // deleting the row; otherwise it is a merge that disappeared a
+            // job.
             let grouped = app.duplicate_count;
             if grouped > 0 || app.show_duplicates {
                 let mut showing = app.show_duplicates;
@@ -326,8 +323,9 @@ fn show_list(
                 );
                 if response.changed() {
                     app.show_duplicates = showing;
-                    // Grouped is a mode of All jobs, so it leaves Removed the
-                    // same way Removed leaves it.
+                    // Grouped is a mode of All jobs, so by construction it
+                    // leaves Removed the same way Removed leaves it - one
+                    // scope, not two independent flags.
                     app.view = crate::app::View::AllJobs;
                     app.selected_keys.clear();
                 }
@@ -355,8 +353,9 @@ fn show_list(
 
         // Whether today's handover has arrived, named here because the
         // dashboard's source panel is not where a person spends the morning.
-        // Grey while it is merely not due yet, amber once it is overdue -
-        // see fmt::collectors_line.
+        // Grey while it is merely not due yet, amber once overdue - the colour
+        // comes from fmt::collectors_line, so by construction this line and
+        // the dashboard's cannot disagree about lateness.
         let (clause, overdue) = fmt::collectors_line(&pending);
         if !clause.is_empty() {
             ui.add_space(8.0);
@@ -402,8 +401,9 @@ fn show_list(
         }
         // The collection has moved on without these. On the same line as the
         // freshness text, because that line is what a person reads to decide
-        // whether what is in front of them is current - and for hand-added
-        // links it would otherwise be answering for the boards only.
+        // whether what is in front of them is current - and by construction it
+        // otherwise answers for the boards only, since added links are never
+        // read on a schedule.
         if links.stale_since_collect {
             ui.add_space(8.0);
             ui.colored_label(
@@ -426,10 +426,10 @@ fn show_list(
     });
 
     // A MODULE LIST SAYS WHAT IT IS, and offers the way back to the whole
-    // queue. It is no longer a filter hiding rows from Triage - it is its own
-    // list - so the wording is what it CONTAINS rather than what it excludes,
-    // and the way out returns to the working queue rather than "clearing"
-    // something the reader never set.
+    // queue. By construction it is its own list rather than a filter hiding
+    // rows from Triage, so the wording is what it CONTAINS rather than what it
+    // excludes - and the way out returns to the working queue rather than
+    // "clearing" something the reader never set.
     if let ListScope::Module(module) = app.list_scope {
         ui.horizontal(|ui| {
             let [r, g, b] = module.colour();
@@ -445,12 +445,12 @@ fn show_list(
             }
         });
     }
-    // INSTEAD of the keyboard hint, not above it. Adding a row here pushed the
-    // whole table down the moment somebody ticked a box, so their second click
-    // landed one row lower than the one they were aiming at - which on a
-    // multi-select is the failure that matters. Swapping keeps the height
-    // identical, and the hint is the right thing to give up: it describes
-    // per-row keys, and the person has just started working on a set.
+    // INSTEAD of the keyboard hint, not above it. Adding a row here pushed
+    // the whole table down the moment somebody ticked a box - observed: their
+    // second click landed one row lower than the one they were aiming at,
+    // which on a multi-select is the failure that matters. Swapping keeps the
+    // height identical, and the hint is the right thing to give up: it
+    // describes per-row keys, and the person has just started on a set.
     if app.selected_keys.is_empty() {
         ui.label(
             "keys: up / down move, o open, a applied, p pass, d no offer, \
@@ -477,10 +477,10 @@ fn show_list(
 
     let selected_key = app.triage_selected.clone();
     let mut click_target: Option<String> = None;
-    // Applied after the table is drawn: the row closures hold an immutable
-    // borrow of app.triage_rows, so writing a status from inside one would
-    // not compile - and refreshing mid-draw would renumber the rows being
-    // iterated.
+    // Applied after the table is drawn. The row closures hold an immutable
+    // borrow of app.triage_rows, so writing a status from inside one does not
+    // compile - enforced by the type, not by convention - and refreshing
+    // mid-draw would renumber the rows being iterated.
     let mut actions = RowActions::default();
     // Same deferred-apply reason as the others: the header closures borrow app.
     let mut sort_click: Option<SortBy> = None;
@@ -494,6 +494,9 @@ fn show_list(
     // Read once per frame, not per row: every row compares against it. Same
     // value the freshness line above reads.
     let latest_collect = last_collected;
+    // Likewise for the clock. Every date on a row is a moment the person acted
+    // at, and turning a stored instant back into their day needs this.
+    let offset = app.local_offset;
     // Suppressed when EVERY row qualifies. A profile that has only ever been
     // collected once has nothing but new rows, and a badge on all of them is
     // decoration - "new" only means anything against something older.
@@ -510,9 +513,9 @@ fn show_list(
 
     // Bound the table instead of letting it claim every remaining pixel.
     // Unbounded, it drew its column dividers down through empty space below
-    // the last job, which reads as a run of blank rows. Capping it also
-    // leaves room for the description panel underneath - the space the empty
-    // grid was occupying is now the posting you are reading.
+    // the last job - observed as a run of blank rows. Capping it also leaves
+    // room for the description panel underneath: the space the empty grid was
+    // occupying is now the posting you are reading.
     // Captured before the table takes the space, so the open block can be
     // drawn at full width from inside a clipped column cell.
     let table_width = ui.available_width();
@@ -520,10 +523,9 @@ fn show_list(
     let available = ui.available_height();
     let table_height = content_height.min(available * TABLE_SHARE_OF_HEIGHT);
 
-    // Which columns are drawn, in the person's order. Every one of the three
-    // blocks below - widths, headings, cells - now walks this same list, so
-    // they cannot fall out of step with each other the way three
-    // hand-maintained sequences did.
+    // Which columns are drawn, in the person's order. All three blocks below
+    // - widths, headings, cells - walk this same list, so by construction they
+    // cannot fall out of step the way three hand-maintained sequences did.
     let shown = columns::visible(&app.column_order, &app.column_hidden);
     let flex_at = columns::flex_index(&shown);
     // NO STRIP RESERVED ANY MORE - the gear moved to the toolbar. Reserving a
@@ -532,7 +534,7 @@ fn show_list(
     // gear.
     let columns_width = (table_width - EDGE_BAND).max(600.0);
     // What the columns actually want. Summed from the same specs the builder
-    // uses, so it cannot drift from what is drawn.
+    // uses, so by construction it cannot drift from what is drawn.
     let natural_width: f32 = shown
         .iter()
         .map(|id| columns::spec(*id).width)
@@ -545,10 +547,10 @@ fn show_list(
     // the edge, minus room for the column-settings gear and a thin band so
     // nothing sits flush against the window frame.
     {
-        // SIDEWAYS WHEN IT HAS TO BE. Sized to natural_width, which is the
-        // window width whenever everything fits - so the flexible column still
-        // reaches the edge and no scrollbar appears, exactly as before. It is
-        // only wider when the columns genuinely are, and then they can be
+        // SIDEWAYS WHEN IT HAS TO BE. Sized to natural_width, which
+        // by construction is the window width whenever everything fits - so the
+        // flexible column still reaches the edge and no scrollbar appears. It
+        // is wider only when the columns genuinely are, and then they can be
         // scrolled to rather than truncated out of reach.
         egui::ScrollArea::horizontal()
             .auto_shrink([false, false])
@@ -563,12 +565,13 @@ fn show_list(
         .sense(egui::Sense::click())
         // TOP-aligned, not centred. An open row is ~260px tall and centring
         // put its job line in the middle of that space, with a large empty gap
-        // above it and the detail crammed below. Ordinary rows are exactly one
-        // row high, so top and centre are identical for them.
+        // above and the detail crammed below. Ordinary rows are exactly one
+        // row high, so by construction top and centre are identical for
+        // them.
         .cell_layout(egui::Layout::left_to_right(egui::Align::Min))
         .min_scrolled_height(200.0);
-    // Asked for by key, resolved to an index here, because the caller that
-    // wants the row on screen knows the job and not its position - and the
+    // Asked for by key, resolved to an index here: the caller wanting the row
+    // on screen knows the job, not its position - and by construction the
     // position depends on the sort, the scope and the filters, none of which
     // are that caller's business.
     //
@@ -598,17 +601,18 @@ fn show_list(
                 let spec = columns::spec(*id);
                 let (_, cell) = header.col(|ui| {
                     // The tick-box column's heading selects or clears every
-                    // row currently listed - which is what "all" has to mean
-                    // here, since a filter or a search is exactly when
-                    // somebody wants to act on a set in bulk.
+                    // row currently listed - by construction the filtered set,
+                    // not the whole table, which is what "all" has to mean
+                    // when a filter or a search is exactly why somebody wants
+                    // to act on a set in bulk.
                     if spec.id == columns::ColumnId::Select {
                         let mut all = !app.triage_rows.is_empty()
                             && app.triage_rows.iter().all(|r| {
                                 app.selected_keys.contains(&r.job.key)
                             });
                         // An unlabelled checkbox has nothing for the tree to
-                        // report, so it was invisible to a screen reader and
-                        // unaddressable by automation.
+                        // report, so by construction it is invisible to a
+                        // screen reader and unaddressable by automation.
                         let response = crate::access::tag(
                             ui.checkbox(&mut all, "")
                                 .on_hover_text("Select everything in this list"),
@@ -621,15 +625,16 @@ fn show_list(
                         return;
                     }
                     // Clicking a heading sorts, as it always has. Reordering
-                    // is done from the gear instead of by dragging a heading,
-                    // so neither gesture can be mistaken for the other.
+                    // lives on the gear rather than on a drag, so
+                    // by construction neither gesture can be mistaken for the
+                    // other.
                     let response = match spec.sort {
                         Some(column) => sort_heading(ui, app, column, spec.heading),
                         None => ui.strong(spec.heading),
                     };
-                    // The heading itself senses clicks too - see below for why
-                    // both. Set here rather than returned so the borrow of
-                    // `ui` ends with the cell.
+                    // The heading itself senses clicks too - see below for
+                    // why both. Set here rather than returned, so the borrow
+                    // of `ui` ends with the cell - enforced by the type.
                     if let Some(column) = spec.sort {
                         if response.clicked() {
                             sort_click = Some(column);
@@ -649,11 +654,12 @@ fn show_list(
                 // symptom was that clicking BESIDE a heading sorted while
                 // clicking ON it did nothing.
                 //
-                // So both are read. Whichever receives the click, the heading
-                // sorts, and the dead strip beside the words is gone either
-                // way. They cannot fight: both assign the same column to
-                // `sort_click`, so a click that somehow reached both still
-                // sorts once rather than toggling twice back to where it was.
+                // So both are read. Whichever receives the click, the
+                // heading sorts, and the dead strip beside the words is gone
+                // either way. They cannot fight by construction: both assign
+                // the same column to `sort_click`, so a click reaching both
+                // still sorts once rather than toggling twice back to where
+                // it started.
                 if let Some(column) = spec.sort {
                     if cell.clicked() {
                         sort_click = Some(column);
@@ -662,9 +668,9 @@ fn show_list(
             }
         })
         .body(|body| {
-            // Per-row heights, so the row that is open can be taller than the
-            // rest. egui_extras rows are otherwise uniform, which is what
-            // forced the description into a separate panel underneath.
+            // Per-row heights, so the open row can be taller than the rest.
+            // egui_extras rows are uniform by construction otherwise, which is
+            // what forced the description into a separate panel underneath.
             let heights: Vec<f32> = app
                 .triage_rows
                 .iter()
@@ -696,6 +702,7 @@ fn show_list(
                     row_height,
                     table_width,
                     latest_collect: latest_collect.as_deref(),
+                    local_offset: offset,
                 };
                 for id in &shown {
                     row.col(|ui| draw_cell(ui, *id, &cell, &mut actions));
@@ -724,10 +731,17 @@ fn show_list(
         fit_click,
         expanded_anchor,
         toggle_select,
+        select_row,
     } = actions;
 
     if let Some(key) = taken_down {
         app.mark_taken_down(&key);
+    }
+
+    // Applied before anything that changes the list, so the band lands on the
+    // row the person touched rather than on whatever ends up in its place.
+    if let Some(key) = select_row {
+        app.triage_selected = Some(key);
     }
 
     if let Some((key, ticked)) = toggle_select {
@@ -754,9 +768,10 @@ fn show_list(
     if let Some(column) = sort_click {
         app.sort_by_column(column);
     }
-    // Drawn in a foreground layer anchored to the open row. The row itself
-    // already reserved the height, so this fills a gap rather than covering
-    // another row, and it re-anchors every frame so it tracks scrolling.
+    // Drawn in a foreground layer anchored to the open row. The row already
+    // reserved the height, so by construction this fills a gap rather than
+    // covering another row - and it re-anchors every frame, so it tracks
+    // scrolling.
     if let Some((idx, pos)) = expanded_anchor {
         if let Some(r) = app.triage_rows.get(idx) {
             let width = (table_width - 28.0).max(240.0);
@@ -765,10 +780,10 @@ fn show_list(
                 .fixed_pos(pos)
                 .show(ui.ctx(), |ui| {
                     // OPAQUE, and hard-bounded. A foreground layer does not
-                    // inherit the table's background or its clipping, so the
-                    // first version drew transparent text straight over the
-                    // rows underneath and ran past the height the row had
-                    // reserved.
+                    // inherit the table's background or its clipping
+                    // by construction - observed: the first version drew
+                    // transparent text straight over the rows underneath and
+                    // ran past the height the row had reserved.
                     egui::Frame::none()
                         .fill(ui.visuals().panel_fill)
                         .stroke(egui::Stroke::new(1.0, ui.visuals().selection.bg_fill))
@@ -780,6 +795,7 @@ fn show_list(
                                 rows: &app.attachments,
                                 message: app.attachment_message.as_deref(),
                                 download_dir: app.settings.download_dir.as_deref(),
+                                local_offset: app.local_offset,
                             };
                             match expanded_block(ui, r, app_tab, &files) {
                                 BlockAction::Close => close_requested = true,
@@ -797,9 +813,9 @@ fn show_list(
     }
     if let Some(key) = open_earlier {
         // OPENED WHEREVER IT IS. The earlier round is usually delisted, which
-        // the ordinary list does not show - so this switches to the scope that
-        // holds it rather than selecting a row that is not on screen and
-        // looking like it did nothing.
+        // by construction the ordinary list does not show - so this switches
+        // to the scope that holds it rather than selecting a row that is not
+        // on screen and looking like it did nothing.
         app.open_job_anywhere(&key);
     }
     if let Some(chosen) = file_action {
@@ -821,8 +837,9 @@ fn show_list(
     }
     link_prompt(app, ui);
     if let Some(key) = fit_click {
-        // Opens the row AND switches the block to the fit breakdown, so one
-        // click answers "why that number" instead of two.
+        // Opens the row AND switches the block to the fit breakdown in the
+        // same handler, so by construction one click answers "why that
+        // number" instead of two.
         app.triage_selected = Some(key.clone());
         app.triage_expanded = Some(key);
         app.expanded_tab = ExpandedTab::Fit;
@@ -874,14 +891,21 @@ fn bulk_bar(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                     .selected_text("Set status")
                     .width(150.0)
                     .show_ui(ui, |ui| {
-                        if ui.selectable_label(false, NOT_SET).clicked() {
+                        if crate::access::tag(
+                            ui.selectable_label(false, NOT_SET),
+                            egui::WidgetType::SelectableLabel,
+                            "bulk-status-not-set",
+                        )
+                        .clicked()
+                        {
                             set_status = Some("");
                         }
                         // THE DEPENDENT STATUSES ARE NOT OFFERED IN BULK.
                         // Whether Offer Withdrawn is available depends on each
-                        // job's own history, and a batch of nine rows has nine
-                        // different answers - so the honest options here are
-                        // the ones that mean the same thing for every row.
+                        // job's own history by construction, so a batch of
+                        // nine rows has nine different answers - and the
+                        // honest options here are the ones meaning the same
+                        // thing for every row.
                         for status in crate::status::FLOW.iter() {
                             if status.requires.is_some() {
                                 continue;
@@ -906,10 +930,11 @@ fn bulk_bar(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                 // the same tick boxes, the opposite verb, so the way back is
                 // the same gesture as the way out.
                 //
-                // NAMED, because these two are the SAME control in two states.
-                // Anything addressing it by visible text would be addressing a
-                // different thing depending on which list is showing - the exact
-                // instability build_standard's "stable name" wording exists for.
+                // NAMED, because these two are the SAME control in two
+                // states. By construction anything addressing it by visible
+                // text addresses a different thing depending on which list is
+                // showing - the instability build_standard's "stable name"
+                // wording exists for.
                 if app.show_duplicates {
                     let response = crate::access::tag(
                         ui.button("Ungroup").on_hover_text(
@@ -947,9 +972,10 @@ fn bulk_bar(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
 
                     // A DIFFERENT VERB FROM REMOVE, beside it on purpose.
                     // Remove is "I do not want to see this"; taken down is
-                    // "the employer withdrew it". They land in the same place
-                    // - out of the working lists - for opposite reasons, and
-                    // conflating them would lose the reason.
+                    // "the employer withdrew it". They write different columns
+                    // by construction - retired_at and delisted_at - and land
+                    // in the same place for opposite reasons, so conflating
+                    // them would lose the reason.
                     let response = crate::access::tag(
                         ui.button("Mark taken down").on_hover_text(
                             "The employer pulled these postings. They leave your \
@@ -1004,8 +1030,9 @@ fn bulk_bar(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
 /// removes something in bulk.
 ///
 /// It states the COST rather than asking whether you are sure: how many rows,
-/// and how many of them you applied to. "Are you sure" is a question nobody
-/// has the information to answer.
+/// and how many of them you applied to - counted before the dialog opens, so
+/// by construction the figure shown is the one the action was sized against.
+/// "Are you sure" is a question nobody has the information to answer.
 pub fn confirm_retire_window(app: &mut UnlatchedApp, ctx: &egui::Context) {
     let Some(pending) = &app.confirm_retire else {
         return;
@@ -1027,9 +1054,10 @@ pub fn confirm_retire_window(app: &mut UnlatchedApp, ctx: &egui::Context) {
             ));
             ui.add_space(6.0);
             if applied > 0 {
-                // Phrased with the count as the object rather than the subject.
-                // The earlier wording agreed the verb but not the noun, so any
-                // count above one read "2 of them are one you applied to."
+                // Phrased with the count as the object rather than the
+                // subject. The earlier wording agreed the verb but not the
+                // noun - observed: any count above one read
+                // "2 of them are one you applied to."
                 ui.colored_label(
                     egui::Color32::from_rgb(217, 164, 65),
                     if count == 1 {
@@ -1047,9 +1075,9 @@ pub fn confirm_retire_window(app: &mut UnlatchedApp, ctx: &egui::Context) {
             ui.add_space(12.0);
             ui.horizontal(|ui| {
                 // Named because this dialog CHANGES HEIGHT: it grows a line
-                // when it has an applied count to report, which moved these
-                // buttons 14px down and made a positional click land on body
-                // text while the run carried on regardless.
+                // when it has an applied count to report - observed, that
+                // moved these buttons 14px down and a positional click landed
+                // on body text while the run carried on regardless.
                 let go_response = crate::access::tag(
                     ui.button("Remove them"),
                     egui::WidgetType::Button,
@@ -1080,9 +1108,9 @@ pub fn confirm_retire_window(app: &mut UnlatchedApp, ctx: &egui::Context) {
 /// The note that goes with a status change.
 ///
 /// WHY A PROMPT AND NOT A FIELD SOMEWHERE. A note written a week later is a
-/// reconstruction; the only moment somebody actually knows what happened is
-/// the moment they record it. So the app asks then, every time, and never
-/// insists - Enter with an empty box saves the change and logs no note.
+/// reconstruction; the only moment somebody knows what happened is the moment
+/// they record it. So the app asks then, every time, and never insists -
+/// by construction Enter with an empty box saves the change and logs no note.
 ///
 /// IT OPENS WITH THE CURSOR IN THE FIELD. It did not, once, so that Enter
 /// could mean save - a multiline box takes Enter as a new line, and an
@@ -1113,9 +1141,10 @@ pub fn status_note_window(app: &mut UnlatchedApp, ctx: &egui::Context) {
     // and it read as a window that simply would not move.
     //
     // .pivot + .default_pos gives the same opening position - centred - and
-    // then leaves it alone. It has to be movable because this prompt covers
-    // the row it is asking about: somebody writing a note about a posting
-    // frequently wants to see that posting while they write.
+    // then leaves it alone by construction, since a default is applied once.
+    // It has to be movable because this prompt covers the row it is asking
+    // about, and somebody writing a note about a posting often wants to see
+    // that posting while they write.
     egui::Window::new(format!("Mark {subject} {status_label}"))
         .id(egui::Id::new("status-note"))
         .collapsible(false)
@@ -1125,15 +1154,15 @@ pub fn status_note_window(app: &mut UnlatchedApp, ctx: &egui::Context) {
         .show(ctx, |ui| {
             ui.set_width(440.0);
             // TAKEN OUT OF THE QUEUE BEFORE ANY FIELD IS DRAWN, which is the
-            // whole trick: the note box never sees an unmodified Enter, so it
-            // cannot turn one into a new line, and Enter therefore saves
-            // whether or not the cursor is sitting in it. Shift+Enter still
-            // reaches the box and starts a new line.
+            // whole trick: by construction the note box never sees an
+            // unmodified Enter, so it cannot turn one into a new line, and
+            // Enter saves whether or not the cursor is sitting in it.
+            // Shift+Enter still reaches the box and starts a new line.
             //
-            // NOT input.consume_key. That matches modifiers LOGICALLY - its
-            // own documentation says extra Shift and Alt are ignored - so
-            // asking it for a plain Enter also eats Shift+Enter, and the new
-            // line this is supposed to protect would never arrive.
+            // NOT input.consume_key. By its own documentation that matches
+            // modifiers logically, ignoring extra Shift and Alt - so asking it
+            // for a plain Enter also eats Shift+Enter, and the new line this
+            // is supposed to protect would never arrive.
             if ui.input_mut(|i| {
                 let mut pressed = false;
                 i.events.retain(|event| {
@@ -1159,9 +1188,10 @@ pub fn status_note_window(app: &mut UnlatchedApp, ctx: &egui::Context) {
             }
 
             if wants_offer_fields {
-                // Pay and the date are their own boxes rather than a sentence
-                // inside the note, because they are the two facts somebody is
-                // asked for months later and the two a paragraph buries.
+                // Pay and the date are their own boxes rather than a
+                // sentence inside the note: they are stored in their own
+                // columns by construction, so a paragraph would bury the two
+                // facts somebody is asked for months later.
                 let Some(pending) = &mut app.pending_status else {
                     return;
                 };
@@ -1176,8 +1206,9 @@ pub fn status_note_window(app: &mut UnlatchedApp, ctx: &egui::Context) {
                             "offer-pay",
                         );
                         // AN OFFER OPENS HERE, not on the note. Pay and the
-                        // date are why this prompt is never skippable, and
-                        // they are the first thing it asks for.
+                        // date exist in no other screen by construction, which
+                        // is why this prompt is never skippable - and they are
+                        // the first thing it asks for.
                         if place_cursor {
                             place_cursor = false;
                             pending.cursor_placed = true;
@@ -1218,9 +1249,10 @@ pub fn status_note_window(app: &mut UnlatchedApp, ctx: &egui::Context) {
             ui.add_space(4.0);
 
             ui.horizontal(|ui| {
-                // NAMED, all three: this dialog changes height with the status
-                // (an Offer adds two rows), so a positional click would land on
-                // a different button depending on what was being recorded.
+                // NAMED, all three: this dialog changes height with the
+                // status - an Offer adds two rows - so by construction a
+                // positional click lands on a different button depending on
+                // what is being recorded.
                 if crate::access::tag(
                     ui.button("Save"),
                     egui::WidgetType::Button,
@@ -1256,10 +1288,10 @@ pub fn status_note_window(app: &mut UnlatchedApp, ctx: &egui::Context) {
         });
 
     // Escape cancels. Enter saves, and is claimed inside the window above
-    // rather than here - by the time this runs a plain Enter has already been
-    // consumed, so this only has to catch the Ctrl+Enter that used to be the
-    // save for somebody typing. Kept because it was the documented gesture and
-    // costs nothing to honour.
+    // rather than here - by construction a plain Enter has already been
+    // consumed by the time this runs, so this only catches the Ctrl+Enter that
+    // used to be the save for somebody typing. Kept because it was the
+    // documented gesture and costs nothing to honour.
     ctx.input(|inp| {
         if inp.key_pressed(Key::Escape) {
             cancel = true;
@@ -1278,13 +1310,14 @@ pub fn status_note_window(app: &mut UnlatchedApp, ctx: &egui::Context) {
 
 /// The gear's panel, in a window rather than a popup.
 ///
-/// A popup closes the moment a click lands outside it, and rearranging columns
-/// is a several-click job done WHILE watching the table change underneath -
-/// which means clicking the table, which would dismiss a popup every time.
+/// A popup closes the moment a click lands outside it by construction, and
+/// rearranging columns is a several-click job done WHILE watching the table
+/// change underneath - which means clicking the table, which would dismiss a
+/// popup every time.
 ///
-/// Saved on every change: there is no Save button on it, so somebody who
-/// rearranges their columns and then closes the app has not asked to lose
-/// anything.
+/// Saved on every change, because by construction this panel has no Save
+/// button: somebody who rearranges their columns and then closes the app has
+/// not asked to lose anything.
 fn column_settings_window(app: &mut UnlatchedApp, ctx: &egui::Context) {
     if !app.show_column_settings {
         return;
@@ -1312,8 +1345,9 @@ fn column_settings_window(app: &mut UnlatchedApp, ctx: &egui::Context) {
 /// What one row needs in order to draw any of its cells.
 ///
 /// Bundled because the cells are no longer written out in a fixed sequence
-/// inside the row closure - they are dispatched by column id, so each one has
-/// to be handed the row and the per-frame facts explicitly.
+/// inside the row closure - they are dispatched by column id, so
+/// by construction each one has to be handed the row and the per-frame facts
+/// explicitly rather than closing over them.
 struct CellCtx<'a> {
     r: &'a crate::db::TriageRow,
     idx: usize,
@@ -1324,6 +1358,10 @@ struct CellCtx<'a> {
     /// When the most recent collection ran, for the NEW badge. None when every
     /// row would qualify - see where it is computed.
     latest_collect: Option<&'a str>,
+    /// This machine's UTC offset, for the dates a person acted at. Carried on
+    /// the context rather than looked up per cell: db::local_offset_secs is a
+    /// query, and this runs once per visible row per frame.
+    local_offset: i64,
 }
 
 /// What the cells want done after the table is drawn.
@@ -1341,20 +1379,36 @@ struct RowActions {
     expanded_anchor: Option<(usize, egui::Pos2)>,
     /// A tick box that changed, as (key, now selected).
     toggle_select: Option<(String, bool)>,
+    /// A row that should become the highlighted one, because the person
+    /// touched a control inside it that consumes the row's own click.
+    select_row: Option<String>,
 }
 
 /// One cell. Which one is decided by `id`, not by where the call sits.
 fn draw_cell(ui: &mut egui::Ui, id: columns::ColumnId, c: &CellCtx, out: &mut RowActions) {
     use columns::ColumnId as C;
     let r = c.r;
+    // THE TICK BAND, painted before the cell's own content so it sits behind
+    // the text rather than over it. Per cell because by construction the table
+    // draws per cell: there is no row-wide rect to paint, and a single fill
+    // would not survive the sideways scroll a wide table has.
+    //
+    // Not on the open row: its detail block is ~260px tall, and a fill over
+    // that is a wall of colour with the job line lost inside it - the same
+    // reason the selection band is suppressed there.
+    if c.selected && !c.expanded {
+        let dark = ui.visuals().dark_mode;
+        ui.painter()
+            .rect_filled(ui.max_rect(), 0.0, crate::theme::ticked_row_fill(dark));
+    }
     match id {
         C::Select => {
             let mut ticked = c.selected;
             // Named per JOB KEY, not per row index. The list re-sorts and
-            // re-filters underneath somebody while they are selecting, so a
-            // name built from the position would refer to different jobs from
-            // one moment to the next - the same reason the selection itself is
-            // held by key.
+            // re-filters underneath somebody while they are selecting, so
+            // by construction a name built from the position refers to different
+            // jobs from one moment to the next - the same reason the selection
+            // itself is held by key.
             let response = crate::access::tag_with_value(
                 ui.checkbox(&mut ticked, ""),
                 egui::WidgetType::Checkbox,
@@ -1368,11 +1422,12 @@ fn draw_cell(ui: &mut egui::Ui, id: columns::ColumnId, c: &CellCtx, out: &mut Ro
 
         C::Title => {
             if c.expanded {
-                // Only the ANCHOR is taken here. A cell is clipped to its own
-                // column, so anything drawn from inside one that reaches past
-                // it is simply not painted - the first attempt at this
-                // produced a tall empty row. The block itself is drawn after
-                // the table, in its own layer, which nothing clips.
+                // Only the ANCHOR is taken here. A cell is clipped to its
+                // own column by construction, so anything drawn from inside
+                // one that reaches past it is not painted - observed: the
+                // first attempt produced a tall empty row. The block itself is
+                // drawn after the table, in its own layer, which nothing
+                // clips.
                 let top_left = ui.min_rect().min;
                 out.expanded_anchor =
                     Some((c.idx, top_left + egui::vec2(0.0, c.row_height - 4.0)));
@@ -1387,9 +1442,10 @@ fn draw_cell(ui: &mut egui::Ui, id: columns::ColumnId, c: &CellCtx, out: &mut Ro
                     egui::Stroke::new(1.5, ui.visuals().selection.bg_fill),
                 );
             }
-            // Arrived in the most recent collect. The dashboard has shown the
-            // COUNT since the dashboard existed; this is the other half -
-            // which rows they actually are.
+            // Arrived in the most recent collect. The dashboard has shown
+            // the COUNT since it existed; this is the other half - which rows
+            // they are - and both read Module::NewSinceLastRun, so
+            // by construction they cannot disagree.
             if c.latest_collect
                 .zip(r.job.fetched_at.as_deref())
                 .is_some_and(|(latest, fetched)| {
@@ -1431,11 +1487,11 @@ fn draw_cell(ui: &mut egui::Ui, id: columns::ColumnId, c: &CellCtx, out: &mut Ro
                 _ => ui.label(title),
             };
             response.on_hover_ui(|ui| {
-                // FIRST, because in the grouped view it is the only thing the
-                // person is here to judge: this row was folded away by the
-                // app's own decision, and they are deciding whether it was
-                // right. Everything else about the posting is secondary to
-                // that.
+                // FIRST, because in the grouped view it is the only thing
+                // the person is here to judge: this row was folded away by the
+                // app's own decision - by construction the only judgement in
+                // the app that is not theirs - and they are deciding whether
+                // it was right.
                 if let Some(why) = &r.job.duplicate_reason {
                     if !why.trim().is_empty() {
                         ui.label(
@@ -1458,9 +1514,9 @@ fn draw_cell(ui: &mut egui::Ui, id: columns::ColumnId, c: &CellCtx, out: &mut Ro
                         ui.label(format!("screen: {reasons}"));
                     }
                 }
-                // The preview, not job.description: a list does not carry the
-                // full text, and this tooltip never showed more than 400
-                // characters of it anyway.
+                // The preview, not job.description: by construction a list
+                // does not carry the full text (see SELECT_TRIAGE_COLUMNS),
+                // and this tooltip never showed more than 400 characters.
                 if let Some(desc) = &r.description_preview {
                     if !desc.trim().is_empty() {
                         ui.label(fmt::truncate(desc, 400));
@@ -1501,9 +1557,9 @@ fn draw_cell(ui: &mut egui::Ui, id: columns::ColumnId, c: &CellCtx, out: &mut Ro
             } else {
                 age
             };
-            // Softened once a posting is old enough to often be filled. Never
-            // hidden - plenty of real openings sit for months, so this is a
-            // cue, not a judgement.
+            // Softened once a posting is old enough to often be filled -
+            // believed, not measured. Never hidden: plenty of real openings
+            // sit for months, so this is a cue rather than a judgement.
             let text = if fmt::is_stale(raw) {
                 egui::RichText::new(posted).weak()
             } else {
@@ -1511,10 +1567,12 @@ fn draw_cell(ui: &mut egui::Ui, id: columns::ColumnId, c: &CellCtx, out: &mut Ro
             };
             let exact = format!("posted {raw}");
             match &r.job.repost_note {
-                // A seat advertised before is worth seeing at a glance, but it
-                // cuts both ways - the employer is still hiring and the last
-                // round produced nobody - so the marker states the fact and the
-                // hover explains it, rather than colouring it as a warning.
+                // A seat advertised before is worth seeing at a glance, but
+                // it cuts both ways: the employer is still hiring, and the
+                // last round produced nobody. Which of those it is cannot be
+                // told from the data by construction, so the marker states the
+                // fact and the hover explains it rather than colouring it as a
+                // warning.
                 Some(note) if !note.trim().is_empty() => {
                     // The note is a whole sentence from the engine. It used to
                     // be a fragment this line completed with "This seat was ",
@@ -1646,7 +1704,15 @@ fn draw_cell(ui: &mut egui::Ui, id: columns::ColumnId, c: &CellCtx, out: &mut Ro
             let current = fmt::opt_str(&r.status);
             let shown = crate::status::label(current);
             ui.horizontal(|ui| {
-                egui::ComboBox::from_id_source(("status", &r.job.key))
+                // TOUCHING THE STATUS SELECTS THE ROW. The band a person reads
+                // across a wide table is the SELECTED row, and clicking a
+                // combo does not reach the row's own click handler -
+                // by construction, since the combo consumes the click - so the
+                // highlight stayed on whatever was selected before and the row
+                // being edited had no band at all. On a table wide enough to
+                // scroll sideways that is losing your place at the exact
+                // moment you are changing something.
+                let combo = egui::ComboBox::from_id_source(("status", &r.job.key))
                     .selected_text(&shown)
                     // Wide enough for the longest label ("Offer Withdrawn")
                     // without the ellipsis. A truncated status is exactly the
@@ -1662,10 +1728,17 @@ fn draw_cell(ui: &mut egui::Ui, id: columns::ColumnId, c: &CellCtx, out: &mut Ro
                     // the scrollbar. `status_popup_height` is unit-tested.
                     .height(crate::status::popup_height(ui))
                     .show_ui(ui, |ui| {
-                        // Every choice is listed, blocked ones included, so the
-                        // list does not change shape between jobs and nobody
-                        // hunts for an entry that is simply absent.
-                        if ui.selectable_label(current.is_empty(), NOT_SET).clicked() {
+                        // Every choice is listed, blocked ones included, so
+                        // by construction the list is the same shape for every
+                        // job and nobody hunts for an entry that is absent.
+                        if crate::access::tag_with_value(
+                            ui.selectable_label(current.is_empty(), NOT_SET),
+                            egui::WidgetType::SelectableLabel,
+                            "row-status-not-set",
+                            if current.is_empty() { "true" } else { "false" },
+                        )
+                        .clicked()
+                        {
                             out.status_change = Some((r.job.key.clone(), String::new()));
                         }
                         for (status, blocked) in crate::status::choices_for(&r.history) {
@@ -1715,19 +1788,27 @@ fn draw_cell(ui: &mut egui::Ui, id: columns::ColumnId, c: &CellCtx, out: &mut Ro
                                 out.taken_down = Some(r.job.key.clone());
                             }
                     });
-                // TAKEN DOWN IS SHOWN BESIDE THE STATUS, NEVER INSTEAD OF IT.
-                // It used to be a status somebody set by hand, which made
-                // "applied" and "taken down" mutually exclusive - and the row
-                // where both are true is the one a person most needs to see.
+                // The combo's own response, which is the control the click
+                // actually landed on. Selecting from here rather than from the
+                // row means the band follows the row being edited.
+                if combo.response.clicked() || combo.response.has_focus() {
+                    out.select_row = Some(r.job.key.clone());
+                }
+                // TAKEN DOWN IS SHOWN BESIDE THE STATUS, NEVER INSTEAD OF
+                // IT. It used to be a status somebody set by hand, which
+                // by construction made "applied" and "taken down" mutually
+                // exclusive - and the row where both are true is the one a
+                // person most needs to see.
                 if r.job.delisted_at.is_some() {
                     ui.weak("taken down").on_hover_text(
                         "The employer removed this posting. Whatever you \
                          recorded about it is untouched.",
                     );
                 }
-                // How long the row has sat in its current state. Applications
-                // are lost to silence more than to rejection, and nothing else
-                // in the app says how long it has been since you acted on one.
+                // How long the row has sat in its current state.
+                // Applications are lost to silence more than to rejection -
+                // believed, not measured - and by construction nothing else in
+                // the app says how long it has been since you acted on one.
                 if !current.is_empty() {
                     if let Some(days) = r
                         .status_updated
@@ -1762,15 +1843,17 @@ fn draw_cell(ui: &mut egui::Ui, id: columns::ColumnId, c: &CellCtx, out: &mut Ro
         // Read from the append-only log, so marking a job Interviewed later
         // does not move the date they applied.
         //
-        // Orange past a fortnight - the same SILENT_DAYS the dashboard counts
-        // silence by, so the list and the dashboard cannot disagree about when
-        // an application has gone quiet.
+        // Orange past a fortnight, from the same SILENT_DAYS the dashboard
+        // counts silence by - so by construction the list and the dashboard
+        // cannot disagree about when an application has gone quiet.
         C::Applied => {
             let Some(applied) = r.applied_at.as_deref() else {
                 return;
             };
-            let days = crate::date::days_since(applied);
-            let text = fmt::short_date(applied);
+            // LOCAL DAYS, so an application sent at 9pm is not counted as
+            // a day older than it is the moment it is written.
+            let days = crate::date::local_days_since(applied, c.local_offset);
+            let text = fmt::short_date(applied, c.local_offset);
             let label = match days {
                 Some(d) if d >= crate::dashboard::SILENT_DAYS => {
                     ui.colored_label(egui::Color32::from_rgb(217, 164, 65), text)
@@ -1799,9 +1882,9 @@ fn draw_cell(ui: &mut egui::Ui, id: columns::ColumnId, c: &CellCtx, out: &mut Ro
         // work from either (2026-08-07): the host names the board, and clicking it
         // opens the posting.
         C::FoundAt => {
-            // This column exists so a person can judge where a job came from,
-            // which is exactly the judgement a spoofed host would defeat -
-            // link_host now parses rather than splits, so
+            // This column exists so a person can judge where a job came
+            // from, which is exactly the judgement a spoofed host would defeat
+            // - link_host parses rather than splits, so by construction
             // "https://boards.greenhouse.io@evil.com/x" reads as evil.com.
             let Some(url) = fmt::safe_link(fmt::opt_str(&r.job.url)) else {
                 return;
@@ -1852,14 +1935,15 @@ fn files_tab_label(files: &crate::views::attachments::Files<'_>) -> String {
 }
 
 /// The "add a link" prompt. A modal, like the note prompt, because the open
-/// row is drawn from borrowed data and cannot hold a text field of its own.
+/// row is drawn from borrowed data and by construction cannot hold a text
+/// field of its own - enforced by the type.
 fn link_prompt(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     if !app.link_prompt_open {
         return;
     }
-    // Two flags, not one: `open` is handed to the window itself (its X button
-    // writes through it), so the Cancel button inside the closure needs its
-    // own or the same variable is borrowed twice.
+    // Two flags, not one: `open` is handed to the window itself, whose X
+    // button writes through it - so the Cancel button inside the closure needs
+    // its own, or the same variable is borrowed twice. Enforced by the type.
     let mut open = true;
     let mut confirmed = false;
     let mut cancelled = false;
@@ -1872,17 +1956,21 @@ fn link_prompt(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
             ui.label("A link costs nothing to keep and often outlives the posting.");
             ui.horizontal(|ui| {
                 ui.label("Address:");
-                ui.text_edit_singleline(&mut app.link_url);
+                crate::access::text_field(ui, &mut app.link_url, "add-link-address");
             });
             ui.horizontal(|ui| {
                 ui.label("Call it:");
-                ui.text_edit_singleline(&mut app.link_label);
+                crate::access::text_field(ui, &mut app.link_label, "add-link-label");
             });
             ui.horizontal(|ui| {
-                if ui.button("Add").clicked() {
+                if crate::access::tag(ui.button("Add"), egui::WidgetType::Button, "add-link-confirm")
+                    .clicked()
+                {
                     confirmed = true;
                 }
-                if ui.button("Cancel").clicked() {
+                if crate::access::tag(ui.button("Cancel"), egui::WidgetType::Button, "add-link-cancel")
+                    .clicked()
+                {
                     cancelled = true;
                 }
             });
@@ -1917,8 +2005,9 @@ fn expanded_block(
     let reasons = r.job.screen_reasons.clone().unwrap_or_default();
     let missing = r.job.missing_skills.clone().unwrap_or_default();
     let repost_note = r.job.repost_note.clone().unwrap_or_default();
-    // Deferred like every other action here: this block is drawn from borrowed
-    // data and cannot change what the caller is iterating over.
+    // Deferred like every other action here: this block is drawn from
+    // borrowed data and by construction cannot change what the caller is
+    // iterating over - enforced by the type.
     let mut open_earlier: Option<String> = None;
 
     // A HEADER BAR, not a line of text jammed against the row above. The open
@@ -1946,22 +2035,35 @@ fn expanded_block(
                     crate::browse::link(ui, "Open posting", link);
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Close").clicked() {
+                    if crate::access::tag(
+                        ui.button("Close"),
+                        egui::WidgetType::Button,
+                        "expanded-close",
+                    )
+                    .clicked()
+                    {
                         action = BlockAction::Close;
                     }
                     // Two faces of one job, not two screens. Fit answers "why
                     // that number"; Posting is the text itself.
-                    if ui.selectable_label(tab == ExpandedTab::Fit, "Fit").clicked() {
+                    if crate::access::tag_with_value(
+                        ui.selectable_label(tab == ExpandedTab::Fit, "Fit"),
+                        egui::WidgetType::SelectableLabel,
+                        "expanded-tab-fit",
+                        if tab == ExpandedTab::Fit { "true" } else { "false" },
+                    )
+                    .clicked()
+                    {
                         action = BlockAction::Switch(ExpandedTab::Fit);
                     }
-                    // Files sits beside the other two rather than on a screen
-                    // of its own: attachments belong to the JOB, so the
-                    // place to find them is the job.
+                    // Files sits beside the other two rather than on a
+                    // screen of its own: attachments belong to the JOB
+                    // by construction, so the place to find them is the job.
                     //
                     // The visible label carries a COUNT, so it is a different
-                    // string every time something is attached - unusable as
-                    // an identifier, which is why the count goes in the value
-                    // slot instead and the name stays put.
+                    // string every time something is attached - unusable as an
+                    // identifier, which is why the count goes in the value
+                    // slot and the name stays put.
                     if crate::access::tag_with_value(
                         ui.selectable_label(tab == ExpandedTab::Files, files_tab_label(files)),
                         egui::WidgetType::Button,
@@ -1983,8 +2085,8 @@ fn expanded_block(
         });
     ui.add_space(6.0);
 
-    // The screening facts, indented as a group so they read as notes ABOUT the
-    // posting rather than as the first lines of it.
+    // The screening facts, indented as a group so by construction they read
+    // as notes ABOUT the posting rather than as the first lines of it.
     ui.indent("posting_facts", |ui| {
         if !reasons.trim().is_empty() {
             ui.weak(format!("screen: {reasons}"));
@@ -1996,7 +2098,8 @@ fn expanded_block(
         if !repost_note.trim().is_empty() {
             ui.weak(&repost_note);
             // A new entry after four weeks points back at the round it
-            // followed, and both stay visible - so this offers the earlier
+            // followed, and both stay visible by construction - the repost is
+            // a reference, not a replacement - so this offers the earlier
             // posting rather than describing it.
             if let Some(original) = r.job.repost_of.clone().filter(|k| !k.is_empty()) {
                 if ui
@@ -2122,16 +2225,17 @@ fn fit_breakdown(ui: &mut egui::Ui, r: &crate::db::TriageRow) {
 }
 
 fn handle_keyboard(app: &mut UnlatchedApp, ctx: &egui::Context) {
-    // A note text field steals every key while focused; ignore triage
-    // shortcuts entirely while any widget in the window has keyboard focus
-    // so typing a note never doubles as a status command.
+    // A note text field steals every key while focused, so triage shortcuts
+    // are ignored entirely while any widget in the window has keyboard focus -
+    // by construction typing a note then cannot double as a status command.
     let something_focused = ctx.memory(|m| m.focused().is_some());
 
-    // THE NOTE PROMPT SWALLOWS THE SHORTCUTS WHILE IT IS UP. Its note field is
-    // deliberately not focused on open, so without this a person typing
-    // "already applied" into it would fire 'a', 'd', 'p' and 'i' against the
-    // rows behind the dialog - four status changes nobody asked for, made
-    // while they thought they were writing a sentence.
+    // THE NOTE PROMPT SWALLOWS THE SHORTCUTS WHILE IT IS UP. Its note field
+    // is deliberately not focused on open, so by construction the shortcut
+    // handler would still see the keys: a person typing "already applied" into
+    // it would fire 'a', 'd', 'p' and 'i' against the rows behind the dialog -
+    // four status changes nobody asked for, made while they thought they were
+    // writing a sentence.
     //
     // The prompt handles Enter and Escape itself; nothing else reaches here.
     if app.pending_status.is_some() {
@@ -2243,21 +2347,34 @@ fn show_note_editor(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
         let standing = selected.and_then(|r| r.note.clone());
         ui.label(format!("Note for: {title}"));
         // The last thing written, shown rather than loaded into the box.
-        // Notes APPEND now, so putting it in the box would re-save it; showing
-        // it means a person adding to a thread can see what they said last.
+        // Notes APPEND by construction, so putting it in the box would re-save
+        // it; showing it lets a person adding to a thread see what they said
+        // last.
         if let Some(previous) = standing.as_deref().filter(|n| !n.trim().is_empty()) {
             ui.weak(format!("Last note: {}", fmt::truncate(previous, 80)))
                 .on_hover_text(previous);
         }
-        let edit_response = ui.text_edit_multiline(&mut app.triage_note_buffer);
+        let edit_response = crate::access::tag_with_value(
+            ui.text_edit_multiline(&mut app.triage_note_buffer),
+            egui::WidgetType::TextEdit,
+            "note-body",
+            app.triage_note_buffer.clone(),
+        );
         if request_focus {
             edit_response.request_focus();
         }
         ui.horizontal(|ui| {
-            if ui.button("Save").clicked() {
+            if crate::access::tag(ui.button("Save"), egui::WidgetType::Button, "note-save").clicked()
+            {
                 app.submit_note_for_selected();
             }
-            if ui.button("Cancel (Esc)").clicked() {
+            if crate::access::tag(
+                ui.button("Cancel (Esc)"),
+                egui::WidgetType::Button,
+                "note-cancel",
+            )
+            .clicked()
+            {
                 app.triage_note_open = false;
                 app.triage_note_buffer.clear();
             }
@@ -2270,29 +2387,35 @@ fn show_note_editor(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
 /// showing why, reads as a glitch rather than a feature.
 ///
 /// Senses clicks as well as drawing, because the containing cell senses them
-/// too and it is not settled which one a click reaches - see the header loop.
+/// too and which one a click reaches is not settled by construction - see the
+/// header loop, where both are read for that reason.
 fn sort_heading(
     ui: &mut egui::Ui,
     app: &UnlatchedApp,
     column: SortBy,
     label: &str,
 ) -> egui::Response {
-    let active = app.triage_sort == column;
-    let text = if active {
-        format!("{label} {}", if app.triage_sort_desc { "v" } else { "^" })
-    } else {
-        label.to_string()
+    // THE POSITION, not just the arrow. With up to three keys an arrow alone
+    // says "this column is in the sort" and leaves the reader to guess which
+    // one wins - so the second and third carry their rank. The primary does
+    // not: a lone "1" on a single-column sort is noise.
+    let text = match app.sort_position(column) {
+        Some((0, desc)) => format!("{label} {}", if desc { "v" } else { "^" }),
+        Some((at, desc)) => {
+            format!("{label} {}{}", if desc { "v" } else { "^" }, at + 1)
+        }
+        None => label.to_string(),
     };
     ui.add(
         egui::Label::new(egui::RichText::new(text).strong())
             // NOT SELECTABLE, and this is the whole bug. An egui label is
-            // selectable TEXT by default, and a click that lands on the
-            // letters starts a selection drag and is consumed there. From
-            // the reader's side that is: clicking the word highlights the
-            // word, and the column only sorts when the click lands beside
-            // it. Beside the letters there is no label, so the click
-            // reached the cell underneath and sorted. Nothing about a column
-            // heading wants to be selectable text.
+            // selectable TEXT by default, so by construction a click landing
+            // on the letters starts a selection drag and is consumed there.
+            // Observed from the reader's side: clicking the word highlighted
+            // the word, and the column sorted only when the click landed
+            // beside it, where there is no label and the click reached the
+            // cell underneath. Nothing about a column heading wants to be
+            // selectable text.
             .selectable(false)
             .sense(egui::Sense::click()),
     )

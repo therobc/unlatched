@@ -54,7 +54,13 @@ pub fn menu(app: &UnlatchedApp, ui: &mut egui::Ui, label: &str) -> Pending {
             return;
         }
         let live: Vec<_> = entries.iter().filter(|c| c.enabled).collect();
-        if live.is_empty() && problems.is_empty() {
+        // Through offer_from rather than repeating the condition here: the
+        // same rule used to be written twice, once for whether the Dashboard
+        // drew a button at all and once for what this menu says when empty.
+        // The Dashboard's copy went when the full Collect menu replaced the
+        // handoff-only one, and this is what keeps the surviving rule attached
+        // to the tests that check its two empty cases.
+        if !offer_from(&app.handoffs) {
             ui.label("No collectors are set up.");
         }
         for entry in &live {
@@ -108,28 +114,15 @@ pub fn menu(app: &UnlatchedApp, ui: &mut egui::Ui, label: &str) -> Pending {
     pending
 }
 
-/// Is there a collector to offer at all?
-///
-/// So a screen can leave the control out entirely rather than showing a menu
-/// whose only content is "No collectors are set up." The Companies page keeps
-/// it regardless - it sits inside a Collect menu that is always there, and its
-/// absence would read as a feature having gone missing - but the Dashboard
-/// header has no such context, and a permanently empty button beside Refresh
-/// is a control that never does anything.
+/// Whether there is anything at all to put in this menu.
 ///
 /// A PROBLEM COUNTS AS SOMETHING TO OFFER. A collector refused for a typo is
-/// exactly the case somebody needs to see, and hiding the menu would hide the
-/// only place this app says so.
-pub fn has_anything_to_offer(app: &UnlatchedApp) -> bool {
-    offer_from(&app.handoffs)
-}
-
-/// The decision itself, over the listing rather than the whole app.
+/// exactly the case somebody needs to see, and reading "No collectors are set
+/// up" over it would hide the only place this app says so.
 ///
-/// SPLIT OUT SO IT CAN BE TESTED. Taking `&UnlatchedApp` means the only way to
-/// exercise this is to build an app - a window, a database, a profile - which
-/// is why a rule this small would otherwise have gone unchecked, and its two
-/// empty cases are exactly the kind that get confused.
+/// OVER THE LISTING, NOT THE WHOLE APP, so it can be tested: a rule reached
+/// only through `&UnlatchedApp` needs a window, a database and a profile to
+/// exercise, which is how something this small goes unchecked.
 pub fn offer_from(listing: &crate::collectors::Collectors) -> bool {
     match listing.ready() {
         // Not answered yet. Offering nothing is the safe direction for the

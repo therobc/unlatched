@@ -63,7 +63,13 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     ui.indent("config", |ui| {
         ui.horizontal_wrapped(|ui| {
             ui.label("Open");
-            if ui.button("Config").clicked() {
+            if crate::access::tag(
+                ui.button("Config"),
+                egui::WidgetType::Button,
+                "getting-started-open-config",
+            )
+            .clicked()
+            {
                 app.view = View::Config;
             }
             ui.label(
@@ -78,7 +84,13 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     ui.indent("companies", |ui| {
         ui.horizontal_wrapped(|ui| {
             ui.label("Open");
-            if ui.button("Companies").clicked() {
+            if crate::access::tag(
+                ui.button("Companies"),
+                egui::WidgetType::Button,
+                "getting-started-open-companies",
+            )
+            .clicked()
+            {
                 app.view = View::Companies;
             }
             ui.label(
@@ -98,7 +110,13 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
         // collection returns real postings the same afternoon.
         ui.horizontal_wrapped(|ui| {
             ui.label("Short of names?");
-            if ui.button("Add starter employers").clicked() {
+            if crate::access::tag(
+                ui.button("Add starter employers"),
+                egui::WidgetType::Button,
+                "getting-started-add-starters",
+            )
+            .clicked()
+            {
                 app.start_process(
                     "add starter employers",
                     vec!["starter".to_string(), "--add".to_string()],

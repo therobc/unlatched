@@ -11,13 +11,6 @@ use crate::db;
 use crate::engine::EngineMode;
 use crate::fmt;
 
-/// A menu control that automation can address by a name that does not move
-/// when the wording does. Returns the response so the call site keeps chaining
-/// hover text and `.clicked()`.
-fn tag_button(response: egui::Response, name: &'static str) -> egui::Response {
-    crate::access::tag(response, egui::WidgetType::Button, name)
-}
-
 pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     ui.heading("Companies");
 
@@ -44,7 +37,7 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
 
     ui.horizontal(|ui| {
         ui.label("Company name:");
-        ui.text_edit_singleline(&mut app.new_company_name);
+        crate::access::text_field(ui, &mut app.new_company_name, "companies-new-name");
         let name = app.new_company_name.trim().to_string();
         let has_name = !name.is_empty();
 
@@ -111,7 +104,13 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                 vec!["rediscover".to_string()],
             );
         }
-        if ui.button("Refresh table").clicked() {
+        if crate::access::tag(
+            ui.button("Refresh table"),
+            egui::WidgetType::Button,
+            "companies-refresh",
+        )
+        .clicked()
+        {
             app.refresh_companies();
         }
     });
@@ -240,7 +239,13 @@ fn render_table(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                     ui.label(c.last_probed.clone().unwrap_or_default());
                 });
                 row.col(|ui| {
-                    if ui.small_button("Collect").clicked() {
+                    if crate::access::tag(
+                        ui.small_button("Collect"),
+                        egui::WidgetType::Button,
+                        format!("company-collect-{}", crate::access::slug(&c.name)),
+                    )
+                    .clicked()
+                    {
                         collect_target = Some(c.name.clone());
                     }
                 });
