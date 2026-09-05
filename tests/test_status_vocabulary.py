@@ -18,6 +18,7 @@ way a Python test can hold a Rust file to account.
 from __future__ import annotations
 
 import re
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -73,7 +74,12 @@ def test_the_rust_file_is_where_this_test_thinks_it_is():
     """
     assert STATUS_RS.is_file(), f"{STATUS_RS} is gone - the checks below are vacuous"
     entries = _flow_entries()
-    assert len(entries) == 9, f"expected the nine statuses, parsed {len(entries)}"
+    # Eleven since 2026-09-05, when "they said no" was split into No Offer
+    # (after an interview), Rejection Email and No Response. The number is
+    # written out rather than derived from status.FLOW on purpose: deriving it
+    # would make this control agree with whatever the parser happened to find,
+    # which is the one thing it exists not to do.
+    assert len(entries) == 11, f"expected the eleven statuses, parsed {len(entries)}"
 
 
 def test_both_halves_list_the_same_statuses_in_the_same_order():
@@ -158,12 +164,24 @@ def test_no_document_offers_a_status_the_app_renamed_away(name):
     against the vocabulary until this test.
     """
     text = (ROOT / name).read_text(encoding="utf-8")
+    renames = dict(status.RENAMES)
     for old in RETIRED:
-        found = re.search(rf"\b{re.escape(old)}\b", text, re.IGNORECASE)
-        assert found is None, (
-            f"{name} names '{old}', which was renamed to "
-            f"'{dict(status.RENAMES)[old]}' and no longer exists in the app.\n"
-            f"  ...{text[max(0, found.start() - 60):found.end() + 60]}...")
+        for line_no, line in enumerate(text.splitlines(), start=1):
+            if not re.search(rf"\b{re.escape(old)}\b", line, re.IGNORECASE):
+                continue
+            # TELLING SOMEBODY TO STOP USING IT IS NOT OFFERING IT. A line
+            # that marks the word legacy and names its replacement passes this
+            # test's own message on to whoever is writing a collector.
+            # Anything else is the lapse this guards.
+            marks_it_legacy = (
+                "legacy" in line.lower()
+                and renames[old].lower() in line.lower())
+            assert marks_it_legacy, (
+                f"{name}:{line_no} names '{old}', which was renamed to "
+                f"'{renames[old]}' and no longer exists in the app.\n"
+                f"  {line.strip()}\n"
+                "  A document may name it only on a line that calls it legacy "
+                "and names what replaced it.")
 
 
 def test_the_documents_are_there_and_the_search_would_find_a_lapse():
@@ -205,8 +223,12 @@ def test_both_halves_spell_a_cleared_status_the_same_way():
     rust = (Path(__file__).resolve().parent.parent
             / "desktop" / "src" / "db.rs").read_text(encoding="utf-8")
 
+    # The column list gained set_by on 2026-09-05, so the pattern matches the
+    # leading columns and allows more after them rather than pinning the exact
+    # tuple - what this test is about is the NULL in the status position, not
+    # how many columns the insert carries.
     inserts = re.findall(
-        r"INSERT INTO job_status_log \(key, status, note, at\)\s*"
+        r"INSERT INTO job_status_log \(key, status, note, at[^)]*\)\s*\\?\s*"
         r"VALUES \(\?1,\s*([^,]+),", rust)
     assert inserts, "the desktop's clear_status insert was renamed or reshaped"
     for value in inserts:
@@ -214,3 +236,49 @@ def test_both_halves_spell_a_cleared_status_the_same_way():
             f"the desktop writes {value.strip()!r} for a cleared status; the "
             f"engine writes NULL and status.py documents null as the cleared "
             f"marker")
+
+
+DATE_RS = Path(__file__).resolve().parents[1] / "desktop/src/date.rs"
+
+
+def test_both_halves_stamp_time_in_the_same_shape():
+    """One column, one meaning.
+
+    job_status.updated and job_status_log.at are written by BOTH halves. The
+    desktop moved to the local wall clock with its offset on 2026-09-05 and the
+    engine was briefly left on UTC, which would have meant two kinds of stamp
+    in one column - the same class of drift this file already guards for the
+    status vocabulary.
+
+    Checked by SHAPE rather than by value: the two are different languages and
+    cannot be run against each other here, but "does it carry an offset, and is
+    it local" is visible in both.
+    """
+    assert DATE_RS.is_file(), f"{DATE_RS} is gone - this check would be vacuous"
+    rust = DATE_RS.read_text(encoding="utf-8")
+
+    # The engine's clock, as a value.
+    stamp = status.now_iso()
+    assert stamp[10] == "T", stamp
+    assert re.search(r"[+-]\d{2}:\d{2}$", stamp), (
+        f"the engine wrote a stamp with no offset: {stamp}")
+    assert not stamp.endswith("+00:00") or _really_utc_here(), (
+        "the engine wrote UTC on a machine that is not on UTC - see now_iso")
+
+    # The desktop's clock, as source: it applies the offset it was given and
+    # formats a signed suffix. A bare format string would be the drift.
+    body = rust.split("pub fn now_iso() -> String {")[1].split("\n}")[0]
+    assert "local_offset()" in body, (
+        "desktop now_iso no longer reads the local offset - it is writing UTC "
+        "while the engine writes local")
+    assert "+00:00" not in body, (
+        "desktop now_iso hard-codes a UTC suffix again")
+
+
+def _really_utc_here() -> bool:
+    """True only if this machine genuinely sits on UTC.
+
+    Without this the assertion above would fire on a UTC build agent, which is
+    a correct stamp rather than the drift being looked for.
+    """
+    return datetime.now().astimezone().utcoffset() == timedelta(0)
