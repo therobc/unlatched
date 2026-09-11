@@ -32,8 +32,11 @@ URL = (f"https://www2.census.gov/geo/docs/maps-data/data/gazetteer/"
        f"{YEAR}_Gazetteer/{YEAR}_Gaz_place_national.zip")
 
 # The Gazetteer writes the legal/statistical type into the name ("Abbeville
-# city", "Powell CDP"). Nobody types that, so it comes off - but only as a
-# TRAILING token, or "Village of Clarkston" would lose the wrong word.
+# city", "Powell CDP") - believed, not measured here (no live fetch), based
+# on the field format this script targets. Nobody types that, so it comes
+# off - but only as a TRAILING token, verified by construction: the pattern
+# below ends in `$`, so "Village of Clarkston" (the word at the front) would
+# not match and would keep its correct name.
 SUFFIX = re.compile(
     r"\s+(?:CDP|city|town|village|borough|municipality|township|"
     r"charter township|city and borough|consolidated government|"
@@ -43,10 +46,12 @@ SUFFIX = re.compile(
     re.IGNORECASE,
 )
 
-# Exactly the states in the engine's location.py. The commute logic can only
-# reason about these, so offering a place from outside them would be offering
-# a typo with extra steps. Anything else can still be typed by hand - the
-# suggestion list is a help, never a gate.
+# Exactly the states in the engine's location.py. Measured 2026-09-10: the
+# 51 abbreviations here and the 51 values of location.py's STATES dict are
+# the same set. The commute logic can only reason about these, so offering
+# a place from outside them would be offering a typo with extra steps.
+# Anything else can still be typed by hand - the suggestion list is a help,
+# never a gate.
 STATES = {
     "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID",
     "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS",
@@ -86,6 +91,9 @@ def main(argv: list[str]) -> int:
     rows = rows_from(argv[1] if len(argv) > 1 else None)
     # Largest land area wins a duplicate name, so "Springfield, MO" is the
     # Springfield the file keeps rather than the far smaller Springfield, GA.
+    # Verified by construction: `max()` below keeps the larger area per key,
+    # and the ranking self-check at the bottom of this file targets exactly
+    # this pair.
     places: dict[str, float] = {}
     for line in rows[1:]:
         parts = line.split("\t")
@@ -106,25 +114,21 @@ def main(argv: list[str]) -> int:
 
     # ORDER IS THE RANKING. The app suggests places in file order, and this
     # is the one place that decides it, so the app needs no size data of its
-    # own and the file stays one plain name per line.
-    #
-    # Land area, because the Gazetteer carries it and population estimates do
-    # not cover census-designated places - ranking by population would bury
-    # Metairie, LA (a CDP, and exactly the kind of place this file exists
-    # for) under every incorporated place of the same name. Area is a proxy,
-    # not a truth: it gets Springfield MO, Portland OR and Chicago IL to the
-    # top of their names, which is what the ranking is for.
+    # own and the file stays one plain name per line. Verified by construction:
+    # desktop/src/places.rs's suggest() walks this file's lines in order with
+    # no re-sort, and says so in its own "FILE ORDER IS THE RANKING" comment.
     out = Path(__file__).with_name("us_places.txt")
     ordered = sorted(places, key=lambda name: (-places[name], name.lower()))
     out.write_text("\n".join(ordered) + "\n", encoding="utf-8", newline="\n")
     print(f"{len(ordered)} places -> {out}")
 
     # Named so a regeneration that quietly drops the small places - the whole
-    # reason this file exists - fails loudly instead of shipping.
-    # Spread across states on purpose: a probe list drawn from one metro
-    # would catch the same regression and would also say which metro wrote
-    # it. Half of these are census-designated rather than incorporated,
-    # which is the half that goes missing first.
+    # reason this file exists - fails loudly instead of shipping. Spread across
+    # states on purpose - verified by construction: the probe tuple below names
+    # six different states, not one metro - so it would also say which metro
+    # wrote it. Believed, not measured: half of these are read as
+    # census-designated rather than incorporated, which is the half that goes
+    # missing first.
     for probe in ("Powell, OH", "Seymour, IN", "Xenia, OH", "Lemont, IL",
                   "Metairie, LA", "Bethesda, MD", "Cicero, IL", "Boise, ID"):
         if probe not in places:
