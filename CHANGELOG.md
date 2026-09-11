@@ -15,6 +15,32 @@ than the code.
 
   Entries from before this keep their meaning and are still read correctly.
 
+- **Jobs you added yourself stay put.** Re-screening after you changed your
+  criteria marked a job you had added by hand, or brought in from another
+  tool, as not matching - and pruning then deleted it. A job you chose to add
+  is now kept whatever the criteria say.
+
+- **A resume the app cannot read is not scored.** A resume in a format the app
+  does not read, such as a PDF, was still read as loose text, so a skill name
+  buried in the file could count as covered. It now reads as no resume, and
+  the app tells you why.
+
+- **A page that stops loading halfway no longer breaks adding a job.** A site
+  that cut its answer off mid-page made adding that link fail with an error,
+  and stopped a re-check of your added links before it saved anything. It now
+  counts as a page that could not be read.
+
+- **Removing a search term can be undone.** Clicking the x on a term in Config
+  shows an Undo button that puts it back where it was, without losing your
+  other unsaved changes.
+
+- **Closures sent back to a collector use its own names.** When you had added a
+  posting by hand that a collector also sent, the closure could go back under
+  the hand-added copy's name, which the collector does not recognise.
+
+- **A browser picked by an unusual path shows a name**, "Custom browser",
+  rather than the whole path.
+
 ### Added
 
 - **"No Offer" belongs to the interviewed pipeline**, and applications that end
