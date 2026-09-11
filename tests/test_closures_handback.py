@@ -49,6 +49,23 @@ def test_the_key_goes_back_in_the_senders_own_spelling(con, collector):
     assert closures.pending(con, collector)[0]["key"] == "manual:abc"
 
 
+def test_a_hand_added_copy_does_not_hand_back_its_own_key(con, collector):
+    """The sender's row and a copy added by hand, the copy closed later.
+
+    The URL dedup kept whichever closed LAST, so the hand-added copy won and a
+    key the sender never issued went back. The sender's own row has to win.
+    """
+    _job(con, "imported:abc", delisted="2026-08-26T10:00:00")
+    db.upsert_job(con, "manual:example-invalid-1", {
+        "title": "Analyst", "source": "manual",
+        "url": "https://example.invalid/1", "qualified": 1})
+    con.execute("UPDATE jobs SET delisted_at = '2026-08-26T14:00:00' "
+                "WHERE key = 'manual:example-invalid-1'")
+    con.commit()
+    rows = closures.pending(con, collector)
+    assert [r["key"] for r in rows] == ["manual:abc"]
+
+
 def test_a_row_from_a_board_is_not_handed_to_the_collector(con, collector):
     """Greenhouse delisting a posting is not news for the MyBoard sender, and
     the key would mean nothing to it.
