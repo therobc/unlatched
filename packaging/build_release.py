@@ -189,7 +189,10 @@ def build_installer() -> Path | None:
     # nominal. installer.iss carries its OWN hardcoded source and output paths
     # pointing at app/dist, so running it here would reach straight back out
     # and write the Setup exe into the shipping directory - the exact thing the
-    # sandbox exists to prevent, and it would have done it silently.
+    # sandbox exists to prevent, and it would have done it silently. Verified
+    # 2026-09-10: installer.iss's OutputDir and PortableDir are both
+    # SourcePath-relative literals pointing at ..\dist, with no reference to
+    # any override this script could pass in.
     #
     # No loss: the harness drives the PORTABLE build. An installer is a release
     # artifact, and a release is not what QC is for.
@@ -208,11 +211,12 @@ def build_installer() -> Path | None:
         )
         return None
 
-    # THE VERSION IS PASSED IN, because it was defined in two places and they
-    # drifted at the first opportunity. installer.iss carried its own
-    # `#define MyAppVersion`, so bumping APP_VERSION here to 0.1.2 built 0.1.2
-    # content and named it Unlatched-Setup-0.1.1.exe - overwriting the previous
-    # release's installer on disk with different bytes under its name.
+    # THE VERSION IS PASSED IN. Verified by construction: the -D flag below
+    # passes APP_VERSION into ISCC rather than relying on installer.iss's own
+    # `#define MyAppVersion` fallback. Unverified history: a bump to
+    # APP_VERSION here is believed to have once drifted from that fallback and
+    # built 0.1.2 content under the name Unlatched-Setup-0.1.1.exe -
+    # installer.iss's own comment on MyAppVersion describes the same incident.
     #
     # Caught by the missing-file check below, which is the only reason it was
     # noticed at all: the build otherwise reported success. -D overrides the
@@ -229,11 +233,13 @@ def build_installer() -> Path | None:
 
 # READ FROM THE ENVIRONMENT, NOT HARDCODED, and that is not a style choice.
 #
-# THIS FILE IS IN THE PUBLIC REPOSITORY, though not in the installer - the
-# installer carries only the app, the engine, the licence, the readme and the
-# icon. A repository is still published, so an absolute path to somebody's own
-# build machine, baked in here, would leak a directory layout in the very
-# script whose job is to stop leaks.
+# THIS FILE IS IN THE PUBLIC REPOSITORY, though not in the installer.
+# Verified 2026-09-10: installer.iss's [Files] section lists exactly five
+# entries (Unlatched.exe, engine\*, LICENSE, README.md, unlatched.ico) -
+# nothing from this script's own path or environment. A repository is
+# still published, so an absolute path to somebody's own build machine,
+# baked in here, would leak a directory layout in the very script whose
+# job is to stop leaks.
 #
 # Set UNLATCHED_PUBLICATION_GATE to a command that stages the publishable
 # tree, scans it, and exits non-zero if it is not clean. Unset, this script
@@ -276,18 +282,21 @@ def leak_gate() -> None:
         return
     gate = os.environ.get(GATE_ENV, "").strip()
     if not gate:
-        # SAID LOUDLY, then continued. A fork of this repo has no gate of ours
-        # and must not be blocked by it; what must never happen is a release
-        # leaving here with nobody having noticed there was no check.
+        # SAID LOUDLY, then continued. Verified by construction: when `gate` is
+        # empty the two `print` calls below are followed by a plain `return`, not
+        # a `raise`, so a fork with no gate of ours configured is never blocked by
+        # it; what must never happen is a release leaving here with nobody having
+        # noticed there was no check.
         print(f"\n*** NO PUBLICATION GATE CONFIGURED ({GATE_ENV} is unset). ***")
         print("*** Nothing has scanned this tree for internal names, and     ***")
         print("*** anything in a docstring compiles into the frozen engine.  ***\n")
         return
-    # THE GATE STAGES, THEN SCANS. Pointing a scanner at the repo root instead
-    # takes ten minutes and measures the wrong thing: the root holds
-    # desktop/target, gigabytes of build output that never ships. A staging
-    # step already owns the list of what is published, so scanning its copy
-    # checks EXACTLY the tree that would go out, in seconds.
+    # THE GATE STAGES, THEN SCANS. Believed, not measured: pointing a scanner
+    # at the repo root instead is assumed to be far slower and to measure the
+    # wrong thing, since the root holds desktop/target, a large volume of
+    # build output that never ships. A staging step already owns the list of
+    # what is published, so scanning its copy checks EXACTLY the tree that
+    # would go out.
     print("== publication gate (stage + leak scan) ==")
     result = subprocess.run(  # noqa: S603
         [sys.executable, gate, "--no-zip"],
@@ -324,12 +333,14 @@ def main() -> int:
 
     # BEFORE ANY ARTIFACT EXISTS, so a refused build leaves nothing behind that
     # could be picked up and shipped by somebody who did not read the error.
+    # Verified by construction: leak_gate() below runs before DIST_DIR is even
+    # created, ahead of every build step in this function.
     leak_gate()
 
-    # parents=True for the SANDBOX case. The real dist/ always sits beside a
-    # directory that exists, so this never mattered until --dist was pointed
-    # somewhere new - and then it failed on the parent rather than on anything
-    # to do with the build.
+    # parents=True for the SANDBOX case. Unverified history: the real dist/
+    # always sits beside a directory that exists, so this is believed to have
+    # never mattered until --dist was pointed somewhere new, where a missing
+    # parent would otherwise fail the mkdir before the build itself ran at all.
     DIST_DIR.mkdir(parents=True, exist_ok=True)
 
     print("== building desktop app (cargo build --release) ==")
