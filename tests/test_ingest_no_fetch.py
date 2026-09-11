@@ -1,4 +1,5 @@
-"""--no-fetch: the caller already read the page, so this app must not.
+"""--no-fetch: the caller already read the page, so this app must not - by construction manual.add
+guards its fetch with `not no_fetch`.
 
 An earlier change asked for one writer to LinkedIn, ENFORCED rather than observed.
 Before this flag it was only observed: add() consulted a user SETTING, so a
@@ -92,7 +93,10 @@ def test_the_supplied_row_is_stored_intact_when_nothing_is_fetched(con, reading_
     assert row["title"] == "Technology Operations Support Analyst"
     assert row["location"] == "Remote - US"
     assert row["posted_at"] == "2026-08-01"
-    # Stored NORMALISED, so the join is a plain equality test at query time.
+    # Stored NORMALISED - manual.add normalises apply_url before writing
+    # (by construction, importer path aside), so the join in
+    # test_two_boards_pointing_at_one_application_agree_on_the_key is a
+    # plain equality test at query time, no renormalising needed.
     assert row["apply_url"] == "https://apply.workable.com/northwind/j/ABC123"
 
 

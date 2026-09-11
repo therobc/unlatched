@@ -50,7 +50,8 @@ def test_output_is_line_buffered_so_progress_arrives_as_it_happens(monkeypatch):
 
 
 def test_a_stream_that_cannot_be_reconfigured_does_not_stop_the_run(monkeypatch):
-    """Being unable to set buffering is never a reason to refuse to work. A
+    """Being unable to set buffering is never a reason to refuse to work (verified 2026-09-10:
+    cli.line_buffer_output wraps reconfigure() in contextlib.suppress(ValueError, OSError)). A
     frozen build can hand us a stdout that raises here, and the collect still
     has to happen - it just scrolls late."""
     monkeypatch.setattr(cli.sys, "stdout", _Stubborn())

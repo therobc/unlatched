@@ -59,8 +59,10 @@ def test_the_key_is_not_readable_in_config_json(tmp_path):
         assert "SUPERSECRET123" not in json.dumps(_saved_json(tmp_path))
         assert keystore_mod.is_protected(on_disk)
     else:
-        # Documented fallback: a secret that cannot be read back would be
-        # worse than one stored plainly.
+        # Documented fallback (verified 2026-09-10: keystore.py's protect()
+        # docstring states this almost verbatim, and falls back to returning
+        # the value unchanged when DPAPI is unavailable): a secret that cannot
+        # be read back would be worse than one stored plainly.
         assert on_disk == "SUPERSECRET123"
 
 

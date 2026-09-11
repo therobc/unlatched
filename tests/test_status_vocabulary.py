@@ -141,8 +141,11 @@ def test_a_status_list_becomes_bind_markers_not_text_in_the_statement(values):
     assert status.placeholders(("a", "b")) == "?, ?"
 
 
-# The documents a reader is handed. cli.py needs no entry here: its status help
-# is built from status.SETTLED at parse time, so it cannot say a retired value.
+# The documents a reader is handed. cli.py needs no entry here
+# (verified 2026-09-10: build_parser's --show-closed help text is
+# ", ".join(status_mod.SETTLED), built fresh each run): its status
+# help is built from status.SETTLED at parse time, so it cannot say a
+# retired value.
 DOCS = ("README.md", "COLLECTORS.md", "BUILDING.md", "tests/README.md")
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -236,6 +239,25 @@ def test_both_halves_spell_a_cleared_status_the_same_way():
             f"the desktop writes {value.strip()!r} for a cleared status; the "
             f"engine writes NULL and status.py documents null as the cleared "
             f"marker")
+
+
+def test_both_halves_write_the_same_closed_status():
+    """The status the app writes onto a taken-down posting nobody judged.
+
+    Written by db.close_untouched_delisted here and db.rs::mark_taken_down in
+    the desktop, into the one shared column - and deliberately outside FLOW, so
+    no dropdown offers it and none of the comparisons above ever reads it. The
+    two spellings were held together by nothing until this test (checked
+    2026-09-10): a rename on one side would split one event into two words in
+    the same table.
+    """
+    rust = STATUS_RS.read_text(encoding="utf-8")
+    found = re.search(r'pub const CLOSED: &str = "([^"]+)";', rust)
+    assert found, "status.rs no longer declares CLOSED as a string constant"
+    assert found.group(1) == status.CLOSED, (
+        f"the desktop writes {found.group(1)!r} onto a taken-down posting; "
+        f"the engine writes {status.CLOSED!r}")
+    assert status.CLOSED not in status.FLOW, "a person could now pick it"
 
 
 DATE_RS = Path(__file__).resolve().parents[1] / "desktop/src/date.rs"

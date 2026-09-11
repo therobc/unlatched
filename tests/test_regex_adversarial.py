@@ -38,8 +38,10 @@ def _adversarial_html(target_bytes: int) -> str:
     dots and hyphens that never resolve into a real match. A safe (disjoint
     character class) regex is linear in this; a catastrophic one is not.
     """
-    # A seeded, non-cryptographic generator is exactly right here: this only
-    # needs a reproducible pile of messy test bytes, never secrecy.
+    # A seeded, non-cryptographic generator is exactly right here: rng
+    # below only ever picks junk HTML segments (by construction, never
+    # anything secret), so reproducibility matters and secrecy never
+    # enters.
     rng = random.Random(1234)  # noqa: S311
     prefixes = ("careers", "jobs", "apply", "talent", "workwith", "joinus")
     chunks = ["<html><body>"]
@@ -161,7 +163,8 @@ def test_requirements_summary_is_linear_time():
 
 
 def _unclosed_markup() -> str:
-    """Openings that look like the target and never close.
+    """Openings that look like the target and by construction never close - _unclosed_markup emits
+    opening tags only, no closing ones.
 
     This is the input that made the old page-wide LD_BLOCK pattern take 88.7
     SECONDS: every unclosed `<script type=application/ld+json` opening sent its

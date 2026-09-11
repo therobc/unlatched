@@ -32,7 +32,9 @@ def _job(source_id, title):
 
 @pytest.fixture
 def wanted(cfg):
-    """Criteria that pass one title and fail the other, so a run has both."""
+    """Criteria that pass one title and fail the other (by construction: title_include=["Support
+    Analyst"] matches "Support Analyst" but not "Deep Sea Welder", both used below), so a run has
+    both."""
     cfg["search"]["title_include"] = ["Support Analyst"]
     return cfg
 

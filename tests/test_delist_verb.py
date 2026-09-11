@@ -55,7 +55,9 @@ def test_a_posting_that_comes_back_is_not_left_struck_through(con, cfg):
 
 
 def test_the_row_survives_a_closure(con, cfg):
-    """Unlatched never deletes a job. A posting the employer pulled stays
+    """A row the person has any relationship with is never deleted (verified 2026-09-10: prune.py
+    DOES run DELETE FROM jobs, but only against rows that never qualified and were never touched). A
+    posting the employer pulled stays
     readable, which is the point of having applied to it."""
     key = add_job(con, cfg)
     delist(con, key)

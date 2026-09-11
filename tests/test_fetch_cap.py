@@ -13,6 +13,7 @@ tested in test_link_safety.py and test_redirect_policy.py.
 """
 from __future__ import annotations
 
+import http.client
 import urllib.request
 
 from unlatched import fetch
@@ -103,3 +104,19 @@ def test_a_gzipped_body_is_decompressed_and_still_capped(monkeypatch):
                                     respect_robots=False, per_host_delay_s=0,
                                     allow_private=True)
     assert len(bomb) == 1000, "a decompression bomb is capped like anything else"
+
+
+def test_a_response_cut_off_mid_body_is_a_failed_fetch_not_a_crash(monkeypatch):
+    """A server that closes mid-body raises IncompleteRead - not an OSError.
+
+    fetch() has to report it as status 0 like every other network failure:
+    a hand-add and a re-check call the fetcher bare, and before the fix this
+    one escaped both - a traceback for the first, a lost commit for the second.
+    """
+    def cut_off(_self, _req, data=None, timeout=None):
+        raise http.client.IncompleteRead(b"partial")
+
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", cut_off)
+    status, text, _ = fetch.fetch("https://example.com/cut", respect_robots=False,
+                                   per_host_delay_s=0, allow_private=True)
+    assert (status, text) == (0, "")

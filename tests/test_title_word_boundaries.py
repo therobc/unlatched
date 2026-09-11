@@ -1,8 +1,11 @@
-"""Title include/exclude/seniority terms match whole words, never bare
-substrings. Found against real postings: the include term "NOC" matched
-inside "Nocturnist" and qualified an "Urgent Care Nocturnist Physician"
-posting for an IT support search. Short acronyms are exactly the terms a
-person puts in these lists, so substring matching is never what they mean.
+"""Verified 2026-09-10: term_in_title wraps every term in \\b word boundaries,
+so title include/exclude/seniority terms match whole words, never bare
+substrings.
+
+Unverified history: the include term "NOC" is said to have matched inside
+"Nocturnist" and qualified an "Urgent Care Nocturnist Physician" posting for
+an IT support search. Short acronyms are exactly the terms a person puts in
+these lists, so substring matching is never what they mean.
 """
 from __future__ import annotations
 
@@ -79,8 +82,11 @@ def test_include_still_requires_every_word():
 
 
 def test_exclusions_stay_exact():
-    # Loose matching here would hide jobs a person should see: this title
-    # is not an account executive posting just because both words occur.
+    # By construction: title_wants (the looser, word-order-agnostic
+    # matcher) is deliberately not used for exclusions - term_in_title
+    # requires the exact phrase, so a looser match here would hide jobs
+    # a person should see: this title is not an account executive
+    # posting just because both words occur.
     assert screen.term_in_title("account executive",
                                  "Executive Assistant, Account Services") is False
     assert screen.term_in_title("account executive", "Account Executive II") is True
@@ -154,7 +160,9 @@ def test_compound_spelling_matches_either_way(term: str, title: str):
     ("support", "Supporting Actor"),
     ("sales", "Salesforce Administrator"),
     ("help desk", "Helpful Desktop Publisher"),
-    # Below the length floor, so the variant pattern never even builds.
+    # Verified 2026-09-10: squashed length is below _MIN_VARIANT_LEN
+    # (5), so _spelling_variant returns the never-matching sentinel
+    # instead of building the real compound-spelling pattern.
     ("care", "Career Coach"),
     ("IT", "Digital Marketing"),
 ])

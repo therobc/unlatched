@@ -53,7 +53,8 @@ def test_an_invented_classification_is_not_believed(con, cfg):
 
 
 def test_a_marker_in_the_destination_is_caught_and_reported(con, cfg):
-    """The contract: 'easy-apply' and 'closed' are classifications, NEVER URLs.
+    """Verified 2026-09-10: 'easy-apply' and 'closed' are classifications,
+    never URLs - both are literal entries in importer.NOT_DESTINATIONS.
 
     The failure is silent in the worst way. A literal marker is a NON-EMPTY
     value, so it passes every "does this row have a destination" test - and then
@@ -74,7 +75,8 @@ def test_a_marker_in_the_destination_is_caught_and_reported(con, cfg):
 
 
 def test_markered_rows_do_not_collapse_into_one_job(con, cfg):
-    """The consequence the check exists to prevent, asserted end to end."""
+    """By construction: the consequence the check exists to prevent, asserted
+    end to end via the empty dupes.find() below."""
     from unlatched import dupes
 
     importer.import_all(con, cfg, [
@@ -106,9 +108,10 @@ def test_a_clean_batch_reports_no_defects_at_all(con, cfg):
 
 
 def test_easy_apply_rows_still_never_match_each_other(con, cfg):
-    """Unchanged and worth re-asserting here: the application never leaves the
-    board, so no ATS row can duplicate it and two of them are not evidence of
-    anything."""
+    """Verified 2026-09-10: unchanged and worth re-asserting here - `imported`
+    is deliberately absent from dupes.APPLICATION_IS_THE_POSTING, so the
+    application never leaves the board, no ATS row can duplicate it, and two
+    of them are not evidence of anything."""
     from unlatched import dupes
 
     importer.import_all(con, cfg, [

@@ -32,7 +32,7 @@ def test_a_plain_remote_posting_is_remote():
 
 
 def test_a_posting_with_no_wording_at_all_is_onsite():
-    """Most onsite postings never say so - to the employer writing it, that
+    """Believed, not measured: most onsite postings never say so - to the employer writing it, that
     is simply what a job is."""
     assert mode("Answer tickets and support end users.") == "onsite"
 
@@ -121,7 +121,9 @@ def test_screening_keeps_exactly_the_ticked_modes(modes, expected_kept):
 
 
 def test_a_hybrid_role_is_checked_against_the_places_you_can_work():
-    """Hybrid means going in, so the commute question applies - it is skipped
+    """Hybrid means going in, so the commute question applies (verified 2026-09-10: screen.py's `if
+    not is_remote:` guards is_commutable, and is_remote is only True for mode=="remote") - it is
+    skipped
     only for genuinely remote roles."""
     cfg = config.defaults()
     cfg["search"]["title_include"] = ["analyst"]

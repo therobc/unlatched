@@ -85,8 +85,10 @@ def test_cli_keywords_json_shape_on_empty_vocabulary(tmp_path, capsys):
                                          "description": "SQL and Zendesk required.",
                                          "qualified": 1})
     con.close()
-    # No config.json is written for this home, so config.skills defaults to
-    # [] - this is the "empty vocabulary" case the report must not error on.
+    # No config.json is written for this home, so config.skills defaults
+    # to [] (by construction: config.load returns defaults() outright when
+    # the file does not exist, and defaults()["skills"] == []) - this is
+    # the "empty vocabulary" case the report must not error on.
 
     rc = cli.main(["--home", str(home), "keywords", "--json"])
 

@@ -17,9 +17,10 @@ import pytest
 
 from unlatched import refresh
 
-# Zone-aware, matching the rest of the suite: the anchors are wall-clock times
-# on the person's own day, so a test that ran in another timezone and still
-# passed would be proving the wrong thing.
+# Zone-aware, matching the rest of the suite: the anchors are
+# wall-clock times on the person's own day. By construction this
+# hardcodes a named IANA zone instead of a naive/system-local clock,
+# so the result cannot depend on the runner's own TZ setting.
 LOCAL = ZoneInfo("America/New_York")
 
 
@@ -27,7 +28,9 @@ def at(year, month, day, hour, minute=0):
     return datetime(year, month, day, hour, minute, tzinfo=LOCAL)
 
 
-# A Wednesday, so the weekday anchors apply and the next day is also a weekday.
+# A Wednesday, so the weekday anchors apply and the next day is also a
+# weekday (measured 2026-09-10: date(2026,8,12).weekday() == 2, and
+# date(2026,8,13).weekday() == 3).
 WEDNESDAY = at(2026, 8, 12, 9)
 FRIDAY = at(2026, 8, 14, 20)
 SATURDAY = at(2026, 8, 15, 9)

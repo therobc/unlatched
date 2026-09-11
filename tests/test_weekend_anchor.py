@@ -15,8 +15,11 @@ from zoneinfo import ZoneInfo
 
 from unlatched import refresh
 
-# Same convention as test_refresh.py: the anchors are wall-clock times on the
-# person's own day, so the tests state a zone rather than leaving it naive.
+# Same convention as test_refresh.py (verified 2026-09-10: both
+# hardcode LOCAL = ZoneInfo("America/New_York") rather than a
+# naive/system-local clock): the anchors are wall-clock times on the
+# person's own day, so the tests state a zone rather than leaving it
+# naive.
 LOCAL = ZoneInfo("America/New_York")
 
 SUNDAY = datetime(2026, 8, 9, 12, 0, tzinfo=LOCAL)
@@ -82,7 +85,8 @@ def test_the_morning_batch_reason_is_not_given_for_an_afternoon_anchor():
         anchors=((13, 0), (16, 30)), weekend_anchors=((14, 45),))
     assert "8 and 10:30" not in why
 
-    # Still given where it IS the reason.
+    # Still given where it IS the reason - by construction, asserted on
+    # the next line.
     _due, weekday_why = refresh.due(
         "2026-08-10T08:00:00", datetime(2026, 8, 10, 9, 0, tzinfo=LOCAL),
         anchors=((10, 45), (16, 30)))

@@ -35,7 +35,8 @@ def _job():
 
 
 def test_gaps_name_only_what_the_posting_asked_for(cfg):
-    """Kubernetes is in the vocabulary but not in this posting, so it is not a
+    """Kubernetes is in the vocabulary but not in this posting: by construction coverage.gaps() puts
+    only JD-matched skills into "asked" and "missing" is a subset of it, so it is not a
     gap against this job - coverage is covered/asked, never covered/everything.
     """
     out = screen.screen_job(_job(), _cfg(cfg), resume_text="I have done troubleshooting.")
@@ -60,7 +61,8 @@ def test_no_resume_means_everything_asked_is_missing(cfg):
 
 
 def test_a_gerund_skill_does_not_match_a_posting_using_the_bare_verb(cfg):
-    """Documented asymmetry, asserted so a change to it is deliberate.
+    """Documented asymmetry, kept by construction: present()'s regex in coverage.py inflects a term
+    forward only, so a change to it is deliberate.
 
     coverage.present() inflects a term FORWARD - "diagnose" also matches
     "diagnosing" - but never backward. So a vocabulary entry typed

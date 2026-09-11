@@ -27,8 +27,10 @@ from unlatched import config
 
 CURRENT = "read_added_links"
 
-# A two-hop chain, so a config untouched since the original name has to be
-# walked forward through BOTH renames rather than only the most recent.
+# A two-hop chain. Verified 2026-09-10: _apply_renames' `for old, new
+# in RENAMED_KEYS` loop walks the tuple sequentially, so a config
+# untouched since the original name has to be walked forward through
+# BOTH renames rather than only the most recent.
 CHAIN = (
     ("fetch.first_name", "fetch.second_name"),
     ("fetch.second_name", f"fetch.{CURRENT}"),
@@ -81,8 +83,9 @@ def test_the_migration_is_written_back_on_the_next_save(home, chain):
     write(home, {"fetch": {"first_name": False}})
     config.save(config.load(home), home)
     on_disk = json.loads((home / "config.json").read_text(encoding="utf-8"))
-    # Not just absent from the loaded dict - gone from the FILE, so the next
-    # reader is not migrating it again forever.
+    # By construction, per the asserts right below reading on_disk from
+    # the file itself: not just absent from the loaded dict - gone from
+    # the FILE, so the next reader is not migrating it again forever.
     assert "first_name" not in on_disk["fetch"]
     assert "second_name" not in on_disk["fetch"]
     assert on_disk["fetch"][CURRENT] is False

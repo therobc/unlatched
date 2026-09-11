@@ -1,4 +1,5 @@
-"""A status has to attach to a stable `source:id` key, never a list position.
+"""A status has to attach to a stable `source:id` key, never a list position (by construction:
+status.get_status/set_status take a key string, never an index).
 
 Keying by array index is the obvious shortcut and it fails silently: a newly
 collected posting shifts every row below it, so a status saved against an

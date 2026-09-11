@@ -27,10 +27,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from unlatched import config as config_mod
 from unlatched import db as db_mod
 
-# TLDs the IETF reserved so they can never resolve to a real host (RFC 2606,
-# RFC 6761). A lookup of one of these cannot reach anybody, which is exactly why
-# fixtures use them - and why the guard below lets them through to fail
-# naturally rather than turning "this name does not resolve" into a test error.
+# TLDs the IETF reserved so they can never resolve to a real host
+# (verified 2026-09-10 against RFC 6761: .test, .invalid, .example and
+# .localhost are all special-use names, with DNS servers directed to
+# return NXDOMAIN or a fixed loopback rather than resolving them). A
+# lookup of one of these cannot reach anybody, which is exactly why
+# fixtures use them - and why the guard below lets them through to
+# fail naturally rather than turning "this name does not resolve"
+# into a test error.
 UNRESOLVABLE_TLDS = (".invalid", ".example", ".test", ".localhost")
 
 

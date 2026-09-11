@@ -55,10 +55,13 @@ def test_refresh_check_reports_a_decision_without_collecting(tmp_path):
     result = _run(["refresh", "--check", "--json"], home)
     assert result.returncode == 0, result.stderr
     payload = json.loads(result.stdout)
-    # wake_in_seconds joined due/reason so the app can sleep until the next
-    # anchor instead of polling to find out nothing changed. Asserted as an
-    # EXACT set on purpose: this payload is a contract the desktop parses, and
-    # a field appearing or vanishing unnoticed is how the two halves drift.
+    # wake_in_seconds joined due/reason so the app can sleep until the
+    # next anchor instead of polling to find out nothing changed. Asserted
+    # as an EXACT set on purpose (verified 2026-09-10: _refresh_result's
+    # payload is exactly {"due", "reason"} plus "wake_in_seconds" whenever
+    # wake_in is not None, and cmd_refresh's --check path always computes
+    # one): this payload is a contract the desktop parses, and a field
+    # appearing or vanishing unnoticed is how the two halves drift.
     assert set(payload) == {"due", "reason", "wake_in_seconds"}
     assert payload["reason"]
     assert payload["wake_in_seconds"] > 0

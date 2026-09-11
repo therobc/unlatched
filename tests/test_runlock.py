@@ -37,7 +37,8 @@ def test_the_pid_is_recorded_for_a_person_reading_the_file(home):
 
 
 def test_a_second_holder_in_this_process_is_refused(home):
-    """Same-process control. Cheap, and it proves the lock is exclusive."""
+    """Same-process control. Cheap, and it proves the lock is exclusive - by construction, asserted
+    directly below via pytest.raises(AlreadyRunningError)."""
     with (
         runlock.collect_lock(home),
         pytest.raises(runlock.AlreadyRunningError),

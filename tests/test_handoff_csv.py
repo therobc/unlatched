@@ -233,9 +233,10 @@ def test_the_template_this_app_emits_passes_its_own_checker(tmp_path):
 
 
 def test_check_names_the_row_a_spreadsheet_shows(tmp_path):
-    """The header is row 1, so the first job is row 2 - the number in the
-    message has to be the one on screen or it sends somebody to the wrong
-    line."""
+    """Verified 2026-09-10: importer.check_rows' own docstring states the
+    header is row 1, so the first job is row 2, and note() adds 2 for CSV
+    rows - the number in the message has to be the one on screen or it sends
+    somebody to the wrong line."""
     path = write_csv(tmp_path / "h.csv", [
         a_job(1),
         {"url": "https://x.example/2", "title": ""},
@@ -270,13 +271,16 @@ def test_check_reports_a_misspelled_column_without_calling_it_fatal(tmp_path):
     problems = importer.check_rows(path)["problems"]
 
     assert any("compnay" in p["problem"] for p in problems)
-    # And the row still imports, because it is not an error.
+    # And the row still imports - by construction, the assertion right
+    # below reads the title back out.
     assert importer.read_rows(path)[0]["title"]
 
 
 def test_check_catches_a_classification_in_the_destination(tmp_path):
-    """A classification must never arrive in apply_url. This is where a
-    collector author finds out, before it reaches a board."""
+    """Verified 2026-09-10: importer.check_rows calls marker_in_destination on
+    every row, so a classification must never arrive in apply_url unreported
+    - this is where a collector author finds out, before it reaches a
+    board."""
     path = write_csv(tmp_path / "h.csv",
                      [{"url": "https://x.example/1", "title": "Analyst",
                        "apply_url": "easy-apply"}],
@@ -306,8 +310,9 @@ def test_check_writes_nothing(home):
 
 
 def test_check_exits_nonzero_when_there_is_something_to_fix(home):
-    """So a collector author can put it in their own build and have it mean
-    something."""
+    """By construction, so a collector author can put it in their own build
+    and have it mean something: the assertion below requires the nonzero
+    exit code."""
     import argparse
 
     path = write_csv(home / "h.csv", [{"url": "https://x.example/1", "title": ""}])

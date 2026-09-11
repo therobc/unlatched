@@ -16,9 +16,13 @@ import re
 
 from unlatched import coverage, discover, screen
 
-# The literal control character an escape collapse produces. No gate pattern
-# in this package may contain it - if one does, the pattern cannot possibly
-# match real text and the gate has failed open.
+# The literal control character an escape collapse produces.
+# Verified 2026-09-10, by construction: the assert directly below
+# checks BACKSPACE not in pattern.pattern for every entry in
+# GATE_PATTERNS, so no gate pattern in this package may contain it -
+# a pattern that did would require a literal backspace byte in real
+# job-posting text to match at all, which none has, so the gate
+# would have failed open.
 BACKSPACE = "\x08"
 
 GATE_PATTERNS = [
@@ -65,8 +69,11 @@ def test_page_confirms_company_accepts_a_page_naming_the_company():
 
 
 def test_coverage_present_rejects_a_known_bad_prefix_collision():
-    # "soft" must never match inside "software" - a prefix collision here
-    # would silently inflate coverage on every posting that says "software".
+    # Verified 2026-09-10: coverage.present wraps its pattern in \b on
+    # both sides, and there is no word boundary between "soft" and the
+    # "w" that continues "software" - "soft" must never match inside
+    # "software", a prefix collision here would silently inflate
+    # coverage on every posting that says "software".
     assert coverage.present("soft", "we build enterprise software") is False
 
 

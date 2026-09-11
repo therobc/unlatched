@@ -50,7 +50,8 @@ def test_a_whole_employer_can_be_retired_in_one_call(con, home):
 
 
 def test_nothing_is_deleted(con, home):
-    """HIDES, never deletes - the rule retirement has always followed. The row
+    """Verified 2026-09-10: db.retire calls _write_retired, which UPDATEs
+    retired_at and never issues a DELETE - HIDES, never deletes. The row
     keeps its status, its append-only log and its place in the record."""
     add(con, "imported:1")
     status.set_status(con, "imported:1", "applied")
@@ -103,8 +104,10 @@ def test_an_unknown_key_stops_the_whole_call(con, home):
 
 
 def test_an_unknown_company_retires_nothing_and_does_not_error(con, home):
-    """Running the eight-poster sweep on a profile that never held one of them
-    is normal, not a failure."""
+    """By construction: cmd_retire returns 0 whenever no company row matches,
+    with no error path for a zero-match company selection - so running the
+    eight-poster sweep on a profile that never held one of them is normal,
+    not a failure."""
     add(con, "imported:1")
     con.commit()
     assert run(home, company="NotHere") == 0
@@ -112,8 +115,10 @@ def test_an_unknown_company_retires_nothing_and_does_not_error(con, home):
 
 
 def test_retiring_twice_does_not_double_count(con, home):
-    """The employer selection only picks up rows not already retired, so a
-    re-run of the sweep reports 0 rather than re-stamping and re-reporting."""
+    """Verified 2026-09-10: cmd_retire's company query filters
+    "jobs.retired_at IS NULL", so the employer selection only picks up rows
+    not already retired - a re-run of the sweep reports 0 rather than
+    re-stamping and re-reporting."""
     add(con, "imported:1")
     con.commit()
     run(home, company="Driftboard")

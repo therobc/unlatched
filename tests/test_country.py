@@ -45,7 +45,10 @@ def test_foreign_postings_are_recognised(location: str, title: str):
 
 
 @pytest.mark.parametrize(("location", "title"), [
-    # US cities sharing a name with a foreign one. A state always wins.
+    # US cities sharing a name with a foreign one. A state always wins
+    # (verified 2026-09-10: country.foreign_evidence() checks
+    # US_MARKER/_names_a_us_state FIRST and returns "" before ever testing
+    # the foreign-city patterns).
     ("London, KY", ""),
     ("Paris, TX", ""),
     ("Toronto, OH", ""),

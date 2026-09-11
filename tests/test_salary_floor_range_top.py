@@ -1,4 +1,5 @@
-"""The floor must be judged against the TOP of a posted range,
+"""The floor must be judged against the TOP of a posted range (verified 2026-09-10:
+screen._salary_gate always reads salary_max, never a low/min value, per its own docstring),
 never the bottom. Comparing against the bottom drops roles that pay well
 above the floor - "$67,953 - $95,000" against a $70,000 floor is a false
 drop if the low end of the range is what gets compared.

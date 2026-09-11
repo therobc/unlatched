@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest
 
-from unlatched import resumes
+from unlatched import cli, resumes
 
 
 def test_attaching_copies_the_file_in(home, tmp_path):
@@ -18,7 +18,8 @@ def test_attaching_copies_the_file_in(home, tmp_path):
     stored = resumes.resumes_dir(home) / record["file"]
     assert stored.is_file()
     assert stored.read_text(encoding="utf-8") == src.read_text(encoding="utf-8")
-    # The source is untouched - we copy, never move.
+    # The source is untouched - we copy, never move: verified 2026-09-10,
+    # resumes.attach() calls shutil.copy2, never shutil.move or os.rename.
     assert src.is_file()
 
 
@@ -60,12 +61,30 @@ def test_a_legacy_pointer_at_a_missing_file_reports_nothing(home):
 
 
 def test_an_unreadable_format_is_stored_but_flagged(home, tmp_path):
-    """Refusing somebody's own document helps nobody, but a format we cannot
-    read scores every skill missing - so they hear it from us."""
+    """Stored but flagged - by construction attach records readable=False.
+
+    Refusing somebody's own document helps nobody. Screening reads nothing
+    from it (test_an_unreadable_format_is_never_scored), so every skill reads
+    missing - and they hear why from us rather than guessing.
+    """
     src = tmp_path / "cv.pdf"
     src.write_bytes(b"%PDF-1.4 not really")
     record = resumes.attach(src, resumes.ORIGINAL, home)
     assert record["readable"] is False
+
+
+def test_an_unreadable_format_is_never_scored(home, tmp_path):
+    """Flagged unreadable means screening reads nothing from it.
+
+    Measured 2026-09-10 before the fix: a PDF fell through to a lenient text
+    read and came back as surviving bytes, so a skill name in its internals
+    would count as covered for a document the person was told we could not
+    read.
+    """
+    src = tmp_path / "cv.pdf"
+    src.write_bytes(b"%PDF-1.4\n/Keywords (Python SQL AWS)\n\xff\xfe stream")
+    resumes.attach(src, resumes.ORIGINAL, home)
+    assert cli._load_resume_text({}, home) == ""  # noqa: SLF001 - a private helper
 
 
 def test_an_unknown_role_is_refused(home, tmp_path):
@@ -108,9 +127,10 @@ def test_a_pin_cannot_name_a_file_outside_the_profile(home, tmp_path):
 
 
 def test_a_file_dropped_into_the_directory_is_not_pinnable(home, tmp_path):
-    """The membership check is against what the APP attached, so a file
-    somebody copies in by hand cannot be pinned either - it carries no role
-    prefix and `versions` does not list it."""
+    """Verified 2026-09-10: the membership check is against what the APP
+    attached, so a file somebody copies in by hand cannot be pinned either -
+    versions() skips any filename whose partition() before "-" is not a
+    known role, and active_path() only honours a pin that versions() lists."""
     src = tmp_path / "cv.txt"
     src.write_text("the real resume", encoding="utf-8")
     resumes.attach(src, resumes.ORIGINAL, home)

@@ -396,8 +396,10 @@ def test_a_handoff_records_when_it_was_taken_in(tmp_path, home):
         assert con.execute(
             "SELECT delisted_at FROM jobs WHERE key = 'imported:gone'"
         ).fetchone()[0]
-        # And no row's arrival time moved, which is exactly why inferring it
-        # from the rows could never have worked.
+        # And no row's arrival time moved: by construction the handoff above
+        # carries jobs: [] so import_row - the only place fetched_at is
+        # written - never runs, which is why inferring "taken in" from the
+        # rows could never have worked.
         assert con.execute(
             "SELECT COUNT(*) FROM jobs WHERE source = 'imported' "
             "AND fetched_at IS NOT NULL").fetchone()[0] == 0
@@ -429,7 +431,9 @@ def test_a_file_already_held_records_that_it_is_held(tmp_path, home):
     finally:
         con.close()
 
-    # Same file, nothing new - the branch a settled profile always lands in.
+    # Same file, nothing new - by construction _ingest_one returns None on
+    # a fingerprint match, so ingest_pending's loop leaves `taken` as None
+    # and returns it: the branch a settled profile always lands in.
     assert cli.ingest_pending(_args(home), cfg) is None
 
     con = db.connect(home)

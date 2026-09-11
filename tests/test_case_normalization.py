@@ -30,9 +30,10 @@ def test_coverage_end_to_end_is_not_case_sensitive():
 
 
 def test_a_real_skill_does_not_score_zero_demand_from_a_case_mismatch():
-    # The original defect: an unnormalised comparison reported a real skill
-    # ("Active Directory") as having zero demand across a corpus that
-    # plainly asked for it, purely because of capitalisation.
+    # unverified history: said to be the original defect - an
+    # unnormalised comparison reportedly scored a real skill ("Active
+    # Directory") as zero demand across a corpus that plainly asked for
+    # it, purely because of capitalisation.
     postings = [
         "Requirements: ACTIVE DIRECTORY administration required.",
         "Nice to have: active Directory experience.",

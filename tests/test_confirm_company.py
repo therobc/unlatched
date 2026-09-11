@@ -1,7 +1,8 @@
-"""Resolving a plausible domain proves it exists, not that it
-is the company's. `page_confirms_company` has to see the page actually name
-the company before anything on it is trusted; a domain that resolves but
-serves someone else's site must not be adopted just because it was the
+"""Verified 2026-09-10: resolving a plausible domain proves it exists, not
+that it is the company's - discover.page_confirms_company's own docstring
+says the same thing. `page_confirms_company` has to see the page actually
+name the company before anything on it is trusted; a domain that resolves
+but serves someone else's site must not be adopted just because it was the
 first candidate that answered.
 """
 from __future__ import annotations
@@ -63,12 +64,15 @@ def test_resolve_stops_at_the_first_confirming_page(monkeypatch):
 
 # ---- initialism names whose other words are all generic ------------------
 #
-# "NWS Financial Services" has no non-generic 4+ token: "financial" and
-# "services" are both in GENERIC_TOKEN and "nws" is too short for the 4+
-# scan. The whole-name fallback then looked for "nwsfinancialservices",
-# which appears on no page in existence - so a real employer of this shape
-# had its 157KB careers page, carrying its initials throughout, rejected and
-# was recorded as dead.
+# "NWS Financial Services" has no non-generic 4+ token - verified
+# 2026-09-10 against discover.py's own comment above
+# page_confirms_company: "financial" and "services" are both in
+# GENERIC_TOKEN and "nws" is too short for the 4+ scan. The
+# whole-name fallback then looks for "nwsfinancialservices", which is
+# unlikely to appear on any real page. Unverified history: one such
+# employer's own 157KB careers page, carrying its initials
+# throughout, is said to have been rejected exactly this way and
+# recorded as dead.
 
 def test_initialism_confirms_when_every_other_word_is_generic():
     page = "<html><body>Welcome to NWS. Careers at NWS Bank.</body></html>"
@@ -86,8 +90,9 @@ def test_initialism_must_match_as_a_whole_word():
 
 
 def test_two_letter_initialisms_do_not_confirm_on_their_own():
-    """"at" appears on essentially every page ever written, so a 2-character
-    token is not evidence. AT&T is still reachable through the squashed
+    """Verified 2026-09-10: discover.py's per-word initialism match only
+    considers 3-character words, so a 2-character token like "at" is never
+    evidence on its own. AT&T is still reachable through the squashed
     whole-name form ("att").
     """
     assert not discover.page_confirms_company(

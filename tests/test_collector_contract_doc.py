@@ -45,8 +45,9 @@ def test_the_contract_version_it_documents_is_the_one_read(text):
 
 
 def test_the_id_rule_it_states_is_the_one_checked(text):
-    """1-32 characters of a-z, 0-9, underscore or hyphen. The document says so
-    in words; check_collector_id is what decides."""
+    """Verified 2026-09-10: "1-32 characters of a-z, 0-9, underscore or
+    hyphen" is quoted verbatim from check_collector_id's own error message.
+    The document says so in words; check_collector_id is what decides."""
     assert "1-32 characters" in text
     assert importer.check_collector_id("a" * 32) == "a" * 32
     with pytest.raises(importer.BadCollectorIdError):
@@ -72,8 +73,10 @@ def test_the_first_character_rule_is_stated_as_well_as_enforced(text):
         with pytest.raises(importer.BadCollectorIdError):
             importer.check_collector_id(bad)
 
-    # ...and both are fine anywhere else, which is why the rule needs saying
-    # rather than simplifying.
+    # Verified 2026-09-10: _COLLECTOR_ID is
+    # r"^[a-z0-9][a-z0-9_-]{0,31}$" - underscore and hyphen are fine
+    # anywhere after the first character, which is why the rule needs
+    # saying rather than simplifying.
     assert importer.check_collector_id("a_b-c") == "a_b-c"
 
 

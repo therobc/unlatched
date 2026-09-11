@@ -61,7 +61,8 @@ def test_a_row_from_a_board_is_not_handed_to_the_collector(con, collector):
 
 
 def test_the_file_declares_a_version(tmp_path, con, collector):
-    """The incoming handoff carries none and its own checker says so on every
+    """The incoming handoff carries none (verified 2026-09-10: importer.py's read_version() check
+    runs on every import) and its own checker says so on every
     run - "a contract without a version cannot change".
     """
     _job(con, "imported:abc", delisted="2026-08-26T18:00:00")

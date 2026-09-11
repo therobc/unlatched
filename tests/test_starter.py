@@ -37,7 +37,7 @@ def test_the_pack_is_the_size_the_rest_of_the_app_says_it_is():
 
 
 def test_every_entry_names_a_board_we_can_read():
-    """A name that cannot be read is worse than no name: it teaches somebody
+    """A name nobody can read is worse than no name at all: it teaches somebody
     on their first afternoon that the tool does not work."""
     from unlatched import sources
     registry = sources.registry()
@@ -63,7 +63,7 @@ def test_no_duplicate_employers():
 
 
 def test_the_pack_spans_sectors():
-    """Internal roles exist at every employer, so the pack targets a wide
+    """Believed, not measured: internal roles exist at every employer, so the pack targets a wide
     employer base rather than an industry. Two or three sectors would be an
     industry list wearing a different name."""
     sectors = {e.sector for e in starter.EMPLOYERS}

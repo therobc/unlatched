@@ -37,8 +37,10 @@ def test_a_wrapped_link_is_not_judged_by_the_wrapper_s_host():
 
 
 def test_percent_encoded_dots_survive():
-    """LinkedIn encodes the dots too (%2E), so the target is unusable until it
-    is unquoted - and a host read before unquoting is nonsense."""
+    """Verified 2026-09-10: unwrap_redirect calls urllib.parse.unquote(target)
+    before the next loop pass reads urlsplit(url).hostname - LinkedIn encodes
+    the dots too (%2E), so the target is unusable until it is unquoted, and a
+    host read before unquoting is nonsense."""
     wrapped = "https://linkedin.com/safety/go/?url=https%3A%2F%2Fapply%2Eworkable%2Ecom%2Fx"
     assert unwrap_redirect(wrapped) == "https://apply.workable.com/x"
 
@@ -87,7 +89,8 @@ def test_an_ordinary_link_is_left_alone():
 
 
 def test_a_redirect_chain_terminates():
-    """A wrapper around a wrapper is real. A chain that never ends is a loop,
-    and this must not spin on one."""
+    """A wrapper around a wrapper is real. By construction: unwrap_redirect's
+    loop is bounded by MAX_UNWRAPS (3) iterations, so a chain that never ends
+    is a loop this cannot spin on."""
     looping = "https://linkedin.com/safety/go/?url=https%3A%2F%2Flinkedin%2Ecom%2Fsafety%2Fgo"
     assert unwrap_redirect(looping)  # returns something rather than hanging

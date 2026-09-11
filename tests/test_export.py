@@ -76,8 +76,10 @@ def test_a_finished_application_still_reports_when_it_was_applied_to(con, cfg, t
 
 
 def test_removed_and_taken_down_rows_are_in_the_backup(con, cfg, tmp_path):
-    """The rows that cannot be reconstructed from the web are exactly the ones
-    a filter would drop. A backup that honours the current view is not one."""
+    """Verified 2026-09-10, per the assertions below: write_csv includes the
+    retired and delisted rows alongside the kept one - the rows that cannot
+    be reconstructed from the web are exactly the ones a filter would drop.
+    A backup that honours the current view is not one."""
     add(con, cfg, "https://boards.greenhouse.io/acme/jobs/4", title="Kept")
     removed = add(con, cfg, "https://boards.greenhouse.io/acme/jobs/5", title="Removed")
     gone = add(con, cfg, "https://boards.greenhouse.io/acme/jobs/6", title="Taken down")
@@ -117,8 +119,9 @@ def test_an_empty_search_still_writes_a_usable_file(con, cfg, tmp_path):
 
 
 def test_the_file_opens_with_accented_names_intact(con, cfg, tmp_path):
-    """utf-8-sig so a spreadsheet reads it correctly. Mojibake would land on
-    the person least equipped to work out why."""
+    """Verified 2026-09-10: write_csv opens the file with encoding="utf-8-sig"
+    so a spreadsheet reads it correctly. Mojibake would land on the person
+    least equipped to work out why."""
     add(con, cfg, "https://boards.greenhouse.io/acme/jobs/8", company="Crédit Vallée")
     out = tmp_path / "pipeline.csv"
     export.write_csv(con, out)

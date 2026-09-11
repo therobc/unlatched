@@ -12,10 +12,11 @@ in urllib's redirect handling, so a fake fetcher would have proved nothing.
 """
 from __future__ import annotations
 
-# The blank line below the pytest import is load-bearing: ruff's import
-# sorting treats `unlatched` as first-party here, so the standard-library
-# imports and the local one belong in separate groups. An editor that
-# reflows this block will take it out and lint will ask for it back.
+# The blank line below the pytest import is load-bearing: believed, not
+# measured, that ruff's import sorting treats `unlatched` as first-party
+# here, so the standard-library imports and the local one belong in
+# separate groups. An editor that reflows this block will take it out
+# and lint will ask for it back.
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
@@ -28,8 +29,10 @@ ROUTES = {
     "/to-aggregator": "https://www.indeed.com/viewjob?jk=1",
     "/to-ftp": "ftp://198.51.100.5/x",
     "/to-file": "file:///C:/Windows/System32/calc.exe",
-    # Stays on this server, so "an allowed redirect is still followed" can be
-    # proved without the suite reaching the internet.
+    # By construction: ROUTES["/to-ok"] below points to "/ok", a same-host
+    # relative path with no scheme or host of its own, so "an allowed
+    # redirect is still followed" can be proved without the suite
+    # reaching the internet.
     "/to-ok": "/ok",
     "/ok": "",
 }
@@ -81,8 +84,10 @@ def test_a_redirect_cannot_smuggle_us_onto_an_aggregator(server):
     status, text, _final = _fetch(
         f"{server}/to-aggregator",
         url_ok=lambda u: manual.may_fetch(u, hand_added=False))
-    # The redirect is declined, so what comes back is the 302 itself with no
-    # body - never Indeed's page.
+    # Verified 2026-09-10: _GuardedRedirect.redirect_request returns None
+    # when url_ok refuses the target, and urlopen then hands back the 3xx
+    # response itself - so what comes back is the 302 with no body, never
+    # Indeed's page.
     assert status == 302
     assert text == ""
 

@@ -200,7 +200,8 @@ def test_a_run_is_capped_and_the_next_press_takes_the_next_batch(con):
 
 
 def test_the_batch_size_relies_on_pacing_that_is_actually_engaged(con, cfg):
-    """The cap was raised because fetch.py now paces and backs off. If that
+    """Unverified history: the cap is said to have been raised because fetch.py now paces and backs
+    off. If that
     stopped applying to this path, 50 requests would go out back to back - so
     the dependency is asserted rather than assumed.
     """

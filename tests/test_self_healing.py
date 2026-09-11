@@ -47,7 +47,8 @@ def test_a_board_that_answers_clears_the_quiet_count(con):
 
 
 def test_the_count_survives_between_runs(con):
-    """It lives in `meta`, so it has to outlast the process that wrote it -
+    """Verified 2026-09-10, it lives in `meta`: db.set_meta commits to the
+    sqlite `meta` table, so it has to outlast the process that wrote it -
     three empty collects on three different days is the case this exists for,
     not three inside one run."""
     cid = _company(con, "Fabrikam Retail")
@@ -152,8 +153,9 @@ def test_a_probe_that_finds_nothing_leaves_the_reference_alone(con, monkeypatch)
 
 
 def test_unreadable_is_not_among_the_outcomes_that_write():
-    """Stated as a property of the module rather than only exercised above, so
-    adding a fifth outcome cannot quietly make blanking possible."""
+    """Stated as a property of the module rather than only exercised above -
+    by construction, the assertions below fail the moment a fifth outcome is
+    added to WRITES without also being reviewed here."""
     assert rediscover.UNREADABLE not in rediscover.WRITES
     assert rediscover.UNCHANGED not in rediscover.WRITES
     assert set(rediscover.WRITES) == {rediscover.MOVED, rediscover.NOW_READABLE}
@@ -220,9 +222,10 @@ def _greenhouse_url(slug: str) -> str:
 
 
 def test_three_empty_collects_repair_the_reference(home, monkeypatch):
-    """End to end through cmd_collect, because the wiring is where this would
-    silently stop working - every piece can be correct while nothing calls
-    them.
+    """End to end through cmd_collect, by construction: the test drives
+    cli.main across three real runs rather than calling rediscover functions
+    directly, so it exercises the wiring - every piece can be correct while
+    nothing calls them.
 
     The board answers, politely, with no jobs. That is indistinguishable from
     an employer who is not hiring until it happens three times, which is
@@ -269,7 +272,8 @@ def test_three_empty_collects_repair_the_reference(home, monkeypatch):
 
 
 def test_a_board_that_answers_is_never_re_probed(home, monkeypatch):
-    """The negative control. A collector returning postings must never cause a
+    """The negative control, by construction: discover.resolve is monkeypatched
+    to raise, so a collector returning postings must never cause a
     careers-site probe, however many times it runs - that would be the
     scheduled crawl arrived at from the other direction."""
     from unlatched import cli, db, discover
@@ -299,11 +303,12 @@ def test_a_board_that_answers_is_never_re_probed(home, monkeypatch):
     for _ in range(rediscover.QUIET_RUNS + 2):
         assert cli.main(["--home", str(home), "collect"]) == 0
 
-    # THE PREMISE, SAID OUT LOUD. `explode` is what actually fails this test,
-    # and it would also fire if the board URL were wrong and every collection
-    # came back empty - the right failure for the wrong reason. Asserting the
-    # posting landed says the board really did answer, so a pass means what it
-    # claims: answered every time, probed none of them.
+    # THE PREMISE, SAID OUT LOUD. `explode` is what actually fails this
+    # test, and it would also fire if the board URL were wrong and every
+    # collection came back empty - the right failure for the wrong
+    # reason. Asserting the posting landed says the board really did
+    # answer - by construction, the two assertions right below check
+    # both halves.
     con = db.connect(home)
     kept = con.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
     quiet = db.get_meta(con, rediscover.quiet_key(1))

@@ -97,7 +97,9 @@ def test_a_backup_exists_before_anything_moves(con, home):
 
 
 def test_two_rows_that_would_collide_are_reported_and_left_alone(con, home):
-    """NEVER A MERGE. Correcting one key onto another row's key would join two
+    """NEVER A MERGE (verified 2026-09-10: rekey.py's own docstring states this, and plan() records
+    a conflict rather than moving on collision). Correcting one key onto another row's key would
+    join two
     postings' application histories, and no automatic rule gets to do that."""
     a_job(con, "manual:job-1", "imported")
     a_job(con, "imported:job-1", "imported", title="The row already there")

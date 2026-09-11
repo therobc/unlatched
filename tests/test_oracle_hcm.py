@@ -211,9 +211,11 @@ def test_bare_oracle_host_is_matched_on_purpose():
 
 
 def test_the_precise_fingerprint_is_preferred_when_both_could_match():
-    # Discovery reports matches in pattern order, and the caller takes the
-    # first, so a page that DOES name its site must yield the site rather
-    # than the bare host.
+    # Discovery reports matches in pattern order (verified 2026-09-10:
+    # ATS_FINGERPRINT lists the site-naming oracle_hcm pattern before the
+    # bare-host one, and detect_ats appends in that order), and the caller
+    # takes the first, so a page that DOES name its site must yield the
+    # site rather than the bare host.
     html = ('<a href="https://example.fa.us2.oraclecloud.com/hcmUI/'
              'CandidateExperience/en/sites/GroupCareers/requisitions">jobs</a>')
     found = [f for f in discover.detect_ats(html) if f["provider"] == "oracle_hcm"]

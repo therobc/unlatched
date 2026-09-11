@@ -137,8 +137,10 @@ def test_with_no_filter_every_posting_still_gets_its_description():
 
 
 def test_the_collector_declares_that_it_wants_the_filter():
-    # cli.py only passes title_include to collectors that opt in, because they
-    # do not share a signature.
+    # cli.py only passes title_include to collectors that opt in
+    # (verified 2026-09-10: cli.py's `extra = {"title_include": ...} if
+    # getattr(collector, "WANTS_TITLE_INCLUDE", False) else {}`), because
+    # they do not share a signature.
     assert workday.WANTS_TITLE_INCLUDE is True
 
 
@@ -257,7 +259,8 @@ def test_the_backfill_never_re_reads_the_newest_window():
 # ---- the offset has to survive between runs, or none of the above happens --
 
 def test_the_backlog_offset_is_remembered_and_advances(home, monkeypatch):
-    """END TO END THROUGH cmd_collect, because the wiring is where this would
+    """END TO END THROUGH cmd_collect (by construction: this test calls cli.main(["collect"]) below,
+    not workday.collect directly), because the wiring is where this would
     silently stop working.
 
     The collector would keep its parameter and simply be handed 0 every run -

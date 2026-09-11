@@ -1,4 +1,4 @@
-"""A posting that never mentions location was being treated as
+"""Unverified history: a posting that never mentions location was said to have been treated as
 remote - silence is not evidence. remote_evidence() must require a positive
 match and return the evidence string that convinced it, so the reasoning is
 visible rather than a bare true/false.

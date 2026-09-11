@@ -1,10 +1,13 @@
 """Several collectors, each in its own namespace, none of them trusted.
 
-What this file covers directly:
+What this file covers directly - each is exercised by a test below:
 
-  * two collectors run without corrupting each other
-  * a collector cannot widen what the app may fetch
-  * a handoff path configured before namespacing existed still works
+  * two collectors run without corrupting each other, verified 2026-09-10 by
+    test_two_collectors_land_together_and_keep_their_own_provenance
+  * a collector cannot widen what the app may fetch by default, verified
+    2026-09-10 by test_a_collector_that_says_nothing_may_not_be_refetched
+  * a handoff path configured before namespacing existed still works,
+    verified 2026-09-10 by test_an_old_config_keeps_working_without_a_collectors_list
 """
 from __future__ import annotations
 
@@ -53,9 +56,11 @@ def test_an_old_config_keeps_working_without_a_collectors_list(home):
     assert len(found) == 1
     assert found[0].id == importer.SOURCE_NAME
     assert found[0].path == str(home / "handoff.json")
-    # AND ITS MARKER IS THE OLD ONE. A new marker would read as "never taken
-    # in" and re-import the current file - and re-importing is not free,
-    # because relist() clears delisted_at and resurrects closed rows.
+    # AND ITS MARKER IS THE OLD ONE. A new marker would read as "never
+    # taken in" and re-import the current file - and re-importing is not
+    # free: verified 2026-09-10, db.relist() (called on every stored row
+    # by importer.py and cli.py's ingest path) clears delisted_at, which
+    # resurrects closed rows.
     assert found[0].marker == "ingest_last"
 
 
@@ -159,10 +164,13 @@ def test_each_collector_is_marked_separately(home, cfg):
         "SELECT key, value FROM meta WHERE key LIKE 'ingest_last%'")}
     con.close()
     assert set(marks) == {"ingest_last:myboard", "ingest_last:othertool"}
-    # EACH MARKER HOLDS ITS OWN FILE'S FINGERPRINT, checked against the file
-    # rather than against the other marker: two files written in the same
-    # moment at the same size legitimately share a fingerprint, so "they
-    # differ" would be a property of the fixture, not of the code.
+    # EACH MARKER HOLDS ITS OWN FILE'S FINGERPRINT, checked against the
+    # file rather than against the other marker - verified 2026-09-10:
+    # cli.py compares db.get_meta(con, collector.marker) to that one
+    # file's own stat fingerprint, never to another collector's marker.
+    # Two files written in the same moment at the same size legitimately
+    # share a fingerprint, so "they differ" would be a property of the
+    # fixture, not of the code.
     for ident, name in (("myboard", "li.json"), ("othertool", "in.json")):
         stat = (home / name).stat()
         assert marks[f"ingest_last:{ident}"] == f"{stat.st_mtime_ns}:{stat.st_size}"
@@ -224,8 +232,9 @@ def test_a_closure_written_with_the_old_prefix_still_closes_the_row(home, cfg):
     assert first is not None
     assert first["imported"] == 1
 
-    # The sender's next file: same posting, now reported closed, still using
-    # the prefix it has always used.
+    # The sender's next file: same posting, now reported closed, still
+    # using the prefix it has always used - by construction, the
+    # write_handoff call right below passes that exact key in `closed`.
     write_handoff(home / "li.json", [], closed=["manual:myboard-4400330022"])
     second = cli.ingest_pending(Args(home), cfg)
 
@@ -356,8 +365,10 @@ def test_a_collector_that_caps_itself_declares_the_ceiling():
         text = Path(mod.__file__).read_text(encoding="utf-8")
         caps = {m.rstrip(" =") for m in cap_shaped.findall(text)}
         # A collector may report truncation itself instead - usajobs does,
-        # because de-duplicating across query streams makes the count
-        # comparison unable to fire.
+        # verified 2026-09-10 (usajobs.py): it de-duplicates across query
+        # streams into a dict, so MAX_COLLECTED's count comparison can stay
+        # under the ceiling even when a stream was cut short, and
+        # truncated_queries() is what reports that instead.
         if not caps:
             continue
         if getattr(mod, "MAX_COLLECTED", None) is None and not callable(

@@ -1,4 +1,6 @@
-"""A collect keeps a durable record, and cannot run for ever.
+"""A collect keeps a durable record, and enforces a ceiling on it - verified
+2026-09-10: runlog.RunLog writes the timestamped log the tests below check,
+and fetch.fetch() checks run_expired() before making any network call.
 
 THE INCIDENT. One scheduled collect ran for 11h47m. Nine and a half of those
 hours were a single gap in which no employer completed, and afterwards there
@@ -36,7 +38,9 @@ PAGE = """<html><head>
 
 @pytest.fixture(autouse=True)
 def _clean_run_state():
-    """Deadlines are module state, so a test that sets one must not leak it."""
+    """Deadlines are module state - verified 2026-09-10: fetch.reset_rate_limits
+    sets fetch's module-level _run_deadline and _employer_deadline back to
+    None - so a test that sets one must not leak it."""
     fetch.reset_rate_limits()
     yield
     fetch.reset_rate_limits()
@@ -99,7 +103,8 @@ def test_a_cut_short_run_is_not_marked_complete(tmp_path, monkeypatch, capsys):
     home = tmp_path / "home"
     _seed(home, ("A Co", "B Co", "C Co"))
     monkeypatch.setattr(cli.fetch_mod, "fetch", _fetch_ok)
-    # Expire immediately, so the loop breaks before the first employer.
+    # Expire immediately: by construction, the assertion below (marker is
+    # None) confirms the loop broke before the first employer completed.
     monkeypatch.setattr(cli, "_run_ceiling_minutes", lambda _cfg: 0.0000001)
 
     rc = cli.main(["--home", str(home), "collect"])
@@ -110,14 +115,16 @@ def test_a_cut_short_run_is_not_marked_complete(tmp_path, monkeypatch, capsys):
     con.close()
     assert marker is None, "a run that stopped early must not read as complete"
 
-    # And it must SAY so rather than looking like a quiet, successful run.
+    # And it must SAY so rather than looking like a quiet, successful run
+    # - by construction, the assertion right below checks the log for it.
     err = capsys.readouterr().err
     assert "not reached" in err, err
 
 
 def test_a_normal_run_is_still_marked_complete(tmp_path, monkeypatch):
-    """The positive control. Without this, a fix that simply never wrote the
-    marker would pass the test above and break the schedule for everyone."""
+    """The positive control, by construction: the assertion below requires the
+    marker to be set, so a fix that simply never wrote it would fail here
+    even though it passes the test above."""
     home = tmp_path / "home"
     _seed(home)
     monkeypatch.setattr(cli.fetch_mod, "fetch", _fetch_ok)
@@ -250,8 +257,10 @@ def test_whole_board_sources_are_logged_too(tmp_path, monkeypatch):
 
 
 def test_a_source_without_credentials_says_so_in_the_log(tmp_path, monkeypatch):
-    """A skipped source must be visible. Silence here is indistinguishable
-    from a source that ran and found nothing."""
+    """A skipped source must be visible, by construction: the assertions below
+    require both "usajobs" and "no credentials" in the log text, so silence
+    here would not be distinguishable from a source that ran and found
+    nothing."""
     from unlatched import sources
 
     class NoKey:

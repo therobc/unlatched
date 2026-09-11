@@ -97,9 +97,10 @@ def test_onsite_posting_in_the_area_survives():
 
 # ---- the District of Columbia, and towns named after other states -----------
 #
-# normalize() used to check full state NAMES first, in dictionary order, and
-# stop at the first hit. "Washington, DC" contains "washington", so the
-# District resolved to Washington state - which broke the filter in both
+# unverified history: normalize() is said to have once checked full
+# state NAMES first, in dictionary order, and stopped at the first hit.
+# "Washington, DC" contains "washington", so the District would have
+# resolved to Washington state - breaking the filter in both
 # directions at once.
 
 def test_the_district_is_not_washington_state():
@@ -112,8 +113,9 @@ def test_the_district_is_not_washington_state():
 
 
 def test_somebody_in_the_district_can_search_for_it():
-    """The worse half. A DC posting did not satisfy a "DC" search either, so
-    a person in Washington DC filtering on their own city saw none of it -
+    """The worse half, unverified history: a DC posting reportedly did not satisfy a "DC" search
+    either, so
+    a person in Washington DC filtering on their own city would have seen none of it -
     and this app ships a USAJOBS collector aimed at the densest federal job
     market in the country."""
     assert location.place_is_acceptable("Washington, DC", "DC")

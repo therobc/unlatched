@@ -115,23 +115,28 @@ def test_the_filter_agrees_with_the_screen_that_will_run_later():
 
 
 def test_the_collector_declares_that_it_wants_the_filter():
-    # The caller only passes it to collectors that opt in, because they do not
-    # share a signature.
+    # The caller only passes it to collectors that opt in: verified
+    # 2026-09-10, cli.py calls collector.collect(ats_ref, fetcher=..., **extra)
+    # and a collector that does not declare WANTS_TITLE_INCLUDE (greenhouse,
+    # for one) has no title_include parameter, so passing it unconditionally
+    # would raise TypeError.
     assert oracle_hcm.WANTS_TITLE_INCLUDE is True
 
 
 def test_a_collect_passes_the_profiles_filter_through(tmp_path, monkeypatch):
-    """End to end through cmd_collect, because the wiring is where this would
-    silently stop working - the collector would keep its parameter and simply
-    never be given one."""
+    """End to end through cmd_collect, by construction: the test drives
+    cli.main rather than calling oracle_hcm.collect directly, so it exercises
+    the wiring - the collector would keep its parameter and simply never be
+    given one if that wiring broke."""
     home = tmp_path / "home"
     con = db.connect(home)
     db.upsert_company(con, "Tenant Co", ats="oracle_hcm", ats_ref=HOST,
                       probe_status="probed")
     con.close()
 
-    # Through the config module, which is what writes the file - db.connect
-    # does not, so reading config.json straight after connecting finds nothing.
+    # Through the config module, which is what writes the file - verified
+    # 2026-09-10: db.connect() only opens and migrates the sqlite database
+    # and never touches config.json; config.save() is what writes it.
     from unlatched import config
     cfg = config.load(home)
     cfg.setdefault("search", {})["title_include"] = [WANTED]
@@ -162,7 +167,8 @@ def test_a_later_run_does_not_erase_a_description_it_did_not_fetch(tmp_path, mon
     seen: list[str] = []
     monkeypatch.setattr(cli.fetch_mod, "fetch", _fetcher(seen))
 
-    # First run: no filter, so every posting is fetched in full.
+    # First run: no filter, so every posting is fetched in full - by construction
+    # here, title_include is unset.
     assert cli.main(["--home", str(home), "collect"]) == 0
     con = db.connect(home)
     before = con.execute(
@@ -192,14 +198,18 @@ def test_a_later_run_does_not_erase_a_description_it_did_not_fetch(tmp_path, mon
 
 # ---- the same decision, in the other collector that makes it ---------------
 #
-# sitemap.py pre-filters by the title it can read out of the URL slug. It used
-# a plain substring test while oracle_hcm used screen.title_wants, and
-# substring is STRICTER: it needs the words of a term contiguous and spelled
-# exactly. So "HR Specialist" stopped matching "HR Operations Specialist".
+# sitemap.py pre-filters by the title it can read out of the URL slug.
+# Unverified history: sitemap.py's own comment says it is believed, not
+# measured, to have once used a plain substring test while oracle_hcm
+# used screen.title_wants - substring is stricter, needing the words of
+# a term contiguous and spelled exactly, which would have stopped "HR
+# Specialist" matching "HR Operations Specialist". Both now call
+# screen.title_may_pass (verified 2026-09-10, sitemap.py and oracle_hcm.py).
 #
-# It is the worse of the two places to get this wrong. oracle_hcm skips only
-# the DETAIL request and still returns the posting; sitemap drops the URL, so
-# the posting is never fetched, never returned, and nobody learns it existed.
+# It is still the worse of the two places to get this wrong: verified by
+# construction, oracle_hcm skips only the DETAIL request and still
+# returns the posting, while sitemap drops the URL before it is ever
+# fetched, so nobody learns the posting existed.
 
 SITE = "portal.example.com"
 MATCHES_BY_WORD = f"https://{SITE}/careers/hr-operations-specialist"
@@ -266,12 +276,13 @@ def test_the_two_collectors_answer_the_same_question_the_same_way():
 
 # ---- the same decision, a third time: the SCORE -----------------------------
 #
-# screen_job gates the title with title_wants and then awarded its +20 bonus
-# with a plain substring test. So a posting could pass the gate BECAUSE the
-# matcher is generous and then be denied the bonus FOR being the kind of match
-# that needed it: "IT HelpDesk Analyst" against "help desk" qualified at 60
-# where the exact phrase scored 80. On a score-sorted list that is the
-# difference between the first screen and the third.
+# screen_job gates the title with title_wants. Unverified history:
+# screen.py's own comment says a plain substring test is believed, not
+# measured, to have once awarded the +20 title bonus there instead -
+# which would have let a posting pass the gate because the matcher is
+# generous and then be denied the bonus for being the kind of match
+# that needed it. Both the gate and the bonus now call title_wants
+# (verified 2026-09-10, screen.py).
 
 
 class _Posting:
@@ -281,8 +292,11 @@ class _Posting:
         self.title = title
         self.location = "Remote"
         self.employment_type = ""
-        # Over MIN_JD_CHARS_TO_JUDGE, so nothing else marks the row alt and
-        # the only thing varying between these cases is the title.
+        # Over MIN_JD_CHARS_TO_JUDGE (verified 2026-09-10: screen.py's
+        # short-description branch is the only other thing that can set alt
+        # before the title bonus runs, and an empty profile leaves
+        # requirements.compare with no blockers to add), so the only thing
+        # varying between these cases is the title.
         self.description = "Provides day to day support to staff. " * 12
 
 

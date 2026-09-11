@@ -3,10 +3,12 @@
 An earlier change. Two things were true before this and both are traps
 under more than one collector:
 
-  * every imported row carried the constant source "imported", so a second
-    collector's rows were indistinguishable from the first's
-  * keys were whatever the sender supplied, so two collectors reading the same
-    posting derive the same id and the second silently OVERWRITES the first
+  * unverified history: every imported row carried the constant source
+    "imported", so a second collector's rows were indistinguishable from the
+    first's
+  * unverified history: keys were whatever the sender supplied, so two
+    collectors reading the same posting derive the same id and the second
+    silently OVERWRITES the first
 """
 from __future__ import annotations
 
@@ -14,8 +16,10 @@ import pytest
 
 from unlatched import importer
 
-# The same posting, as two different collectors would report it. Same URL,
-# because that is exactly the case that collided: both derive their key from it.
+# The same posting, as two different collectors would report it. Same
+# URL: verified 2026-09-10, importer._key_for derives the stable id
+# from the URL (manual.stable_id) whenever no key is supplied, which
+# is exactly the case that collided.
 POSTING = {"title": "Support Analyst", "company": "Acme",
            "url": "https://www.example.com/jobs/view/4400330022"}
 
@@ -45,8 +49,9 @@ def test_a_collector_cannot_claim_another_collectors_namespace(con, cfg):
     stored = importer.import_row(con, cfg, row, collector="myboard")
 
     # KEPT WHOLE INSIDE myboard's NAMESPACE rather than rewritten to
-    # "myboard:123": the sender's id is theirs and may have structure, and
-    # what matters here is only that it cannot land in othertool's rows.
+    # "myboard:123": the sender's id is theirs and may have structure,
+    # and what matters here is only that it cannot land in othertool's
+    # rows - by construction, the assertions right below check both.
     assert stored["key"] == "myboard:othertool:123"
     assert not stored["key"].startswith("othertool:")
     source = con.execute("SELECT source FROM jobs WHERE key = ?",
@@ -97,7 +102,8 @@ def test_case_is_normalised_because_config_is_written_by_hand(con, cfg):
 
 def test_a_sender_still_using_the_old_prefix_updates_the_row_it_already_wrote(
         con, cfg):
-    """THE FAILURE THIS PREVENTS IS A SILENT DOUBLING OF THE BOARD.
+    """THE FAILURE THIS PREVENTS IS A SILENT DOUBLING OF THE BOARD, verified by construction:
+    the assertions below require exactly one stored row.
 
     rekey.py corrected 410 rows from `manual:` to `imported:` on
     2026-08-13. The collector on the other side still writes `manual:` keys and

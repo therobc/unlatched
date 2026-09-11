@@ -79,16 +79,17 @@ to read stay refused, and a collector cannot talk it into widening that.
 `test_status_vocabulary` `test_rescreen_preserves_status`
 `test_stable_keys_import` `test_retire` `test_retire_cli` `test_resumes`
 `test_apply_url` `test_apply_kind` `test_prune`
-`test_collect_stores_only_matches`
+`test_collect_stores_only_matches` `test_rescreen_keeps_person_added`
 
 Notes append and are never replaced. A rescore never overwrites a status you
 set. Removing a job hides it and keeps it. Everything exports to CSV.
 
-The one place the app does delete is `prune`, and the pair of tests around it
-is what bounds it: a posting is only ever removed if it failed your own
-criteria AND you never touched it - no status you set, no note, nothing
-opened - and the earlier rounds of a seat are kept whenever its latest round
-survives, so a repost history is never quietly shortened.
+The one place the app does delete is `prune`, and the tests around it are what
+bound it: a posting is only ever removed if it failed your own criteria AND you
+never touched it - no status you set, no note, nothing opened - and the earlier
+rounds of a seat are kept whenever its latest round survives, so a repost
+history is never quietly shortened. A job you added by hand or imported is not
+a screening decision, so re-screening never turns it into a prune candidate.
 
 ### Duplicates and reposts
 `test_dupes` `test_dupe_rebalance` `test_reposts`

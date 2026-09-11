@@ -20,8 +20,9 @@ from unlatched import fetch
 
 @pytest.fixture(autouse=True)
 def _clean_pacing():
-    # Seeded, so jitter is reproducible - a gate that depends on real
-    # randomness is a flaky gate.
+    # Seeded: verified 2026-09-10, fetch.reset_rate_limits(seed=...) calls
+    # _rng.seed(seed), so jitter is reproducible - a gate that depends on
+    # real randomness is a flaky gate.
     fetch.reset_rate_limits(seed=1)
     yield
     fetch.reset_rate_limits()
@@ -56,8 +57,10 @@ def test_jitter_only_ever_lengthens_the_gap(slept, monkeypatch):
     for _ in range(30):
         fetch._respect_rate_limit("example.com", 1.5)  # noqa: SLF001
 
-    # Strictly below the rest interval, so the periodic long pause is not
-    # mistaken for a per-request wait.
+    # Strictly below the rest interval - verified 2026-09-10: the widest
+    # per-request wait is 1.5 * (1 + JITTER_FRACTION) == 2.25s, well under
+    # REST_SECONDS == 8.0 - so the periodic long pause is not mistaken for
+    # a per-request wait.
     waits = [w for w in slept if 0 < w < fetch.REST_SECONDS]
     assert waits, "expected some per-request waits"
     assert min(waits) >= 1.5, f"a wait came in under the delay: {min(waits)}"
@@ -65,8 +68,10 @@ def test_jitter_only_ever_lengthens_the_gap(slept, monkeypatch):
 
 
 def test_a_long_run_takes_a_real_break(slept, monkeypatch):
-    """The per-request delay never adds up to a pause, and continuous pressure
-    is the part a small employer's careers page actually feels."""
+    """By construction, the per-request delay never adds up to a pause: the
+    assertion below requires the distinct REST_SECONDS value to appear among
+    the recorded sleeps. Continuous pressure is the part a small employer's
+    careers page actually feels."""
     clock = iter([0.0] * 400)
     monkeypatch.setattr(fetch.time, "monotonic", lambda: next(clock))
 
@@ -99,8 +104,9 @@ def test_repeated_push_back_stops_the_host_for_the_run(slept):
         fetch._note_throttled("busy.example", 429, None)  # noqa: SLF001
 
     assert "busy.example" in fetch.stopped_hosts()
-    # And it is reported, because a silent back-off is indistinguishable from
-    # a collector that found nothing.
+    # And it is reported: by construction, the assertion right below
+    # checks the "429" reason string, so a silent back-off is not
+    # indistinguishable from a collector that found nothing.
     assert "429" in fetch.stopped_hosts()["busy.example"]
 
 
@@ -112,8 +118,10 @@ def test_one_push_back_is_not_treated_as_an_answer(slept):
 
 
 def test_a_stopped_host_is_not_asked_again(slept, monkeypatch):
-    """Declined before robots.txt: the cheapest request is the one never made,
-    and re-reading robots would itself be another request to a host that just
+    """Declined before robots.txt, by construction: this test monkeypatches
+    both build_opener and _robots_allows to explode, and fetch.fetch still
+    returns cleanly - the cheapest request is the one never made, and
+    re-reading robots would itself be another request to a host that just
     asked for fewer."""
     for _ in range(fetch.THROTTLE_LIMIT):
         fetch._note_throttled("busy.example", 429, None)  # noqa: SLF001

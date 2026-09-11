@@ -1,4 +1,4 @@
-"""A board API response is one JSON document for the whole board, so big
+"""Believed, not measured: a board API response is one JSON document for the whole board, so big
 employers legitimately exceed the page-sized default fetch cap. Found live:
 a 219-posting board truncated at the default cap parsed as invalid JSON and
 collected ZERO, silently. Two guarantees pin the fix:

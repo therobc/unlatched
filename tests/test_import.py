@@ -49,7 +49,9 @@ def test_a_row_is_stored_without_any_request(con, cfg):
 
 
 def test_the_apply_destination_is_unwrapped_and_normalised_on_the_way_in(con, cfg):
-    """So an imported row can join a row collected directly from the ATS."""
+    """Verified 2026-09-10: import_row and dupes.py both call the same
+    links.normalise_apply_url on apply_url, so an imported row can join a
+    row collected directly from the ATS."""
     result = importer.import_row(con, cfg, ROW)
     assert result["apply_url"] == "https://apply.workable.com/northwind/j/ABC123"
 
@@ -70,7 +72,9 @@ def test_importing_the_same_run_twice_updates_rather_than_duplicates(con, cfg):
 
 
 def test_a_senders_own_key_is_honoured_inside_our_namespace(con, cfg):
-    """So the other app can re-send its rows and update them by ITS id, not by
+    """Verified 2026-09-10: _key_for uses row["key"] when the row supplies
+    one, falling back to a URL-derived id only when it does not - so the
+    other app can re-send its rows and update them by ITS id, not by
     a URL that may have been rewritten between runs.
 
     PINNED TO ONE ANSWER. This asserted `imported:li:998877` OR `li:998877`,

@@ -82,9 +82,10 @@ def _cfg(**profile: Any) -> dict[str, Any]:
 
 
 def test_unconfigured_vetting_never_filters():
-    """None means the question was never answered, so it must not act like a
-    "no" - the same not-stated-vs-not-required rule the rest of the profile
-    follows.
+    """Verified 2026-09-10: screen_job only disqualifies when
+    profile.get("clearance_ok") is False - None means the question was never
+    answered, so it must not act like a "no", the same not-stated-vs-not-
+    required rule the rest of the profile follows.
     """
     result = screen.screen_job(_Job("Security Clearance: Top Secret"), _cfg())
     assert result["qualified"]
@@ -98,8 +99,10 @@ def test_clearance_disqualifies_and_says_why():
 
 
 def test_public_trust_disqualifies_independently_of_clearance():
-    """Someone may accept public trust but refuse a clearance, so the flags
-    have to act separately.
+    """By construction: screen_job checks clearance_ok and public_trust_ok in
+    two independent `if` blocks, neither an elif of the other - someone may
+    accept public trust but refuse a clearance, so the flags have to act
+    separately.
     """
     posting = _Job("Position Sensitivity: Moderate Risk (MR)")
     assert screen.screen_job(posting, _cfg(clearance_ok=False))["qualified"]

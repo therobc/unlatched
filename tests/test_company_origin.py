@@ -65,7 +65,9 @@ def test_a_row_that_predates_the_column_reads_as_unknown_not_as_a_guess(con):
 
 
 def test_probe_status_cannot_stand_in_for_it(con):
-    """The reason this column exists, asserted rather than asserted-about.
+    """By construction, per the assertions below: probe_status is the same
+    "yielding" for both rows while origin differs - the reason this column
+    exists, asserted rather than asserted-about.
 
     A seeded employer and a discovered one both end up 'yielding', so any
     attempt to tell them apart by probe_status returns the same answer for
@@ -83,8 +85,10 @@ def test_probe_status_cannot_stand_in_for_it(con):
 
 
 def test_imported_employers_are_their_own_kind(con):
-    """Not 'discovered'. We hold no board for them, so a refresh of the seeded
-    or discovered sets must not sweep them up and find nothing to read."""
+    """Not 'discovered'. Verified 2026-09-10: importer.import_row upserts an
+    imported row's company with no `ats`/`ats_ref` set - we hold no board for
+    them, so a refresh of the seeded or discovered sets must not sweep them
+    up and find nothing to read."""
     db.upsert_company(con, "From a handoff", probe_status="imported",
                       origin=db.IMPORTED)
 

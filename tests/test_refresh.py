@@ -15,9 +15,9 @@ from zoneinfo import ZoneInfo
 
 from unlatched import config, refresh
 
-# "Is it a weekday, is it past 11" is a question about the person's own
-# clock, so these are local-time datetimes with an explicit zone rather than
-# naive ones.
+# "Is it a weekday, is it past 11" is a question about the person's
+# own clock - by construction, LOCAL below carries an explicit
+# America/New_York zone rather than being naive.
 LOCAL = ZoneInfo("America/New_York")
 
 # 2026-08-04 is a Tuesday; 2026-08-08 a Saturday.
@@ -89,8 +89,10 @@ def test_a_collection_after_an_anchor_satisfies_it():
 
 
 def test_the_afternoon_anchor_is_owed_even_after_a_morning_run():
-    """The reason two slots exist: roles approved during the day would
-    otherwise not be seen until tomorrow.
+    """By construction, DEFAULT_ANCHORS carries two slots: roles approved
+    during the day would otherwise not be seen until tomorrow, and the
+    assertions below check both the afternoon anchor and the morning one
+    already having run.
     """
     afternoon = datetime(2026, 8, 4, 16, 35, tzinfo=LOCAL)
     due, why = refresh.due("2026-08-04T10:50:00", afternoon)
@@ -147,7 +149,9 @@ def test_a_utc_stamp_is_converted_to_local_not_truncated():
 
 
 def test_an_unreadable_timestamp_errs_toward_refreshing():
-    """Better a redundant fetch than silently never refreshing again."""
+    """By construction: the assertion below requires due() to return True for
+    an unreadable timestamp - better a redundant fetch than silently never
+    refreshing again."""
     assert refresh.due("not-a-timestamp", TUE_LATE)[0] is True
 
 
@@ -205,9 +209,11 @@ def test_refresh_anchor_defaults_agree_across_all_three_copies():
 
     rust = (Path(__file__).resolve().parent.parent
             / "desktop" / "src" / "config.rs").read_text(encoding="utf-8")
-    # `weekend_at:` would also match a bare `at:` search, so the weekday one is
-    # anchored to a line start. Getting this wrong would compare the weekend
-    # default against the weekday list and fail for the wrong reason.
+    # `weekend_at:` would also match a bare `at:` search, by definition
+    # of how regex substring matching works - "at:" is a literal
+    # substring of "weekend_at:" - so the weekday one is anchored to a
+    # line start. Getting this wrong would compare the weekend default
+    # against the weekday list and fail for the wrong reason.
     block = re.search(r"^\s*at:\s*vec!\[([^\]]*)\]", rust, re.MULTILINE)
     assert block, "RefreshConfig::default no longer sets `at` - was it renamed?"
     from_rust = re.findall(r'"([^"]+)"', block.group(1))

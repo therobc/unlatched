@@ -12,10 +12,12 @@ BOILERPLATE = (
     "without regard to race color religion sex national origin"
 )
 
-# Buffer made entirely of common/short words (unmask.COMMON, or words too
-# short to count) - shingles.rare_count treats it as zero rare words, so it
-# cannot combine with either neighbour to form a spuriously rare shingle at
-# the boundary between distinctive text and boilerplate.
+# Buffer made entirely of common/short words. Verified 2026-09-10:
+# every word in BUFFER is in unmask.COMMON, and shingles()'s inline
+# count (words outside COMMON with len > 3) is by construction zero
+# for a window made entirely of them, so it cannot combine with
+# either neighbour to form a spuriously rare shingle at the boundary
+# between distinctive text and boilerplate.
 BUFFER = "and the this that with for all any but not you our are have has was"
 
 DISTINCTIVE_A = (
@@ -60,9 +62,11 @@ def test_rare_shared_phrase_still_matches_within_the_cap():
         "a": _doc(DISTINCTIVE_A),
         "b": _doc(DISTINCTIVE_A),
         "c": _doc(DISTINCTIVE_B),
-        # Padding so the shared BOILERPLATE sentence (present in every
-        # document here) exceeds MAX_DF and cannot itself count as a match -
-        # otherwise a 3-document corpus puts it exactly AT the cap.
+        # Verified 2026-09-10: unmask.MAX_DF is 3, and without this padding
+        # the corpus would hold exactly 3 documents - so the shared
+        # BOILERPLATE sentence (present in every document here) would sit
+        # exactly AT the cap instead of exceeding it, and could count as a
+        # match on its own.
         "d": _doc("nothing distinctive in this document either"),
         "e": _doc("still nothing distinctive appears here"),
     }

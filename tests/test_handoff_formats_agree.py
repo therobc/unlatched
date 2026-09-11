@@ -134,13 +134,16 @@ def test_the_same_payload_in_either_format_lands_the_same_board(tmp_path,
     result_json, rows_json, status_json = from_json
     result_csv, rows_csv, status_csv = from_csv
 
-    # THE COUNTS FIRST, because a difference here says which half disagrees.
+    # THE COUNTS FIRST, by construction: this assert runs before the
+    # field-by-field comparison below, so a difference here says which
+    # half disagrees before any row is inspected.
     assert result_json["imported"] == result_csv["imported"] == 3
     assert result_json["closed"] == result_csv["closed"] == 1
 
-    # THEN THE ROWS, field by field. Score and verdict are in the comparison on
-    # purpose: they come out of screening, which runs after the reader, so this
-    # catches a format difference that only shows up downstream.
+    # THEN THE ROWS, field by field. Score and verdict are in the comparison
+    # on purpose: verified 2026-09-10 that import_row calls screen_job after
+    # read_rows produces each row, so a format difference that only shows up
+    # downstream would still be caught here.
     assert ([{k: r[k] for k in COMPARED} for r in rows_json]
             == [{k: r[k] for k in COMPARED} for r in rows_csv])
 
@@ -155,13 +158,19 @@ def test_the_same_payload_in_either_format_lands_the_same_board(tmp_path,
     # AND THE STATUS THE SENDER CARRIED, which is the one thing an import
     # exists to preserve.
     #
-    # a1 IS THE CLOSURE, and it carries a status now. A collector's closure used
-    # to set delisted_at and stop, which left the row reading "not set" for
-    # ever; it now takes the same rule as every other way a posting is found
-    # gone - the app's own `closed` where the person never decided anything.
-    # Asserted HERE rather than in a test of its own because the point of this
-    # file is that the two formats land the same board, and a closure that
-    # wrote a status in JSON and not in CSV would be exactly that kind of drift.
+    # a1 IS THE CLOSURE, and it carries a status now: verified 2026-09-10
+    # that _apply_closures calls db.close_untouched_delisted, the same
+    # status-setting path every other way a posting is found gone uses -
+    # the app's own `closed` where the person never decided anything.
+    #
+    # unverified history: a collector's closure is believed to have once
+    # set only delisted_at and stopped there, leaving the row reading
+    # "not set" for ever.
+    #
+    # Asserted HERE rather than in a test of its own because the point of
+    # this file is that the two formats land the same board, and a closure
+    # that wrote a status in JSON and not in CSV would be exactly that
+    # kind of drift.
     assert status_json == status_csv == [{"key": "partner:a1",
                                           "status": "closed"},
                                          {"key": "partner:a3",

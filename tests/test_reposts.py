@@ -94,8 +94,9 @@ def test_history_finds_a_real_repost(con):
     assert entry.times == 2
     assert entry.gaps == [44]
     assert entry.real_gaps == [44]
-    # 44 days is past NEW_ENTRY_DAYS, so the LATER row is a new opening and the
-    # earlier one is the round it followed. Two rows, two sentences.
+    # 44 days is past NEW_ENTRY_DAYS (verified 2026-09-10:
+    # reposts.NEW_ENTRY_DAYS == 28), so the LATER row is a new opening and
+    # the earlier one is the round it followed. Two rows, two sentences.
     assert "A new opening" in entry.summary("gh:2")
     assert "see the newer entry" in entry.summary("gh:1")
     assert entry.follows("gh:2") == "gh:1"
@@ -188,10 +189,12 @@ def test_annotate_writes_the_note_onto_every_row_of_the_seat(con):
         row = db_mod.get_job(con, key)
         assert row is not None
         assert (row["repost_note"] or "").strip(), f"{key} should carry a note"
-    # AND THE LINK IS ON THE NEWER ROW ONLY. The rule is to treat it as a new
-    # entry and link the original, so the direction matters: the new opening
-    # points back, and the original does not point forward at something that
-    # did not exist when it ran.
+    # AND THE LINK IS ON THE NEWER ROW ONLY (verified 2026-09-10:
+    # reposts.follows() returns None at index 0 and returns the PREVIOUS
+    # key otherwise). The rule is to treat it as a new entry and link the
+    # original, so the direction matters: the new opening points back, and
+    # the original does not point forward at something that did not exist
+    # when it ran.
     assert db_mod.get_job(con, "gh:2")["repost_of"] == "gh:1"
     assert db_mod.get_job(con, "gh:1")["repost_of"] is None
 

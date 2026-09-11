@@ -44,15 +44,16 @@ TESTS = ROOT / "tests"
 
 # The name each collector goes by in README's source table.
 #
-# WRITTEN OUT RATHER THAN DERIVED. Three of the fifteen ids do not appear in
-# the table at all in their registry spelling - README.md:211 says "Oracle HCM
-# (Fusion Cloud Recruiting)" for `oracle_hcm`, :214 "schema.org JobPosting" for
-# `schema_org`, and :215 "Sitemaps" for `sitemap` - so a check that looked for
-# the id would fail on rows that are present and correct.
+# WRITTEN OUT RATHER THAN DERIVED. Verified 2026-09-10: three of the
+# fifteen ids do not appear in the table at all in their registry
+# spelling - README.md:330 says "Oracle HCM (Fusion Cloud Recruiting)"
+# for `oracle_hcm`, :333 "schema.org JobPosting" for `schema_org`, and
+# :334 "Sitemaps" for `sitemap` - so a check that looked for the id
+# would fail on rows that are present and correct.
 #
-# The mapping also carries the test's weight: a collector added to the registry
-# has no entry here, so `test_every_collector_has_a_documented_name` fails and
-# names it.
+# The mapping also carries the test's weight, by construction: a
+# collector added to the registry has no entry here, so
+# `test_every_collector_has_a_documented_name` fails and names it.
 README_NAMES = {
     "ashby": "Ashby",
     "bamboohr": "BambooHR",
@@ -83,7 +84,9 @@ def _source_table() -> str:
 
 
 def test_every_collector_has_a_documented_name():
-    """A new collector must be given a public name, deliberately."""
+    """By construction, a new collector must be given a public name here: the
+    assertion above fails the moment sources.registry() gains an id absent
+    from README_NAMES."""
     missing = sorted(set(sources.registry()) - set(README_NAMES))
     assert not missing, (
         "these collectors are in the registry but have no entry in "
@@ -302,7 +305,9 @@ def _unresolved_citations() -> dict[str, list[str]]:
 
 
 def test_no_shipped_file_points_at_something_that_does_not_ship():
-    """A comment naming a file the reader cannot open is a dead end.
+    """By construction, a comment naming a file the reader cannot open is a
+    dead end - the assertion below requires the unresolved-citation list to
+    be empty.
 
     app/ is the tree that publishes; SPEC.md and research/ live one level ABOVE
     it. Eleven comments across eight files pointed into them - a specification
@@ -338,7 +343,8 @@ def test_the_citation_scan_found_something_and_would_catch_a_dead_one():
     here = ROOT / "tests" / "test_docs_match_reality.py"
     assert not _resolves("research/posting_time_of_day.md", here)
     assert not _resolves("SPEC.md", here)
-    # ...and one that does, so it is not simply refusing everything.
+    # ...and one that does - by construction, the two assertions right
+    # below check a real path each.
     assert _resolves("COLLECTORS.md", here)
     assert _resolves("unlatched/keystore.py", here)
 
@@ -434,8 +440,9 @@ def test_both_halves_default_added_link_reading():
 
 
 def test_both_halves_create_the_same_tables():
-    """The schema is a shared contract and db.rs says so in its first line:
-    "both open the same database file and must create identical tables".
+    """Verified 2026-09-10: the schema is a shared contract and db.rs says so
+    near its first line - "both open the same database file and must create
+    identical tables" (db.rs:2).
 
     It was not true. The desktop's SCHEMA_SQL created seven tables and the
     engine's eight - `meta` was engine-only - while db.rs::collector_taken_in

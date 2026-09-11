@@ -82,10 +82,11 @@ def test_the_retired_closed_value_is_left_exactly_where_it_is(tmp_path):
 
 def test_a_note_survives_the_export_with_its_newline_and_its_quote(con, cfg,
                                                                    tmp_path):
-    """The acceptance criterion. A note is free text a person typed, so it
-    contains commas, quote marks and line breaks - and the export is the file
-    that has to outlive the app. Quoting is csv.DictWriter's job; this proves
-    the round trip rather than assuming it."""
+    """The acceptance criterion, by definition: a note is free text a person
+    typed, so it contains commas, quote marks and line breaks - and the export
+    is the file that has to outlive the app. Quoting fields that contain the
+    delimiter, the quote character or a newline is stdlib csv.DictWriter's
+    documented job; this proves the round trip rather than assuming it."""
     key = add(con, cfg, "https://boards.greenhouse.io/acme/jobs/3")
     awkward = 'said "we\'ll be in touch",\nthen a second line'
     status.set_status(con, key, "applied", note=awkward)
@@ -100,9 +101,9 @@ def test_a_note_survives_the_export_with_its_newline_and_its_quote(con, cfg,
 
 def test_the_history_column_carries_what_was_written_about_each_step(con, cfg,
                                                                      tmp_path):
-    """The defect this replaced: the export selected key/status/at only, so
-    every word a person had written about their own applications was absent
-    from the one file that exists to recover them."""
+    """Unverified history: the export is believed to have once selected
+    key/status/at only, so every word a person had written about their own
+    applications was absent from the one file that exists to recover them."""
     key = add(con, cfg, "https://boards.greenhouse.io/acme/jobs/4")
     status.set_status(con, key, "applied", note="through the portal")
     status.set_status(con, key, "interviewed", note="panel of three")
@@ -129,8 +130,10 @@ def test_a_step_with_nothing_written_about_it_carries_no_empty_brackets(con, cfg
 
 
 def test_standalone_notes_get_their_own_column(con, cfg, tmp_path):
-    """Notes that are not about a status change are a separate table, so they
-    would be invisible in an export that only walked the status log."""
+    """Verified 2026-09-10: notes that are not about a status change live in
+    job_note, a separate table export.write_csv queries on its own from
+    job_status_log - so they would be invisible in an export that only
+    walked the status log."""
     key = add(con, cfg, "https://boards.greenhouse.io/acme/jobs/6")
     con.execute(
         "INSERT INTO job_note (key, note, at) VALUES (?, ?, ?)",

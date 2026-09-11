@@ -52,9 +52,10 @@ def keeper_of(con, key):
 
 
 def test_a_closed_keeper_hands_over_to_the_posting_still_open(con):
-    """The whole point. Somebody works this board by applying to things, so a
-    group that shows a closed ad and hides the live requisition costs an
-    application."""
+    """By construction, the whole point: the assertions below require the
+    swap and the open row to surface. Somebody works this board by applying
+    to things, so a group that shows a closed ad and hides the live
+    requisition costs an application."""
     pair(con, keeper_gone="2026-08-09T10:00:00")
 
     swapped = dupes.rebalance(con)
@@ -118,7 +119,8 @@ def test_a_retired_row_is_not_promoted_into_view(con):
 
 
 def test_a_new_group_is_never_created_facing_the_wrong_way(con):
-    """Liveness lives in _primary, so find() obeys it too.
+    """Verified 2026-09-10: liveness lives in _primary, and find() calls
+    _primary too (dupes.py:435), so find() obeys it too.
 
     Before it did, a pair first seen with the LinkedIn ad ALREADY closed would
     be grouped LinkedIn-first and stay wrong until the next day's rebalance -
@@ -186,9 +188,10 @@ def test_an_application_made_while_the_ad_was_down_is_not_undone_by_it_reopening
 
 
 def test_running_it_twice_changes_nothing_the_second_time(con):
-    """Once swapped, the visible row is the open one, so there is no longer a
-    closed keeper to act on. A pass that kept flipping would rewrite the board
-    every single afternoon."""
+    """By construction: the second assertion below requires the second
+    rebalance() call to return no swaps. Once swapped, the visible row is the
+    open one, so there is no longer a closed keeper to act on - a pass that
+    kept flipping would rewrite the board every single afternoon."""
     pair(con, keeper_gone="2026-08-09T10:00:00")
 
     assert len(dupes.rebalance(con)) == 1

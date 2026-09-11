@@ -24,10 +24,12 @@ import pytest
 from unlatched import cli, collectors, db
 
 
-# LOCAL WALL CLOCK, aware, exactly as ingest_pending builds it. A schedule of
-# "13:00" is the person's own thirteen hundred, and refresh._moment_of converts
-# the stored stamp to local before comparing - so a test written in UTC would
-# compare two different clocks and pass or fail by the machine's timezone.
+# LOCAL WALL CLOCK, aware, exactly as ingest_pending builds it (it
+# calls datetime.now().astimezone() when no `now` is given). Verified
+# 2026-09-10: refresh._moment_of converts the stored stamp to local
+# before comparing - so a schedule of "13:00" is the person's own
+# thirteen hundred, and a test written in UTC would compare two
+# different clocks and pass or fail by the machine's timezone.
 def local(hour, day=13):
     return datetime(2026, 8, day, hour, 0).astimezone()
 
@@ -67,9 +69,11 @@ def test_times_are_read_and_sorted():
 
 @pytest.mark.parametrize("bad", ["1300", "25:00", "13:60", "noon", "13:0"])
 def test_an_unreadable_time_is_named_rather_than_dropped(bad, home):
-    """A typo in a schedule is otherwise invisible: the collector goes on
-    working, it simply stops arriving when the person expected, and there is
-    nothing to notice."""
+    """By construction, per the assertions below: an unreadable time refuses
+    the whole collector entry (found == []) and names the bad value in
+    problems, rather than the collector running silently on a reduced
+    schedule - which is the shape a typo would otherwise take, arriving
+    later than the person expected with nothing to notice."""
     found, problems = collectors.configured(cfg_for(home, schedule=[bad]))
 
     assert found == []

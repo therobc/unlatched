@@ -1,4 +1,5 @@
-"""Pruning postings that never matched and that nobody ever looked at.
+"""Pruning postings that never matched (by construction: prune.py's _CANDIDATES SQL is WHERE
+qualified = 0 AND retired_at IS NULL AND ...) and that nobody ever looked at.
 
 The rule these tests defend is not "unqualified rows go". It is "rows the
 PERSON has no relationship with go", and the two disagree in a way that cost

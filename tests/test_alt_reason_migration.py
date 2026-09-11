@@ -30,10 +30,12 @@ def _database_from_before_the_column(path: Path) -> sqlite3.Connection:
     """
     con = db.connect_at(path)
     con.execute("ALTER TABLE jobs DROP COLUMN alt_reason")
-    # AND THE MARKER WITH IT. connect_at just ran the migration, so the stored
-    # version says the split has already been done; leaving it would make this
-    # a database that predates the column and claims otherwise, and the test
-    # would then prove only that the guard works.
+    # AND THE MARKER WITH IT (verified 2026-09-10: db.py's _migrate_jobs
+    # sets meta["alt_reason_version"] on every connect_at, including this
+    # file's very first one, above). connect_at just ran the migration, so
+    # the stored version says the split has already been done; leaving it
+    # would make this a database that predates the column and claims
+    # otherwise, and the test would then prove only that the guard works.
     con.execute("DELETE FROM meta WHERE key = 'alt_reason_version'")
     con.commit()
     con.close()

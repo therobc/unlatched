@@ -71,8 +71,10 @@ def test_company_with_nothing_still_skipped(tmp_path, monkeypatch, capsys):
     assert rc == 0
 
     # `collect --json` prints the summary LIST, one entry per employer or
-    # source that was actually worked - so an employer with no board is
-    # simply absent from it.
+    # source that was actually worked - by construction cli.py's _collect
+    # skips straight to the next company (continue) before any
+    # summary.append() when a company has neither an ATS fingerprint nor a
+    # careers_url, so an employer with no board is simply absent from it.
     summary = json.loads(capsys.readouterr().out)
     named = [e for e in summary if e.get("company") == "Ghost Co"]
     assert named == [], f"a company with no board reported a result: {named}"

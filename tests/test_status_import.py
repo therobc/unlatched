@@ -73,9 +73,10 @@ def test_null_to_clears_the_status_and_still_appends_to_the_log():
 
 
 def test_status_dict_is_authoritative_over_a_stale_log_tail():
-    """The log is replayed first, the status dict applied on top - so even
-    if the log's last entry for a key says one thing, the dict (the current
-    snapshot) decides the final row."""
+    """Verified 2026-09-10: import_status replays the log loop first, then
+    applies the status dict loop on top - so even if the log's last entry
+    for a key says one thing, the dict (the current snapshot) decides the
+    final row."""
     conn = db.connect_at(":memory:")
     export = {
         "status": {"greenhouse:1": {"status": "applied", "at": "2026-01-02T00:00:00+00:00"}},
@@ -176,10 +177,10 @@ def test_importing_the_same_export_twice_changes_nothing(conn):
 
 
 def test_a_genuine_second_application_is_still_recorded(conn):
-    """The positive control, and the reason identity is (key, status, at)
-    rather than (key, status). Somebody who applies, is passed over, and
-    applies again months later has made TWO applications and the funnel has to
-    say two."""
+    """The positive control. Verified 2026-09-10: _log_row_id's own identity
+    is (key, status, at) rather than (key, status) - so somebody who applies,
+    is passed over, and applies again months later has made TWO applications
+    and the funnel has to say two."""
     status.set_status(conn, "greenhouse:1", "applied",
                       at="2026-03-01T09:00:00+00:00")
     status.set_status(conn, "greenhouse:1", "pass",
@@ -194,9 +195,11 @@ def test_a_genuine_second_application_is_still_recorded(conn):
 
 
 def test_a_cleared_status_does_not_re_import_every_time(conn):
-    """A clear is stored with a NULL status, and `status = NULL` is never true
-    in SQL - so a check written with `=` would miss these rows entirely and
-    append another clear on every single import."""
+    """Verified 2026-09-10: _log_row_id queries "status IS ?", not "=", for
+    exactly this reason - a clear is stored with a NULL status, and
+    `status = NULL` is never true in SQL, so a check written with `=` would
+    miss these rows entirely and append another clear on every single
+    import."""
     status.set_status(conn, "greenhouse:1", "applied",
                       at="2026-08-01T09:00:00+00:00")
     status.clear_status(conn, "greenhouse:1", at="2026-08-02T09:00:00+00:00")

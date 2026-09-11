@@ -378,21 +378,26 @@ def test_a_truncated_query_stream_says_so():
         f"silent truncation the ceiling note cannot catch")
     assert str(oversize) in cut[0], (
         f"the report should name what was available: {cut[0]!r}")
-    # And it is genuinely below the cap the CLI compares against, so nothing
-    # else would have caught it.
+    # By construction: the assert right below checks len(jobs) <
+    # usajobs.MAX_COLLECTED directly, so it is genuinely below the cap
+    # the CLI compares against and nothing else would have caught it.
     assert len(jobs) < usajobs.MAX_COLLECTED
 
 
 def test_a_complete_run_reports_no_truncation():
-    """The positive control. A collector that always claimed truncation would
-    satisfy the test above and make the note worthless."""
+    """The positive control, by construction: the test above only asserts
+    that `truncated_queries()` is non-empty, so a collector that always
+    claimed truncation would satisfy it and make the note worthless - this
+    test closes that gap by requiring an empty report on a complete run."""
     usajobs.collect(_cfg(), fetcher=_paged_fetcher(usajobs.RESULTS_PER_PAGE + 5))
     assert usajobs.truncated_queries() == []
 
 
 def test_the_report_is_cleared_between_runs():
-    """Read AFTER collect returns, so a stale line from a previous run would
-    report a truncation the person has already fixed by narrowing the search."""
+    """Verified 2026-09-10: usajobs.collect() calls `_truncated.clear()`
+    before its query loop runs, so a stale line from a previous run cannot
+    survive into a report read after the next collect() returns - a
+    truncation the person has already fixed by narrowing the search."""
     oversize = usajobs.RESULTS_PER_PAGE * usajobs.MAX_PAGES_PER_QUERY + 400
     usajobs.collect(_cfg(), fetcher=_paged_fetcher(oversize))
     assert usajobs.truncated_queries()

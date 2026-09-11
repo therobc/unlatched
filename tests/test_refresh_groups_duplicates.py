@@ -108,12 +108,15 @@ def test_grouping_hides_but_never_deletes(con, home):
 
 
 def test_the_refresh_command_is_what_triggers_the_grouping(con, home):
-    """The load-bearing test, and the reason the others are not enough.
+    """Exercises the COMMAND, not the function directly - unlike every test
+    above, which calls group_new_duplicates itself.
 
-    Every test above calls group_new_duplicates directly, so all of them would
-    still pass if the call were removed from cmd_refresh - the function would
-    work perfectly and never run. That is the regression this whole change
-    exists to prevent, so it is asserted through the COMMAND.
+    Weaker than it once was: verified 2026-09-10 by reading cli.py - cmd_collect
+    (called from cmd_refresh) now also calls group_new_duplicates itself at the
+    end of every normal run (cli.py's _collect, added 2026-08-12 for the manual
+    Collect button), so this test would still pass even with cmd_refresh's own
+    explicit call removed. It still guards the wider path - that a refresh run
+    through the command groups at all - just not the one line its name implies.
     """
     add(con, "li:1", "Support Analyst", company="Northwind", fetched="2026-08-02",
         apply_url="https://apply.workable.com/northwind/j/ABC123/",
@@ -122,8 +125,11 @@ def test_the_refresh_command_is_what_triggers_the_grouping(con, home):
         fetched="2026-08-01", apply_url="https://apply.workable.com/northwind/j/ABC123")
     con.commit()
 
-    # --force so the anchor times play no part: this is about what refresh DOES
-    # once it has decided to run, not about when it decides to.
+    # --force so the anchor times play no part: by construction
+    # cmd_refresh sets due=True unconditionally when args.force ("if
+    # args.force: due, why = True, 'forced'"), so this is about what
+    # refresh DOES once it has decided to run, not about when it decides
+    # to.
     code = cli.cmd_refresh(argparse.Namespace(
         home=home, json=True, force=True, check=False))
 

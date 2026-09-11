@@ -12,8 +12,11 @@ from unlatched import db, dupes
 def add(con, key, title, description="", apply_url="", fetched="2026-08-01",
         company="Acme", url=None):
     cid = db.upsert_company(con, company)
-    # The posting URL decides which side of a pair a row is on, so the fixture
-    # has to set it: a key beginning "li:" alone is not how real rows arrive.
+    # The posting URL decides which side of a pair a row is on - verified
+    # 2026-09-10: dupes._is_imported checks the URL's host against
+    # PREFERRED_HOSTS first and only falls back to a "li:"/"linkedin:" key
+    # prefix - so the fixture has to set the url: a key alone is not how
+    # real rows arrive.
     if url is None:
         url = ("https://www.linkedin.com/jobs/view/1" if key.startswith("li:")
                else f"https://boards.example.com/{key}")
@@ -33,10 +36,13 @@ def test_two_boards_pointing_at_one_application_are_one_job(con):
 
     found = dupes.find(con)
     assert len(found) == 1
-    # LINKEDIN IS KEPT even though the board row was collected first: applying
-    # there records the application in LinkedIn's own tracker, which is an
-    # audit trail for free. Two applications were once recovered only because
-    # that badge was still visible.
+    # LINKEDIN IS KEPT even though the board row was collected first:
+    # applying there records the application in LinkedIn's own tracker,
+    # which is an audit trail for free (verified 2026-09-10: this is
+    # dupes._primary's own stated reason for preferring PREFERRED_HOSTS).
+    # Believed, not measured: dupes._primary's docstring also claims two
+    # applications were once recovered only because that record was still
+    # visible - unverified history, kept here for the same reason.
     assert found[0].key == "workable:1"
     assert found[0].duplicate_of == "li:1"
 
@@ -153,10 +159,11 @@ def test_every_listed_source_exists():
 
 
 def test_the_aggregating_sources_are_deliberately_absent():
-    """Locks in the exclusion so a later 'completeness' pass cannot quietly add
-    them. An aggregator's posting URL is not an application page - folding on it
-    would join two unrelated employers through a reposter, which is the
-    first-touch hazard, reached from the other direction.
+    """Locks in the exclusion, by construction: the assertion below fails the
+    moment any of these three is added to APPLICATION_IS_THE_POSTING. An
+    aggregator's posting URL is not an application page - folding on it would
+    join two unrelated employers through a reposter, which is the first-touch
+    hazard, reached from the other direction.
     """
     for aggregator in ("nodesk", "remoteok", "usajobs"):
         assert aggregator not in dupes.APPLICATION_IS_THE_POSTING
@@ -198,7 +205,8 @@ def test_a_collected_ats_row_joins_the_linkedin_row_for_the_same_requisition(con
     found = dupes.find(con)
     assert len(found) == 1
     # LinkedIn is kept, because applying there records it in LinkedIn's own
-    # tracker. The board row is the one folded away.
+    # tracker - verified 2026-09-10: dupes._primary prefers a PREFERRED_HOSTS
+    # row for exactly this reason. The board row is the one folded away.
     assert found[0].key == "greenhouse:5500110022"
     assert found[0].duplicate_of == "manual:li-4400220011"
 
@@ -324,15 +332,17 @@ def test_a_job_already_applied_to_is_never_the_one_folded_away(con):
 
 
 def test_a_finished_application_still_counts_as_acted_on(con):
-    """An application that ended in No Offer is still an application, so its
-    row is still the one worth keeping visible.
+    """An application that ended in No Offer is still an application - verified
+    2026-09-10: dupes._has_history counts any status at all or any log entry,
+    so its row is still the one worth keeping visible.
 
-    The check behind this (`dupes._acted_on`) is deliberately vocabulary-blind
-    - any status at all, or any history, counts - so this asserts the outcome
-    rather than the word. It used to spell the status "denied", which the app
-    renamed to "no_offer" and now only migrates in from older databases: a
-    test written in a retired vocabulary reads as though the word mattered,
-    and would go on passing after the app stopped being able to produce it.
+    The check behind this (`dupes._has_history`) is deliberately vocabulary-
+    blind - any status at all, or any history, counts - so this asserts the
+    outcome rather than the word. It used to spell the status "denied", which
+    the app renamed to "no_offer" and now only migrates in from older
+    databases: a test written in a retired vocabulary reads as though the
+    word mattered, and would go on passing after the app stopped being able
+    to produce it.
     """
     from unlatched import status
 
@@ -358,7 +368,8 @@ def test_running_it_twice_does_not_report_the_same_pair_again(con):
     dupes.apply(con, dupes.find(con))
     assert dupes.find(con) == [], "already-grouped rows are settled"
 
-    # Ungrouping puts it back in scope, so a mistake can be re-examined.
+    # Ungrouping puts it back in scope: by construction, the assertion
+    # below shows the pair is found again once dupes.clear() runs.
     dupes.clear(con)
     assert len(dupes.find(con)) == 1
 

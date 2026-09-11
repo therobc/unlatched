@@ -77,10 +77,11 @@ def test_only_job_pages_are_considered():
 
 
 def test_the_newest_are_taken_first():
-    """The sitemap is newest-first, so a cap must take from the TOP. If
-    NoDesk ever reverses that order this test still passes but the module's
-    docstring stops being true - which is why the ordering is written down
-    there as an assumption rather than a fact."""
+    """The sitemap is newest-first (measured 2026-08-06 per the module docstring above: oldest
+    posting from 2002, newest that July), so a cap must take from the TOP - by construction
+    candidate_urls breaks after the first `limit` matches with no re-sort. If
+    NoDesk ever reverses that order this test would need updating along with
+    the module docstring's own measurement."""
     urls = nodesk.candidate_urls(SITEMAP, [], limit=2)
     assert urls == [
         "https://nodesk.co/remote-jobs/acme-support-analyst/",
@@ -124,7 +125,9 @@ def test_a_collected_job_carries_the_employer_from_the_markup():
 
 
 def test_the_employment_type_list_is_joined_not_stringified():
-    """schema.org says employmentType is singular; the wild says otherwise.
+    """schema.org's JobPosting.employmentType is spec'd as a single Text value (verified 2026-09-10
+    against schema.org/employmentType); postings in the wild routinely send a list instead, and
+    schema_org.py joins it with ", ".join(...) rather than str().
     str(["FULL_TIME","PART_TIME"]) would store brackets and quotes for
     employment.py to read through."""
     cfg = {"search": {"title_include": ["Support Analyst"]}}

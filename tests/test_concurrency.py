@@ -48,7 +48,8 @@ def test_the_database_is_in_wal_mode(home):
 
 
 def test_a_busy_timeout_is_set(home):
-    """Zero is SQLite's default and it means "fail immediately, never wait".
+    """By definition: zero is SQLite's documented default busy_timeout, and it
+    means "fail immediately, never wait".
 
     NON-ZERO IS ASSERTED SEPARATELY from the value. Comparing only against
     db.BUSY_TIMEOUT_MS mirrors the implementation: set that constant to 0 by
@@ -127,9 +128,11 @@ def test_with_a_timeout_a_blocked_write_waits(two_writer_db):
     collect's transaction commits in milliseconds and the wait ends in success.
     """
     elapsed, error = _blocked_write(two_writer_db, WAIT_MS)
-    # The ERROR IS CHECKED, not just its presence. `is not None` alone would be
-    # satisfied by any OperationalError - bad SQL, a missing table - so the test
-    # could pass while measuring a failure that has nothing to do with locking.
+    # By construction, per the assert right below: the ERROR IS CHECKED,
+    # not just its presence. `is not None` alone would be satisfied by
+    # any OperationalError - bad SQL, a missing table - so the test
+    # could pass while measuring a failure that has nothing to do with
+    # locking.
     assert error is not None
     assert "locked" in str(error).lower(), f"failed for another reason: {error}"
     assert elapsed >= (WAIT_MS / 1000) * 0.6, (

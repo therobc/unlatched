@@ -99,7 +99,8 @@ def test_unreadable_json_says_so(tmp_path):
 
 
 def test_applying_identical_criteria_reports_no_change(cfg, tmp_path):
-    """So a caller can sync repeatedly without it looking like something moved
+    """So a caller can sync repeatedly without it looking like something moved (by construction,
+    asserted directly below: apply() of identical criteria returns [])
     every time."""
     out = tmp_path / "criteria.json"
     criteria.write(cfg, out)

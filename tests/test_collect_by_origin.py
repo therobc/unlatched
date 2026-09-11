@@ -70,7 +70,9 @@ def test_discovered_collects_only_the_ones_the_app_found(con, cfg, monkeypatch):
 @pytest.mark.parametrize("origin", ["seeded", "discovered", "manual", "imported"])
 def test_a_row_predating_the_column_is_not_swept_into_any_set(origin, con, cfg,
                                                                monkeypatch):
-    """Honestly unknown, so it matches nothing.
+    """Verified 2026-09-10: cli.py's --origin filter compares
+    (c["origin"] or "") == args.origin, so a row with no origin is honestly
+    unknown and matches nothing.
 
     The alternative - defaulting old rows to 'seeded' or 'discovered' - would
     put employers nobody chose into a set the app is about to fetch on their
@@ -88,7 +90,10 @@ def test_a_row_predating_the_column_is_not_swept_into_any_set(origin, con, cfg,
 
 
 def test_an_unknown_origin_is_refused_at_the_command_line():
-    """argparse choices, so a typo fails loudly instead of silently
-    collecting from nothing and reporting success."""
+    """By definition: cli.py's --origin argument sets
+    choices=[db.SEEDED, db.DISCOVERED, db.MANUAL, db.IMPORTED], and argparse
+    calls parser.error() (SystemExit) on a value outside choices - so a typo
+    fails loudly instead of silently collecting from nothing and reporting
+    success."""
     with pytest.raises(SystemExit):
         cli.build_parser().parse_args(["collect", "--origin", "sedeed"])

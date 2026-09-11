@@ -46,9 +46,10 @@ CORPUS_BOILERPLATE_ONLY = [
     "qualifications. Required qualifications. What you. You have. You are.",
 ]
 
-# A possessive splits on its apostrophe: "bachelor's degree" tokenizes to
-# "bachelor", "s", "degree" - the lone "s" must never anchor a reported
-# phrase, in the middle of a 3-gram or anywhere else.
+# A possessive splits on its apostrophe. Measured 2026-09-10:
+# _tokenize("bachelor's degree") returns bachelor, s, degree - so the lone
+# "s" survives tokenizing and must be kept out of every reported phrase,
+# in the middle of a 3-gram or anywhere else.
 CORPUS_POSSESSIVE = [
     "Bachelor's degree required for all candidates applying to this "
     "specialty clinical coordinator position advertised today.",
@@ -56,10 +57,10 @@ CORPUS_POSSESSIVE = [
     "in this particular healthcare coordinator role.",
 ]
 
-# "ensure" is already in GENERIC_SINGLE_WORDS, but the mined text uses its
-# gerund "ensuring" - the inflected form was slipping through before
-# GENERIC_SINGLE_WORDS was checked via _expand_inflections instead of exact
-# string equality.
+# "ensure" is in GENERIC_SINGLE_WORDS (verified 2026-09-10), but the mined
+# text uses its gerund "ensuring". An exact-string check cannot match the
+# two by definition, so the inflected form went straight through until the
+# list was checked via _expand_inflections.
 CORPUS_GENERIC_INFLECTION = [
     "Ensuring accurate records is essential, ensuring compliance across "
     "every single shift for clinical staff on this unit.",
@@ -88,13 +89,14 @@ CORPUS_DOMAIN_GERUND = [
 ]
 
 # "conduct" opens an imperative bullet in real postings ("Conduct patient
-# assessments..."), which makes it - and the fragment it introduces - not a
-# noun phrase. "managed transportation", by contrast, is a real employer
-# ask that happens to start with an inflected form of "manage"; "manage"
-# itself is deliberately left out of _FRAGMENT_EDGE_WORDS so this survives.
-# The word after "managed transportation" deliberately differs between the
-# two postings so no single 3-gram containing it appears in both - same
-# containment-collision concern as CORPUS_DOMAIN_GERUND above.
+# assessments..."), so it and the fragment it introduces are not a noun
+# phrase - it is in _FRAGMENT_EDGE_WORDS, verified 2026-09-10. "managed
+# transportation", by contrast, is a real employer ask that starts with an
+# inflection of "manage", and "manage" is absent from _FRAGMENT_EDGE_WORDS
+# (verified the same day) so this survives. The word after "managed
+# transportation" differs between the two postings - counted: "logistics"
+# and "solutions" - so no single 3-gram containing it appears in both, the
+# same containment-collision concern as CORPUS_DOMAIN_GERUND above.
 CORPUS_FRAGMENT_EDGE = [
     "Conduct patient assessments daily and coordinate managed "
     "transportation logistics for discharge planning across the floor.",
@@ -127,10 +129,10 @@ CORPUS_ADVERB = [
     "family communication during every scheduled visit today.",
 ]
 
-# "healthcare" is mentioned by every employer in this small corpus - not
-# because it is a distinguishing ask, but because it names the field the
-# corpus is already about. "care plans" is just as universal here but is a
-# specific multi-word ask, so the ubiquity bound must leave it alone.
+# "healthcare" is in both postings here (counted: 2 of 2) - not because it
+# is a distinguishing ask, but because it names the field the corpus is
+# already about. "care plans" is also in 2 of 2 but is a specific multi-word
+# ask, so the ubiquity bound must leave it alone.
 CORPUS_UBIQUITOUS = [
     "This healthcare organization is hiring for a role focused on care "
     "plans and coordinating services for patients across the region.",
@@ -154,17 +156,18 @@ def test_pure_boilerplate_corpus_mines_nothing():
 
 
 def test_document_frequency_counts_postings_not_occurrences():
-    # "prior authorization" occurs 4 times total (3 in doc 0, 1 in doc 1) but
-    # only 2 postings mention it - demand must be 2, the posting count, not
-    # the raw occurrence count.
+    # "prior authorization" occurs 4 times total - counted 2026-09-10: 3 in
+    # doc 0, 1 in doc 1 - but only 2 postings mention it, so demand must be 2,
+    # the posting count, not the raw occurrence count.
     report = keywords.mine_report(CORPUS_REPEAT, RESUME, min_demand=1)
     by_phrase = {r["skill"]: r for r in report}
     assert by_phrase["prior authorization"]["demand"] == 2
 
 
 def test_containment_suppresses_shorter_phrase_at_equal_demand():
-    # "prior" and "prior authorization" both appear in all three documents -
-    # the shorter fragment must be dropped in favor of the longer phrase.
+    # "prior" and "prior authorization" both appear in all three documents
+    # (counted: 3 of 3) - the shorter fragment must be dropped in favor of the
+    # longer phrase.
     report = keywords.mine_report(CORPUS_CONTAINMENT, RESUME, min_demand=1)
     mined = {r["skill"] for r in report}
     assert "prior authorization" in mined
@@ -172,9 +175,9 @@ def test_containment_suppresses_shorter_phrase_at_equal_demand():
 
 
 def test_containment_keeps_shorter_phrase_when_demand_differs():
-    # "prior authorization" is mentioned in all 3 postings; "insurance
-    # verification" only in the first 2. Neither contains the other, so
-    # both must survive independently regardless of the demand gap.
+    # "prior authorization" is in all 3 postings; "insurance verification" is
+    # in the first 2 (counted: 2 of 3 - doc 2 says "verification" alone).
+    # Neither contains the other, so both must survive regardless of the gap.
     report = keywords.mine_report(CORPUS_DIFFERING_DEMAND, RESUME, min_demand=1)
     by_phrase = {r["skill"]: r for r in report}
     assert by_phrase["prior authorization"]["demand"] == 3
@@ -240,9 +243,9 @@ def test_cli_mine_json_returns_ranked_array_on_seeded_corpus(tmp_path, capsys):
 
 
 def test_possessive_split_never_anchors_a_phrase():
-    # "bachelor's degree" tokenizes to "bachelor", "s", "degree" - the lone
-    # "s" must never survive as its own reported term or as part of one,
-    # in any position, not just at the edges of the n-gram window.
+    # Measured 2026-09-10: _tokenize("bachelor's degree") returns bachelor, s,
+    # degree - the lone "s" must never survive as its own reported term or as
+    # part of one, in any position, not just at the edges of the n-gram window.
     report = keywords.mine_report(CORPUS_POSSESSIVE, RESUME)
     mined = {r["skill"] for r in report}
     assert "s degree" not in mined
@@ -251,9 +254,9 @@ def test_possessive_split_never_anchors_a_phrase():
 
 
 def test_generic_word_gate_catches_inflected_forms():
-    # "ensure" is already in GENERIC_SINGLE_WORDS; the postings use
-    # "ensuring". Before inflection-aware matching, the exact-string check
-    # let every conjugation except the listed one straight through.
+    # "ensure" is in GENERIC_SINGLE_WORDS (verified 2026-09-10); the postings
+    # use "ensuring". An exact-string check cannot match those by definition,
+    # which is how every conjugation except the listed one got straight through.
     report = keywords.mine_report(CORPUS_GENERIC_INFLECTION, RESUME)
     mined = {r["skill"] for r in report}
     assert "ensuring" not in mined
@@ -280,9 +283,9 @@ def test_fragment_edge_words_drop_verb_opened_phrases():
 
 
 def test_fragment_edge_words_do_not_catch_managed_transportation():
-    # Negative case: "managed" is an inflection of "manage", which IS a
-    # generic word, but "manage" itself was deliberately left out of
-    # _FRAGMENT_EDGE_WORDS because "managed transportation" is a real,
+    # Negative case: "managed" is an inflection of "manage", which IS in
+    # GENERIC_SINGLE_WORDS, but "manage" is absent from _FRAGMENT_EDGE_WORDS -
+    # both verified 2026-09-10 - because "managed transportation" is a real,
     # specific employer ask, not a verb fragment.
     report = keywords.mine_report(CORPUS_FRAGMENT_EDGE, RESUME)
     mined = {r["skill"] for r in report}
@@ -315,27 +318,29 @@ def test_adverb_suffix_rule_does_not_catch_short_domain_words():
 
 
 def test_ubiquity_bound_drops_universal_single_word():
-    # "healthcare" is mentioned by every employer in this corpus - not
-    # because it distinguishes one employer's ask from another's, but
-    # because it names the field the whole corpus is already about.
+    # "healthcare" is in every posting in this corpus (counted: 2 of 2) - not
+    # because it distinguishes one employer's ask from another's, but because
+    # it names the field the whole corpus is already about.
     report = keywords.mine_report(CORPUS_UBIQUITOUS, RESUME)
     mined = {r["skill"] for r in report}
     assert "healthcare" not in mined
 
 
 def test_ubiquity_bound_does_not_apply_to_multi_word_phrases():
-    # "care plans" is just as universal in this corpus as "healthcare" is,
-    # but it is a specific multi-word ask - a candidate's resume can still
-    # fail to evidence it, so the ubiquity bound must leave it alone.
+    # "care plans" is in 2 of 2 postings here, as universal as "healthcare",
+    # but it is a specific multi-word ask - a candidate's resume can still fail
+    # to evidence it, so the ubiquity bound must leave it alone.
     report = keywords.mine_report(CORPUS_UBIQUITOUS, RESUME)
     mined = {r["skill"] for r in report}
     assert "care plans" in mined
 
 
 def test_contraction_remnants_never_anchor_a_phrase():
-    # "we're looking" tokenizes to "we", "re", "looking" - the two-letter
-    # "re" left behind by the apostrophe must never anchor a phrase, the
-    # same way the single-character possessive remnant cannot.
+    # Measured 2026-09-10: _tokenize("we're looking") returns we, looking -
+    # the tokenizer already drops the two-letter "re" the apostrophe leaves,
+    # so this guards against that ever regressing rather than against a
+    # remnant that reaches the phrase stage today. The possessive "s" above
+    # does reach it, which is why the two are tested separately.
     corpus = [
         "We're looking for a coordinator to manage daily inbound and "
         "outbound freight tenders for several regional shipper accounts.",

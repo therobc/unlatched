@@ -152,8 +152,9 @@ def test_education_never_mentioned_is_none_not_a_guess():
 
 
 def test_curly_apostrophe_is_recognized_like_a_straight_one():
-    # A real miss: live postings routinely use the typographic right single
-    # quote (\u2019) rather than a straight apostrophe for possessives.
+    # Believed, not measured: live postings are said to routinely use the
+    # typographic right single quote (\u2019) rather than a straight
+    # apostrophe for possessives.
     # Spelled out as an escape (not typed literally) so this source file
     # stays plain ASCII, matching the rest of the public repo.
     level, preferred, _ev = requirements.education_required(
@@ -345,8 +346,8 @@ def test_supervisory_heading_answered_na_is_not_supervisory():
 
 
 def test_supervisory_heading_answered_with_a_negating_sentence():
-    # A real miss: the negative answer is not always a bare "N/A" - a live
-    # posting spelled it out in full prose.
+    # Unverified history: the negative answer is not always a bare "N/A" -
+    # a live posting is said to have spelled it out in full prose.
     posting = (
         "Supervisory Responsibilities: \n"
         "This role is an individual contributor with no direct reports or "
@@ -553,8 +554,12 @@ def test_requirements_verb_json_through_cli(tmp_path, monkeypatch, capsys):
     assert [h["name"] for h in reqs["licenses"]] == ["CDL"]
     assert reqs["physical"]["lifting_lbs"] == 50
 
-    # The profile holds the licence and exceeds the years, so both are met
-    # and nothing blocks - the answer an assistant acts on.
+    # By construction: verified 2026-09-10 that requirements.py's compare
+    # step appends to `meets` when years_have >= years_required and when
+    # a held license matches a required one, and appends to `blockers`
+    # only on a miss - so a profile holding the licence and exceeding the
+    # years produces both meets and no blockers, the answer an assistant
+    # acts on.
     compared = payload["compare"]
     assert compared["blockers"] == []
     assert any("CDL" in m for m in compared["meets"])
