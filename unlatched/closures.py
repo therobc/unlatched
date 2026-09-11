@@ -61,24 +61,27 @@ def pending(con: sqlite3.Connection,
     theirs = _hosts(con, collector)
     rows = [r for r in rows
             if r["source"] == collector.id or _host(r["url"]) in theirs]
-    # ONE ENTRY PER POSTING - by construction: the loop right below
-    # keeps only the first row per URL. A job added by hand and the
-    # same job handed over by the collector can be two rows here with
-    # two keys. Believed, not measured: _their_key is meant to make
-    # both spell back to the same key in the sender's namespace, but
-    # it only rewrites a key whose prefix matches this collector's id
-    # or a legacy alias of it (see importer.LEGACY_PREFIXES) - a
-    # manual-sourced row that wins the dedup for a non-legacy collector
-    # is handed back unchanged. The URL is what identifies the
-    # posting, so it is what deduplicates.
-    seen: set[str] = set()
-    unique = []
+    # ONE ENTRY PER POSTING, and THE SENDER'S OWN ROW WINS IT. A job added
+    # by hand and the same job handed over by the collector are two rows
+    # with two keys. Keeping whichever closed last handed back the
+    # hand-added copy's `manual:` key - one the sender never issued, so
+    # "your keys, not ours" broke (reproduced 2026-09-11 by
+    # test_a_hand_added_copy_does_not_hand_back_its_own_key). The URL is
+    # what identifies the posting, so it is what deduplicates; among
+    # equals the most recently closed is kept, as before.
+    unique: list[sqlite3.Row] = []
+    at: dict[str, int] = {}
     for row in rows:
         url = (row["url"] or "").strip()
-        if url and url in seen:
+        if not url:
+            unique.append(row)
             continue
-        seen.add(url)
-        unique.append(row)
+        if url not in at:
+            at[url] = len(unique)
+            unique.append(row)
+        elif (unique[at[url]]["source"] != collector.id
+              and row["source"] == collector.id):
+            unique[at[url]] = row
     rows = unique
     return [{
         # IN THE SENDER'S OWN NAMESPACE. Their keys say `manual:` and ours say
