@@ -98,10 +98,9 @@ pub fn installed() -> Vec<(String, String)> {
 
 /// The name to show for a chosen executable: the display name if this is
 /// one we know, otherwise the file name - by construction: file_stem()
-/// strips the directory and extension. If a hand-edited setting has no
-/// file name component at all (file_stem returns None), this falls back
-/// to the raw string, whole path included - worth knowing rather than
-/// promising it never happens.
+/// strips the directory and extension. A hand-edited setting with no file
+/// name at all - `C:\\` or a path ending in a separator - reads "Custom
+/// browser" rather than the whole path, by construction below.
 pub fn label(chosen: &str) -> String {
     if chosen.is_empty() {
         return "System default".to_string();
@@ -111,10 +110,10 @@ pub fn label(chosen: &str) -> String {
             return name.to_string();
         }
     }
-    Path::new(chosen)
+    Path::new(chosen.trim_end_matches(['\\', '/']))
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
-        .unwrap_or_else(|| chosen.to_string())
+        .unwrap_or_else(|| "Custom browser".to_string())
 }
 
 /// Open a URL, in the chosen browser if there is one and it still exists.
@@ -177,5 +176,23 @@ mod tests {
             label("D:/portable/some-browser/qutebrowser.exe"),
             "qutebrowser"
         );
+    }
+}
+
+#[cfg(test)]
+mod label_tests {
+    use super::label;
+
+    #[test]
+    fn a_setting_with_no_file_name_never_shows_the_whole_path() {
+        for chosen in ["C:\\", "D:\\Browsers\\", "/opt/browser/"] {
+            let shown = label(chosen);
+            assert!(
+                !shown.contains('\\') && !shown.contains('/'),
+                "{chosen:?} -> {shown:?}"
+            );
+            assert!(!shown.is_empty(), "{chosen:?} gave an empty label");
+        }
+        assert_eq!(label("D:\\Browsers\\thorium.exe"), "thorium");
     }
 }

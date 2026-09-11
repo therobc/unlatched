@@ -22,6 +22,10 @@ use std::collections::BTreeMap;
 pub struct TagField {
     pub items: Vec<String>,
     pub input: String,
+    /// The last term removed and where it sat - by construction, what
+    /// undo_remove reinserts. Without it an accidental removal could only be
+    /// undone by Reload, which throws away every other unsaved edit too.
+    pub removed: Option<(usize, String)>,
 }
 
 impl TagField {
@@ -29,7 +33,30 @@ impl TagField {
         TagField {
             items: items.to_vec(),
             input: String::new(),
+            removed: None,
         }
+    }
+
+    /// Removes one term and remembers it for `undo_remove`.
+    pub fn remove(&mut self, idx: usize) {
+        if idx < self.items.len() {
+            let term = self.items.remove(idx);
+            self.removed = Some((idx, term));
+        }
+    }
+
+    /// Puts the last removed term back where it was. By construction false
+    /// when there is nothing to put back, or the term has been typed in again.
+    pub fn undo_remove(&mut self) -> bool {
+        let Some((idx, term)) = self.removed.take() else {
+            return false;
+        };
+        if self.items.iter().any(|i| i.eq_ignore_ascii_case(&term)) {
+            return false;
+        }
+        let at = idx.min(self.items.len());
+        self.items.insert(at, term);
+        true
     }
 
     /// Commits whatever is in the box. Trimmed, and silently ignored when it
@@ -585,6 +612,19 @@ mod tag_field_tests {
         };
         assert!(!f.commit());
         assert!(f.items.is_empty());
+    }
+
+    #[test]
+    fn an_accidental_removal_is_put_back_where_it_was() {
+        let mut f = TagField::from(&["a".to_string(), "b".to_string(), "c".to_string()]);
+        f.remove(1);
+        assert_eq!(f.items, vec!["a".to_string(), "c".to_string()]);
+        assert!(f.undo_remove());
+        assert_eq!(
+            f.items,
+            vec!["a".to_string(), "b".to_string(), "c".to_string()]
+        );
+        assert!(!f.undo_remove(), "one removal, one undo");
     }
 
     #[test]
