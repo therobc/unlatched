@@ -22,14 +22,17 @@ if TYPE_CHECKING:
 
 SOURCE_NAME = "bamboohr"
 
-# One request per posting means a large board is a large number of requests.
-# BambooHR is a small-to-mid-market product and these boards run to dozens,
-# not thousands, but the ceiling is here so a surprise cannot run away.
+# One request per posting means a large board is a large number of
+# requests. Believed, not measured: BambooHR is assumed to be a
+# small-to-mid-market product whose boards run to dozens, not
+# thousands, but the ceiling is here so a surprise cannot run away.
 MAX_DETAIL_FETCHES = 150
 
 # What a full run of this collector can return, so cli.py can SAY the
-# board was cut short. Without it a 300-posting board returned 150 and
-# nothing distinguished that from a board with 150 postings on it.
+# board was cut short. Verified by construction: the list below is
+# sliced with `[:MAX_DETAIL_FETCHES]`, so a 300-posting board would
+# return exactly 150 - indistinguishable from an actual 150-posting
+# board without this constant for cli.py to compare against.
 #
 # EXACT HERE, unlike the page-walking collectors: the list is sliced to
 # this length directly, so a capped run returns exactly this many.

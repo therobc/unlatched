@@ -45,15 +45,17 @@ EMPLOYER_STATUS = "via NoDesk"
 
 SITEMAP_URL = "https://nodesk.co/sitemap-jobs.xml"
 
-# Pages fetched per run. Deliberately small: this is a politeness budget and
-# a patience budget at the same time. The sitemap is newest-first and the
-# search refreshes daily, so a cap costs recency of the tail, not coverage
-# of what is arriving.
+# Pages fetched per run. Deliberately small: this is a politeness budget
+# and a patience budget at the same time. The sitemap is newest-first
+# (measured 2026-08-06, per the module docstring above) and the search
+# refreshes daily, so a cap costs recency of the tail, not coverage of
+# what is arriving.
 MAX_PAGES_PER_RUN = 40
 
-# One page yields at most one posting, so the page budget IS the ceiling
-# on what comes back - declared so cli.py reports it rather than leaving
-# a truncated walk looking like a thin day.
+# Believed, not measured: each NoDesk job page is assumed to carry at
+# most one JobPosting node, so the page budget IS the ceiling on what
+# comes back - declared so cli.py reports it rather than leaving a
+# truncated walk looking like a thin day.
 #
 # The note can UNDER-fire: a page that fails to fetch or carries no
 # markup leaves the count one short of the cap. Under-reporting is the

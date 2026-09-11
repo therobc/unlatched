@@ -55,16 +55,23 @@ BACKFILL_STRIDE = PAGE_SIZE * BACKFILL_PAGES
 # What a full run of this collector can return: the new window plus the
 # backfill window. The CLI reports when a board hits it, so a truncated
 # board never reads as a small one - and with the backfill walking, hitting
-# it now means "more to come next run" rather than "never".
+# it now means "more to come next run" rather than "never". Verified
+# 2026-09-10: cli.py compares `collected >= MAX_COLLECTED` and, when
+# WANTS_BACKFILL is set, reports "the rest is read over the next few runs"
+# instead of "the board may hold more".
 MAX_COLLECTED = PAGE_SIZE * (MAX_PAGES + BACKFILL_PAGES)
 
 # Detail requests per employer, whether or not a title filter is set.
 #
-# THE PRE-FILTER IS NOT ENOUGH ON ITS OWN. title_may_pass returns True when
-# there is no filter, so without this a profile that has not set
-# search.title_include - which is what a new one looks like, since the Quick
-# start sets salary and work mode and not titles - would make one detail
-# request per posting and pay five times the old cost for the deeper paging.
+# title_may_pass returns True when there is no filter, so a profile that
+# has not set search.title_include - which is what a new one looks like,
+# since the Quick start in README.md sets salary and work mode and not
+# titles - still gets exactly MAX_DETAIL detail requests per run. What
+# changes without the filter is not the request COUNT but which postings
+# they are spent on: the first MAX_DETAIL encountered in list order,
+# rather than the ones whose title actually matches. Verified by
+# construction: `detail_calls < MAX_DETAIL` is checked unconditionally,
+# alongside `title_may_pass`, in the same `worth_detail` expression below.
 #
 # 200 is deliberately the OLD ceiling: the newest 200 postings still get
 # their descriptions exactly as before, and everything behind them arrives
@@ -77,7 +84,9 @@ MAX_DETAIL = 200
 WANTS_TITLE_INCLUDE = True
 
 # ...and remembers where its backlog walk got to, so cli.py hands the offset
-# back on the next run. See collect().
+# back on the next run. Verified by construction: cli.py reads
+# WANTS_BACKFILL, stores the offset per company via db.get_meta/set_meta,
+# and passes it back in as `backfill_from`. See collect().
 WANTS_BACKFILL = True
 
 
@@ -144,10 +153,12 @@ def collect(ats_ref: str, *, fetcher: Callable[..., tuple[int, str, str]] = defa
 
     # THE NEW WINDOW. The newest postings, every run, exactly as before.
     #
-    # Only the FIRST page carries a real count: this API answers `total: 0`
-    # on every subsequent page, so treating each page's value as authority
-    # made the second page look like "that's everything" and a 246-posting
-    # board silently collected 40.
+    # Only the FIRST page's reported total is trusted. Verified by
+    # construction: `expected` is set once, on the first page whose
+    # `reported` is not None, and never overwritten after that. Believed,
+    # not measured: this API is assumed to answer `total: 0` on every
+    # subsequent page, which is why treating each page's value as authority
+    # would make a later page look like "that's everything" when it is not.
     expected: int | None = None
     for page in range(MAX_PAGES):
         got, reported = take(page * PAGE_SIZE)
@@ -160,10 +171,14 @@ def collect(ats_ref: str, *, fetcher: Callable[..., tuple[int, str, str]] = defa
 
     # THE BACKFILL WINDOW. Only worth walking on a board bigger than the new
     # window already covers - below that, the first loop has read all of it.
+    # Verified by construction: the walk below runs only when
+    # `expected > MAX_PAGES * PAGE_SIZE`.
     #
-    # The offset the caller hands over only ever increases; it is taken
-    # modulo the board's real size here, because the caller cannot know that
-    # size. A walk that reaches the end simply starts round again.
+    # The offset the caller hands over only ever increases (cli.py always
+    # adds BACKFILL_STRIDE to it); it is taken modulo the board's real size
+    # here, because the caller cannot know that size. A walk that reaches the
+    # end simply starts round again - by construction, of the
+    # `% max(span, 1)` below.
     if expected is not None and expected > MAX_PAGES * PAGE_SIZE:
         start = MAX_PAGES * PAGE_SIZE
         span = expected - start

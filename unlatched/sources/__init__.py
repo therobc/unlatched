@@ -28,21 +28,13 @@ if TYPE_CHECKING:
 
 # Board API responses are one JSON document for the whole board, so a big
 # employer legitimately returns far more than the default per-page fetch
-# cap - a 219-posting board with full descriptions truncated at the default
-# 2MB parsed as invalid JSON and collected ZERO, silently. JSON collectors
-# pass this cap instead: still bounded (a stalled/hostile endpoint cannot
-# run away), but sized for a real board dump. HTML/page collectors
-# (schema_org, sitemap) keep the default page-sized cap.
-#
-# JSON collectors also pass respect_robots=False. robots.txt is a CRAWLER
-# directive for page fetching, and the page-fetching side of this package
-# (discovery, schema.org extraction, sitemaps) honors it. The board APIs
-# here are different: they are documented, public, published by each ATS
-# precisely for programmatic access, and some API hosts robots-disallow
-# everything simply to keep search engines out (one real board served
-# `User-agent: * Disallow: /` while allowing a single crawler by name -
-# honoring that as an API client silently collected zero postings from a
-# live board). Deliberate API access is not crawling.
+# cap. Unverified history: a 219-posting board with full descriptions is
+# said to have been truncated at the default 2MB, parsed as invalid JSON,
+# and collected ZERO, silently. JSON collectors pass this cap instead:
+# still bounded (a stalled/hostile endpoint cannot run away), but sized
+# for a real board dump. Verified 2026-09-10: 12 of the 15 registered
+# collectors import JSON_API_MAX_BYTES; schema_org and sitemap, the
+# HTML/page collectors, do not and keep the default page-sized cap.
 JSON_API_MAX_BYTES = 20_000_000
 
 
@@ -80,10 +72,13 @@ class Job:
     posted: str = ""
     description: str = ""
     employment_type: str = ""
-    # Set only by search sources (USAJOBS), where the collector itself
-    # discovers the employer per-posting instead of it being known up front
-    # from a companies row. Board collectors never set this - their caller
-    # already knows the employer before collect() is called.
+    # Set only by search sources (USAJOBS, Remote OK, NoDesk), where the
+    # collector itself discovers the employer per-posting instead of it being
+    # known up front from a companies row. Board collectors never set this -
+    # their caller already knows the employer before collect() is called.
+    # Verified 2026-09-10: every `employer=` assignment in this package's
+    # sources/ package sits in one of those three modules, all
+    # IS_SEARCH_SOURCE.
     employer: str = ""
 
     def key(self) -> str:
@@ -91,9 +86,10 @@ class Job:
 
 
 def html_to_text(raw: str) -> str:
-    """HTML -> text, keeping paragraph breaks so downstream sentence-level
-    parsing (schedule detection, requirement sections) has something to
-    split on. Collapsing every whitespace run to one space would destroy
+    """HTML -> text, keeping paragraph breaks - verified by construction:
+    requirements._forward_paragraph searches for a blank line to find its
+    next section break, so downstream sentence-level parsing has something
+    to split on. Collapsing every whitespace run to one space would destroy
     that structure.
     """
     if not raw:
@@ -115,8 +111,10 @@ def html_to_text(raw: str) -> str:
 
 
 def registry() -> dict[str, ModuleType]:
-    """Built lazily so importing this package never imports every submodule
-    (and every submodule's stdlib-only network imports) up front.
+    """Built lazily - verified by construction: the imports below sit inside
+    this function, not at module scope, so importing this package never
+    imports every submodule (and every submodule's stdlib-only network
+    imports) up front.
     """
     from . import (
         ashby,

@@ -23,8 +23,11 @@ if TYPE_CHECKING:
 
 SOURCE_NAME = "lever"
 
-# Lever has existed since 2012; anything below this is not a posting date but
-# a value that was already seconds, or garbage.
+# Lever is believed to have existed since 2012 - unverified here, no live
+# lookup. Measured 2026-09-10: read as milliseconds, _MIN_PLAUSIBLE_MS
+# below is 2001-09-09, comfortably before that either way, so anything
+# under it is not a posting date but a value that was already seconds,
+# or garbage.
 _MIN_PLAUSIBLE_MS = 1_000_000_000_000
 
 

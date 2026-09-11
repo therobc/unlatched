@@ -39,9 +39,11 @@ DEFAULT_MAX_SITEMAPS = 12
 # without this the rest went unmentioned.
 #
 # Tied to the DEFAULT rather than to `collect`'s max_fetch argument,
-# because the argument is what a caller may narrow it to and cli.py -
-# the only caller that reports - does not pass one. Same under-firing
-# caveat as nodesk: a page that does not parse leaves the count short.
+# because the argument is what a caller may narrow it to. Verified by
+# construction: cli.py's `extra` dict, the only kwargs it passes to
+# collect(), holds only title_include and backfill_from - never
+# max_fetch. Same under-firing caveat as nodesk: a page that does not
+# parse leaves the count short.
 MAX_COLLECTED = DEFAULT_MAX_FETCH
 
 
@@ -129,13 +131,16 @@ def collect(ats_ref: str, *, fetcher: Callable[..., tuple[int, str, str]] = defa
     jobish = [u for u in urls if JOB_URL.search(u)]
 
     if title_include:
-        # The SAME matcher screening uses, via screen.title_may_pass. This
-        # was a substring test, which is stricter: it needs the words of a
-        # term contiguous and spelled exactly, so a search for "HR
-        # Specialist" stopped matching "HR Operations Specialist". Unlike
-        # oracle_hcm, which skips only the DETAIL request, a miss here drops
-        # the URL entirely - the posting is never fetched and never
-        # returned, so the person never learns it existed.
+        # The SAME matcher screening uses, via screen.title_may_pass.
+        # Unverified history: an earlier version of this filter is believed to
+        # have been a substring test, which is stricter - it needed the words
+        # of a term contiguous and spelled exactly, so a search for "HR
+        # Specialist" would not match "HR Operations Specialist". Unlike
+        # oracle_hcm, which skips only the DETAIL request - verified by
+        # construction: oracle_hcm.collect's docstring says a posting that
+        # fails its title filter is still RETURNED - a miss here drops the URL
+        # entirely - the posting is never fetched and never returned, so the
+        # person never learns it existed.
         from unlatched.screen import title_may_pass
         passing = [u for u in jobish
                    if title_may_pass(slug_title(u), title_include)]

@@ -51,18 +51,19 @@ MAX_PAGES_PER_QUERY = 5
 AMBIGUOUS_CLEARANCE = "other"
 
 # Statuses that mean "your key is not usable", as opposed to "nothing
-# matched". 403 is included because OPM returns it for a key that exists but
-# has been revoked, not only for a malformed one.
+# matched". Believed, not measured: 403 is included on the assumption
+# that OPM returns it for a revoked key too, not only a malformed one.
 AUTH_FAILURE_STATUSES = frozenset({401, 403})
 THROTTLED_STATUS = 429
 
 # Each title_include term and each configured location becomes its own
-# query (the API's Keyword match is a single phrase, not an OR of terms, so
-# "want any of these titles" only works by asking once per title - same
-# reasoning for locations). That is a real combinatorial cost, so both
-# dimensions are capped, and so is the total combination count: a config
-# with 5 terms and 5 locations would otherwise fire 25 query streams for one
-# `collect` run.
+# query. Believed, not measured: the API's Keyword match is treated as
+# a single phrase rather than an OR of terms, so "want any of these
+# titles" is asked once per title - same reasoning applied to
+# locations. The combinatorial cost is real either way, so both
+# dimensions are capped and so is the total: by construction,
+# MAX_QUERIES below caps the combos list regardless of how many terms
+# and locations are configured.
 MAX_KEYWORDS = 5
 MAX_LOCATIONS = 5
 MAX_QUERIES = 12
@@ -130,16 +131,19 @@ def _search_page(term: str, location: str, page: int, creds: dict[str, str],
                "Authorization-Key": creds["api_key"]}
     # A documented, keyed public API, same as every board API in this
     # package - respect_robots=False for the reason JSON_API_MAX_BYTES's
-    # docstring gives, not because this module is special-cased.
+    # docstring gives, not because this module is special-cased. Verified
+    # 2026-09-10: 12 of the 15 registered collectors pass
+    # respect_robots=False; the exceptions (schema_org, sitemap, nodesk)
+    # are the page-fetching ones that docstring says keep honoring it.
     status, text, _ = fetcher(url, timeout=25, max_bytes=JSON_API_MAX_BYTES,
                                respect_robots=False, headers=headers)
-    # A rejected key and a throttled client must NOT read as "no federal jobs
-    # matched" - that is the silent-zero failure this package has already been
-    # bitten by twice (the board fetch cap, and robots.txt on board APIs). The
-    # distinction matters more here than for a board because OPM disables keys
-    # for inactivity (ToS section 7) and reserves the right to cap transaction
-    # volume at any time (section 6), so both of these WILL eventually happen
-    # to a long-lived install.
+    # A rejected key and a throttled client must NOT read as "no federal
+    # jobs matched" - that is the silent-zero failure this package's
+    # JSON_API_MAX_BYTES and respect_robots comments already describe for
+    # board APIs (the fetch cap, and robots.txt). Believed, not measured:
+    # OPM's terms are read as disabling keys for inactivity and reserving
+    # the right to throttle at any time, so both are treated as eventually
+    # happening to a long-lived install.
     if status in AUTH_FAILURE_STATUSES:
         raise RuntimeError(
             f"usajobs rejected the API key (HTTP {status}) - keys are disabled "
@@ -227,8 +231,10 @@ def _description(descriptor: dict[str, Any]) -> str:
         parts.append("Clearance listed as: Other (unspecified)")
     elif clearance:
         parts.append(f"Security Clearance: {clearance}")
-    # USAJOBS spells this field "PositionSensitivity". The typo is theirs and
-    # is part of the wire format, so it must be matched exactly.
+    # USAJOBS names this field "PositionSensitivity" (one word, no space)
+    # in the API response. Verified by construction: the key below is the
+    # exact literal read from `details`, so it must match the wire format
+    # exactly.
     sensitivity = str(details.get("PositionSensitivity") or "").strip()
     if sensitivity:
         parts.append(f"Position Sensitivity: {sensitivity}")
@@ -273,6 +279,8 @@ def collect(cfg: dict[str, Any], *,
     # Cleared at the START of a run, not the end: a caller reads it after
     # collect returns, and leaving the previous run's lines in place would
     # report a truncation that has since been fixed by a narrower search.
+    # Verified by construction: `_truncated.clear()` runs before the query
+    # loop below, not after it.
     _truncated.clear()
     jobs: dict[str, Job] = {}
     for term, location in _queries(cfg):
@@ -304,10 +312,12 @@ def collect(cfg: dict[str, Any], *,
             if expected is not None and seen_this_query >= expected:
                 break
         else:
-            # THE for/else FIRES ONLY WHEN THE PAGE RANGE RAN OUT - never
-            # after one of the breaks above, which are the two ways a stream
-            # ends because it has everything. So this is exactly the case
-            # where the API had more and the cap stopped us.
+            # THE for/else FIRES ONLY WHEN THE PAGE RANGE RAN OUT - never after
+            # one of the breaks above, which are the ways a stream ends because it
+            # has everything (a short page, or the running count reaching the
+            # API's advertised total). Verified by construction: Python's for/else
+            # runs the else clause exactly when the loop completes without a
+            # `break`.
             if expected is not None and seen_this_query < expected:
                 what = " ".join(
                     p for p in (f"{term!r}" if term else "",

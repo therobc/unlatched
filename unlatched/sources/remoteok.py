@@ -54,14 +54,17 @@ EMPLOYER_STATUS = "via Remote OK"
 
 API_URL = "https://remoteok.com/api"
 
-# Their robots.txt asks for one second between requests. This module makes a
-# single request per collect, so the floor only matters if that ever changes.
+# Believed, not measured here: their robots.txt is read as asking for one
+# second between requests. Verified by construction: `collect` below makes
+# exactly one fetcher call per run, so the floor only matters if that ever
+# changes.
 CRAWL_DELAY_S = 1.0
 
 
 def has_credentials(_cfg: dict[str, Any]) -> bool:
-    """No key, no account. Present so this module answers the same question
-    every search source is asked by cli.py's collect loop.
+    """No key, no account. Verified by construction: cli.py's search-source
+    loop calls `mod.has_credentials(cfg)` on every enabled entry from
+    sources.search_sources() before collecting it, and this is that answer.
     """
     return True
 
@@ -97,16 +100,17 @@ def _job_from(record: dict[str, Any]) -> Job | None:
         source_id=job_id,
         title=title,
         location=location,
-        # The Remote OK page, never the employer's own apply link: linking
-        # back is a condition of using this API.
+        # Believed, not measured: the feed's "url" field is read as the Remote OK
+        # page rather than the employer's own apply link, and linking back is a
+        # condition of using this API - see the module docstring.
         url=str(record.get("url") or ""),
         posted=str(record.get("date") or ""),
         description=description + tag_line,
-        # Unescaped: the feed carries company names HTML-encoded, so
-        # An employer with an ampersand in its name arrived as "&amp;" and
-        # was stored, and shown, exactly like that.
-        # The description goes through html_to_text, which already does this;
-        # the company name had nothing doing it.
+        # The feed carries company names HTML-encoded. Verified by construction:
+        # `description` above is built through html_to_text, which unescapes
+        # entities internally - `employer` below is not, so without this explicit
+        # html_unescape call an ampersand in a company name would be stored and
+        # shown as the literal "&amp;".
         employer=html_unescape(str(record.get("company") or "")).strip(),
     )
 
@@ -134,10 +138,11 @@ def collect(cfg: dict[str, Any], *,
     for record in payload:
         if not isinstance(record, dict):
             continue
-        # The first element is a legal notice rather than a posting - it
-        # carries "legal" and no id. Skipping by SHAPE rather than by
-        # position, so a feed that stops including it, or moves it, does not
-        # cost a posting or add a phantom one.
+        # Believed, not measured: the feed's first element is read as a legal
+        # notice rather than a posting - it carries "legal" and no id. Skipping by
+        # SHAPE rather than by position - verified by construction: the check
+        # below tests the record's keys, not its index - so a feed that stops
+        # including it, or moves it, does not cost a posting or add a phantom one.
         if "legal" in record and not record.get("id"):
             continue
         job = _job_from(record)

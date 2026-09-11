@@ -124,11 +124,12 @@ def parse_jsonld_jobs(html: str) -> list[dict[str, Any]]:
                     if addr.get(k))
             if str(node.get("jobLocationType", "")).upper() == "TELECOMMUTE":
                 where = (where + " (Remote)").strip()
-            # employmentType is singular in the spec but routinely a LIST in
-            # the wild ("FULL_TIME", "PART_TIME" on the same posting).
-            # str() on a list yields "['FULL_TIME', 'PART_TIME']", brackets
-            # and quotes included, which employment.py then has to read
-            # through. Joined instead, so what is stored is what was meant.
+            # Believed, not measured: employmentType is singular in the spec but is
+            # read as routinely a LIST in the wild ("FULL_TIME", "PART_TIME" on the
+            # same posting). Measured 2026-09-10: str() on such a list yields
+            # "['FULL_TIME', 'PART_TIME']", brackets and quotes included, which
+            # employment.py then has to read through. Joined instead, so what is
+            # stored is what was meant.
             kind = node.get("employmentType") or ""
             if isinstance(kind, list):
                 kind = ", ".join(str(k) for k in kind if k)

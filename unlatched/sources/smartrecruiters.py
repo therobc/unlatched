@@ -44,8 +44,10 @@ DETAIL_CAP = 60
 # surrounding context when it decides what a "5+ years" belongs to.
 AD_SECTIONS = ("companyDescription", "jobDescription", "qualifications",
                 "additionalInformation")
-# What a full run of this collector can return. The CLI reports when a
-# board hits it, so a truncated board never reads as a small one.
+# What a full run of this collector can return. Verified 2026-09-10:
+# cli.py compares `collected >= MAX_COLLECTED` (read generically via
+# getattr, so this applies to any collector module), so a truncated
+# board never reads as a small one.
 MAX_COLLECTED = PAGE_SIZE * MAX_PAGES
 
 

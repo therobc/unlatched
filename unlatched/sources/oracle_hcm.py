@@ -76,13 +76,20 @@ BACKFILL_STRIDE = PAGE_SIZE * BACKFILL_PAGES
 # What a full run of this collector can return: the new window plus the
 # backfill window. The CLI reports when a board hits it, so a truncated
 # board never reads as a small one - and with the backfill walking, hitting
-# it now means "more to come next run" rather than "never".
+# it now means "more to come next run" rather than "never". Verified
+# 2026-09-10: cli.py compares `collected >= MAX_COLLECTED` (read generically
+# via getattr, so this applies to any collector module) and, when
+# WANTS_BACKFILL is set, reports "the rest is read over the next few runs"
+# instead of "the board may hold more".
 MAX_COLLECTED = PAGE_SIZE * (MAX_PAGES + BACKFILL_PAGES)
 
 # Detail requests per employer, whether or not a title filter is set.
-# title_may_pass returns True when there is no filter, so without this a
-# profile that has not set search.title_include would make one request per
-# posting - up to 500 before the deeper paging, and 1,500 after it.
+# title_may_pass returns True when there is no filter, so without
+# MAX_DETAIL below, a profile that has not set search.title_include would
+# make one request per posting collected - up to 500 before the deeper
+# paging existed (MAX_PAGES * PAGE_SIZE = 10 * 50), and up to 1,500 after
+# it (MAX_COLLECTED below). Verified by construction: this comment's own
+# numbers match those two constants exactly.
 MAX_DETAIL = 200
 
 # This collector remembers where its backlog walk got to - see collect().
@@ -226,9 +233,12 @@ def collect(ats_ref: str, *, fetcher: Callable[..., tuple[int, str, str]] = defa
         if not keep(page.get("requisitionList") or []):
             break
 
-    # THE BACKFILL WINDOW, on boards bigger than the new window covers. The
-    # offset only ever increases in the caller and is taken modulo the real
-    # size here, because only this side sees the reported total.
+    # THE BACKFILL WINDOW, on boards bigger than the new window covers.
+    # Verified by construction: the walk below runs only when
+    # `expected > MAX_PAGES * PAGE_SIZE`. The offset only ever increases in
+    # the caller (cli.py always adds BACKFILL_STRIDE to the stored value) and
+    # is taken modulo the real size here, because only this side sees the
+    # reported total.
     if expected is not None and expected > MAX_PAGES * PAGE_SIZE:
         start = MAX_PAGES * PAGE_SIZE
         span = expected - start
