@@ -23,8 +23,11 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 # The full shape: every field a user or the desktop UI can set. Reading a
-# missing key falls back to the value here, so adding a field to this dict is
-# the whole migration for an existing config file.
+# missing key falls back to the value here, so adding a field to this dict
+# is the whole migration for an existing config file. Verified by
+# construction: load() below calls
+# `_deep_merge(defaults(), _apply_renames(raw))`, and _deep_merge keeps the
+# base's value for any key the overlay does not carry.
 DEFAULTS: dict[str, Any] = {
     "search": {
         "terms": [],

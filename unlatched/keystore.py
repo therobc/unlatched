@@ -70,9 +70,11 @@ def _dpapi(data: bytes, *, encrypt: bool) -> bytes | None:
 
     # Description is stored with the blob and shows in some credential
     # tooling; naming the app there beats an unlabeled secret. It names the
-    # APP and not the field: config._map_secrets walks every secret through
-    # here, so a description naming one credential would be stamped on all
-    # of them. No entropy argument: it would have to be stored beside the
+    # APP and not the field. Verified by construction: config.py's
+    # SECRET_KEYS lists two different secrets and _map_secrets walks both
+    # through this same function with this same static description string,
+    # so a description naming one credential would be stamped on all of
+    # them. No entropy argument: it would have to be stored beside the
     # blob to be usable, which adds nothing an attacker with file access
     # does not already have.
     ok = fn(ctypes.byref(source), "Unlatched stored credential", None,
@@ -127,8 +129,11 @@ def unprotect(stored: str) -> str:
         return ""
     plain = _dpapi(raw, encrypt=False)
     if plain is None:
-        # Wrong user, or the blob moved from the machine it was written on.
-        # Empty reads downstream as "no credential", so the source skips with
-        # its normal hint rather than sending a corrupt key to the API.
+        # Believed, not measured: `_dpapi` returning None here is read as
+        # either the wrong user or a blob moved from the machine it was
+        # written on - DPAPI's own contract (see the module docstring) ties
+        # both to a failed unwrap. Empty reads downstream as "no credential",
+        # so the source skips with its normal hint rather than sending a
+        # corrupt key to the API.
         return ""
     return plain.decode("utf-8", errors="replace")

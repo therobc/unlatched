@@ -36,9 +36,12 @@ SALARY_CONTEXT = re.compile(
     r"base|stipend|hourly|annually|per\s+(?:hour|year|annum)|"
     r"/\s*(?:yr|hr|hour|year))\b|\$\d[\d,]*\s*[kK]\b", re.IGNORECASE)
 
-# Deliberately asymmetric: any full-time signal overrides a part-time one,
-# because "full-time and part-time openings" and "part-time hours
-# considered" describe flexibility, not a part-time-only role.
+# Deliberately asymmetric: any full-time signal overrides a
+# part-time one - verified 2026-09-10:
+# is_part_time("full-time and part-time openings") and
+# is_part_time("full-time or part-time available") are both False,
+# because both phrases describe flexibility, not a part-time-only
+# role.
 PART_TIME = re.compile(
     r"\b(part[\s-]?time|pt\s+position|20\s*-\s*29\s*hours|"
     r"less than 30 hours(?:\s+per\s+week)?)\b", re.IGNORECASE)
@@ -122,10 +125,13 @@ def extract_salary(text: str) -> SalaryInfo:
     high_raw = max(values)
     has_k = bool(re.search(r"\d\s*[kK]\b", best))
 
-    # Hourly must be resolved before the thousands-shorthand rule below, or a
-    # bare "$29.00" reads as $29,000 instead of an hourly rate. Detected two
-    # ways: explicit wording nearby, or magnitude - no real annual salary is
-    # $29, so a bare sub-300 figure with no "k" suffix is a rate.
+    # Hourly must be resolved before the thousands-shorthand rule below,
+    # or a bare "$29.00" reads as $29,000 instead of an hourly rate -
+    # verified 2026-09-10: extract_salary("...$29.00 per hour...")
+    # returns hourly_rate 29.0 and low/high 60320, not 29000. Detected
+    # two ways: explicit wording nearby, or magnitude - no real annual
+    # salary is $29, so a bare sub-300 figure with no "k" suffix is a
+    # rate.
     hourly = bool(HOURLY.search(window)) or (low_raw < 300 and not has_k)
     if hourly and 7 <= low_raw <= 300:
         return {
@@ -139,10 +145,12 @@ def extract_salary(text: str) -> SalaryInfo:
     # $70,000, not $70). Applied independently to each end of the range.
     low_val = int(low_raw * 1000) if (has_k or low_raw < 1000) else int(low_raw)
     high_val = int(high_raw * 1000) if (has_k or high_raw < 1000) else int(high_raw)
-    # Outside the sane salary range, a figure is not compensation - drop it
-    # rather than report a number that cannot be right. A bad high falls
-    # back to the (possibly also-dropped) low, collapsing to a single point
-    # or to "nothing usable" instead of keeping a clearly-wrong top of range.
+    # Outside the sane salary range, a figure is not compensation - drop
+    # it rather than report a number that cannot be right. Verified
+    # 2026-09-10: a lone $999,999,999 figure and a lone $3 figure both
+    # collapse to low=None, high=None. A bad high falls back to the
+    # (possibly also-dropped) low, collapsing to a single point or to
+    # "nothing usable" instead of keeping a clearly-wrong top of range.
     low: int | None = low_val if 5000 <= low_val <= 900_000 else None
     high: int | None = high_val if 5000 <= high_val <= 900_000 else low
     return {"display": best, "low": low, "high": high, "hourly_rate": None}

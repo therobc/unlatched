@@ -20,9 +20,12 @@ import re
 # config validates against.
 KINDS = ("full_time", "part_time", "contract", "temporary", "internship")
 
-# Checked in order: the first match wins, so the more specific patterns come
-# first. "Contract to hire" is a contract, not a hire; an internship is an
-# internship even when it is also full time for the summer.
+# Checked in order: the first match wins, so the more specific patterns
+# come first. Measured 2026-09-10: "Full-time internship" matches both
+# the internship and full_time patterns below, and normalize() returns
+# "internship" because that entry comes first; "Contract to hire, full
+# time hours" matches both contract and full_time and returns
+# "contract" for the same reason.
 _PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("internship", re.compile(r"\bintern(ship)?\b|\bco[- ]?op\b", re.IGNORECASE)),
     ("contract", re.compile(

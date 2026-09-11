@@ -25,8 +25,9 @@ from __future__ import annotations
 import re
 
 # State names and postal abbreviations, so "OH" and "Ohio" are one
-# place. Nothing else in a location string is interpreted; the rest is
-# matched literally.
+# place. Verified by construction: STATES/ABBREVS are the only two-way
+# lookup in this module - city_of and place_is_acceptable below compare
+# everything else with a literal, escaped substring search.
 STATES = {
     "alabama": "al", "alaska": "ak", "arizona": "az", "arkansas": "ar",
     "california": "ca", "colorado": "co", "connecticut": "ct", "delaware": "de",
@@ -62,11 +63,14 @@ def normalize(place: str) -> tuple[str, str]:
     named, which is common and means unknown rather than mismatched.
     """
     lowered = (place or "").lower()
-    # A DOTTED ABBREVIATION IS ONE TOKEN. Stripping punctuation first turns
-    # "D.C." into "d c" - two single letters - so the state search below finds
-    # no two-letter token and falls back to the full-name pass, where
-    # "washington" matches and the District becomes Washington state again.
-    # Joined before the strip, so "D.C." and "N.Y." survive as "dc" and "ny".
+    # A DOTTED ABBREVIATION IS ONE TOKEN. Measured 2026-09-10: stripping
+    # punctuation before joining turns "D.C." into "d c" - two single
+    # letters, and re.findall(r"\b([a-z]{2})\b", ...) finds no two-letter
+    # token in that text at all - so the state search below would fall back
+    # to the full-name pass, where "washington" matches and the District
+    # becomes Washington state again. Joined before the strip, so "D.C."
+    # and "N.Y." survive as "dc" and "ny" - confirmed with the same
+    # regexes on both inputs.
     lowered = re.sub(r"\b([a-z])\.\s*([a-z])\.", r"\1\2", lowered)
     text = re.sub(r"[^a-z0-9,\s]", " ", lowered)
     text = re.sub(r"\s+", " ", text).strip()

@@ -55,9 +55,12 @@ ORIGINAL = "original"
 OPTIMIZED = "optimized"
 ROLES = (ORIGINAL, OPTIMIZED)
 
-# Formats the engine can actually read. Anything else is accepted and stored -
-# it is the person's document and refusing it helps nobody - but flagged, so
-# they are not left wondering why their coverage reads zero.
+# Formats the engine can actually read - verified 2026-09-10: attach
+# below always shutil.copy2's the file regardless of suffix and
+# only records a "readable" flag, so anything else is accepted and
+# stored - it is the person's document and refusing it helps
+# nobody - but flagged, so they are not left wondering why their
+# coverage reads zero.
 READABLE_SUFFIXES = frozenset({".txt", ".md", ".docx"})
 
 
@@ -88,10 +91,13 @@ def attach(source: str | os.PathLike[str], role: str,
     target_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S")
     dest = target_dir / f"{role}-{stamp}-{_slug(src.name)}"
-    # Two attaches inside the same second produced the same name, and the
-    # second silently overwrote the first - which defeats the one guarantee
-    # this module exists to make. The suffix is only ever reached in that
-    # case, so ordinary filenames stay readable.
+    # Unverified history: two attaches inside the same second are said
+    # to have once produced the same name, with the second silently
+    # overwriting the first - which would defeat the one guarantee
+    # this module exists to make. By construction, the suffix loop
+    # below only runs inside the `if dest.exists()` guard, so it is
+    # only ever reached in that case, and ordinary filenames stay
+    # readable.
     if dest.exists():
         for attempt in range(2, 100):
             candidate = target_dir / f"{role}-{stamp}-{attempt}-{_slug(src.name)}"
@@ -126,8 +132,10 @@ def versions(home: str | os.PathLike[str] | None = None) -> list[dict[str, str]]
         if role not in ROLES:
             continue
         found.append({"role": role, "file": path.name, "stamp": rest[:15]})
-    # Newest first WITHIN a role; the stamp sorts lexically because it is
-    # written as YYYYMMDDTHHMMSS.
+    # Newest first WITHIN a role - verified 2026-09-10 with mixed-role,
+    # mixed-date fixtures: filtering the sorted list down to one role
+    # preserves descending order, because the stamp sorts lexically the
+    # same as chronologically, being written as YYYYMMDDTHHMMSS.
     found.sort(key=lambda v: v["stamp"], reverse=True)
     return found
 

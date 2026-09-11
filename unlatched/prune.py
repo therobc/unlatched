@@ -1,4 +1,8 @@
-"""Delete postings that never matched and that nobody ever looked at.
+"""Delete postings that failed the criteria and that nobody left a mark on.
+
+A job added by hand or imported never gets here: cli.cmd_screen keeps it
+qualified through a re-screen (verified 2026-09-10 by
+test_a_rescreen_keeps_what_a_person_added).
 
 WHY DELETE, when every other removal in this codebase hides instead. Retiring
 and delisting protect rows a person has a relationship with: something they
@@ -49,9 +53,14 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     import os
     from pathlib import Path
 
-# Rows to consider: never matched, not thrown away by hand, and carrying none
-# of the four marks a person leaves - a note, an attachment, a status they
-# chose, or a status they cleared.
+# Rows to consider: never matched - verified 2026-09-10: cli.cmd_screen
+# keeps qualified=1 for any row whose source is not a built-in
+# collector, so qualified=0 below means the deterministic criteria
+# actually rejected it, not a re-screen overwriting what a person
+# added. Not thrown away by hand, and carrying none of the four
+# marks a person leaves - a note, an attachment, a status they
+# chose, or a status they cleared - by construction, the four NOT
+# IN clauses right below check exactly those.
 _CANDIDATES = """
 CREATE TEMP TABLE prune_candidate AS
 SELECT key, seat, delisted_at FROM jobs
@@ -66,7 +75,9 @@ SELECT key, seat, delisted_at FROM jobs
                       AND COALESCE(status, '') <> ?)
 """
 
-# Put back anything whose seat still has a keeper, so no surviving row's
+# Put back anything whose seat still has a keeper - by construction,
+# the DELETE below removes from prune_candidate any row whose seat
+# matches a job NOT in prune_candidate - so no surviving row's
 # advertising history loses its earlier rounds.
 _SPARE_SEATS = """
 DELETE FROM prune_candidate
@@ -91,7 +102,7 @@ class Plan:
     delisted: int
     """Of those, ones already taken down."""
     seat_spared: int
-    """Candidates kept because a surviving row shares their seat."""
+    """Candidates a surviving row's seat kept - by construction, _build's spared."""
     statuses: int
     """Engine-written `closed` rows that go with them."""
 
@@ -152,9 +163,12 @@ def apply(con: sqlite3.Connection,
                 "(SELECT key FROM prune_candidate)")
     con.execute("DELETE FROM jobs WHERE key IN "
                 "(SELECT key FROM prune_candidate)")
-    # A row folded behind one of these would now be hidden behind nothing and
-    # invisible for ever. duplicate_of is not rebuilt from scratch anywhere,
-    # so it is corrected here; repost_of is, by annotate below.
+    # A row folded behind one of these would now be hidden behind
+    # nothing and invisible for ever. Verified 2026-09-10: duplicate_of
+    # has no global rebuild anywhere in this codebase, so it is
+    # corrected here with a targeted UPDATE; repost_of is rebuilt from
+    # scratch by reposts.annotate below, which nulls every repost_of
+    # before recomputing it.
     con.execute("UPDATE jobs SET duplicate_of = NULL, duplicate_reason = NULL "
                 "WHERE duplicate_of IS NOT NULL "
                 "AND duplicate_of NOT IN (SELECT key FROM jobs)")
@@ -162,16 +176,18 @@ def apply(con: sqlite3.Connection,
     reposts.annotate(con)
     con.execute("DROP TABLE IF EXISTS prune_candidate")
     con.commit()
-    # Deleted pages stay in the file as free space, so the profile would not
-    # get smaller and neither would a backup of it. VACUUM cannot run inside a
-    # transaction, which is why it is after the commit.
+    # Deleted pages stay in the file as free space, by definition of
+    # SQLite's page-based storage, so the profile would not get
+    # smaller and neither would a backup of it. Measured 2026-09-10:
+    # VACUUM raises OperationalError when called inside an open
+    # transaction, which is why it runs after the commit above.
     #
     # AND IT IS ALLOWED TO FAIL. It rewrites the whole file and needs every
-    # other connection to be out of the way; the app itself holds one open
-    # while it is running, and this verb is meant to be runnable from there.
-    # The rows are already gone and committed by this point - reclaiming the
-    # space is the one part that can wait for the next quiet moment, and
-    # raising here would report a completed delete as an error.
+    # other connection out of the way; the app holds one open while it runs,
+    # and this verb is meant to be runnable from there. The rows are already
+    # gone and committed by this point - reclaiming the space is the one part
+    # that can wait, and raising here would report a completed delete as an
+    # error.
     reclaimed = True
     try:
         con.execute("VACUUM")

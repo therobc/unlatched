@@ -41,7 +41,8 @@ def host_of(url: str) -> str:
     try:
         return (urllib.parse.urlsplit(url).hostname or "").lower()
     except ValueError:
-        # An unparseable authority - a bare "[" , a bad IPv6 literal. Not a
+        # An unparseable authority - measured 2026-09-10: urlsplit("http://[")
+        # and urlsplit("http://[gg::1]") both raise ValueError here. Not a
         # host, so not a link.
         return ""
 

@@ -48,10 +48,9 @@ _COLLECTOR_ID = re.compile(r"^[a-z0-9][a-z0-9_-]{0,31}$")
 
 
 class BadCollectorIdError(ValueError):
-    """A collector id that cannot safely be a namespace.
-
-    Raised only when check_collector_id's regex below fails to match, so by
-    construction the message always names the offending id.
+    """A collector id that cannot safely be a namespace - verified by
+    construction: check_collector_id raises this only when its regex below
+    fails to match, so the message always names the offending id.
     """
 
 
@@ -100,10 +99,9 @@ NOT_DESTINATIONS = ("easy-apply", "easy_apply", "easyapply", "closed", "none",
 
 
 class ImportRowError(ValueError):
-    """A row that cannot become a job.
-
-    Every raise site below, in _key_for and import_row, names the offending
-    row in the message - verified by reading both.
+    """A row that cannot become a job - verified by reading both: every raise
+    site below, in _key_for and import_row, names the offending row in the
+    message.
     """
 
 

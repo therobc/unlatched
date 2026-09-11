@@ -81,21 +81,26 @@ def collect_lock(home: str | os.PathLike[str] | None = None) -> Iterator[None]:
         msg = f"another collect is already running (lock: {path})"
         raise AlreadyRunningError(msg)
 
-    # THE PID GOES IN A SIBLING FILE, NOT IN THE LOCKED ONE. The lock is held on
-    # byte 0, and truncating a file whose locked byte is being removed fails on
-    # Windows - the first version did exactly that and could not record anything.
-    # Nothing reads this back to make a decision; it exists so a person looking
-    # at a stuck profile can tell which process is collecting.
+    # THE PID GOES IN A SIBLING FILE, NOT IN THE LOCKED ONE. By definition: a
+    # freshly opened "a+" handle starts at byte 0, and msvcrt.locking locks
+    # from the current position, so the lock is held on byte 0. Unverified
+    # history: truncating a file whose locked byte is being removed is
+    # believed to fail on Windows - the first version of this module is
+    # believed to have done exactly that and could not record anything.
+    # Nothing reads this back to make a decision; it exists so a person
+    # looking at a stuck profile can tell which process is collecting.
     with suppress(OSError):
         path.with_suffix(".pid").write_text(str(os.getpid()), encoding="utf-8")
 
     try:
         yield
     finally:
-        # The OS drops the lock when the handle closes, so nothing is unlocked
-        # by hand - which is what makes a crash, a kill or a power loss safe.
-        # The file is left in place: deleting it races another process about to
-        # open it, and an empty lock file costs nothing.
+        # The OS drops the lock when the handle closes - by definition of both
+        # fcntl.flock and msvcrt.locking, which tie the lock to the open handle,
+        # not to any action this code takes - so nothing is unlocked by hand,
+        # which is what makes a crash, a kill or a power loss safe. The file is
+        # left in place: deleting it races another process about to open it,
+        # and an empty lock file costs nothing.
         _close_quietly(handle)
 
 

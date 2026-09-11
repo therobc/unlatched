@@ -132,8 +132,11 @@ def rows(con: sqlite3.Connection) -> list[dict[str, Any]]:
     log = _history(con)
     notes = _standalone_notes(con)
     out = []
-    # The columns the query supplies. The rest are computed below, so they are
-    # listed here rather than probed for on every row.
+    # The columns the query supplies, except `status` (handled separately
+    # below with its own default). Verified by construction: `from_query`
+    # here lists exactly the other 10 aliases the SELECT in _SQL returns.
+    # The rest are computed below, so they are listed here rather than
+    # probed for on every row.
     from_query = (
         "key", "company", "title", "location", "posted", "found_at",
         "url", "apply_url", "removed_on", "taken_down_on",

@@ -38,19 +38,25 @@ from . import links as links_mod
 if TYPE_CHECKING:
     import sqlite3
 
-# The two trust classes. Values, not booleans, because "is_untrusted" reads
-# backwards half the time it is used and a third class is easy to imagine.
+# The two trust classes. Values, not booleans. Believed, not measured:
+# "is_untrusted" reads backwards half the time it is used, and a
+# third class is easy to imagine.
 POSTING = "posting"
 MINE = "mine"
 CLASSES = (POSTING, MINE)
 
-# REFUSED AT ATTACH TIME rather than stored and guarded afterwards. A file the
-# app will not store cannot be double-clicked out of a folder six months later
-# by somebody who has forgotten where it came from, and the guard cannot be
-# forgotten by a future code path that opens attachments a new way.
+# REFUSED AT ATTACH TIME rather than stored and guarded afterwards -
+# by construction: check_allowed runs in add_file before
+# shutil.copyfile, so a file the app will not store is never
+# written to disk in the first place. It cannot be double-clicked
+# out of a folder six months later by somebody who has forgotten
+# where it came from, and the guard cannot be forgotten by a future
+# code path that only OPENS attachments, since a refused file was
+# never stored for it to find.
 #
-# Windows treats several of these as executable without the extension being
-# visible in Explorer, which is exactly how they get run by accident.
+# Believed, not measured: Windows treats several of these as
+# executable without the extension being visible in Explorer,
+# which is exactly how they get run by accident.
 REFUSED_SUFFIXES = frozenset({
     ".exe", ".com", ".bat", ".cmd", ".msi", ".msp", ".scr", ".pif", ".cpl",
     ".hta", ".js", ".jse", ".vbs", ".vbe", ".wsf", ".wsh", ".ps1", ".psm1",
@@ -113,10 +119,13 @@ def check_allowed(name: str) -> None:
         raise Refused(msg)
 
 
-# A display name is TEXT ON A SCREEN AND NOTHING ELSE. It never reaches the
-# filesystem (see stored_name) and, for posting-class rows, it is also read by
-# an agent surface - so a crafted name is a place to hide an instruction as
-# much as a path traversal.
+# A display name is TEXT ON A SCREEN AND NOTHING ELSE - by construction,
+# stored_name generates a random hex name and never takes the
+# display string as input, so it never reaches the
+# filesystem (see stored_name). For posting-class rows it is also
+# read by an agent surface - for_agent below sets display_name for
+# POSTING rows too - so a crafted name is a place to hide an
+# instruction as much as a path traversal.
 _UNSAFE_NAME = re.compile(r"[\x00-\x1f\x7f]")
 MAX_DISPLAY_NAME = 120
 
@@ -303,9 +312,10 @@ def for_agent(row: dict[str, Any]) -> dict[str, Any]:
         "trust": row["trust"],
     }
     if row["trust"] == POSTING:
-        # The name is shown because "there is a PDF here" is useful and true;
-        # it is re-sanitised on the way out because the same string is being
-        # handed to a model.
+        # The name is shown because "there is a PDF here" is useful and
+        # true; by construction, safe_display_name runs again right below
+        # on the way out, because the same string is being handed to a
+        # model through this agent surface.
         common["display_name"] = safe_display_name(row["display_name"] or "")
         common["readable"] = False
         common["withheld"] = (

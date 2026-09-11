@@ -248,20 +248,25 @@ def read_posting(url: str, *,
         return {}
     attended = is_attended_only(url)
     # An ATTENDED_ONLY host's robots.txt asks automated tools not to read the
-    # job path, so reading one at all means overriding it. That is the
-    # person's own decision, recorded at ATTENDED_ONLY_HOSTS above, and it is
-    # confined to this one hand-add path - every other HTML fetch in this
-    # package still honours robots.
+    # job path, so reading one at all means overriding it. That is the person's
+    # own decision, recorded at ATTENDED_ONLY_HOSTS above, and it is confined to
+    # hand-added links - here and in recheck. Verified 2026-09-10: every other
+    # HTML fetch in this package leaves respect_robots at its default of True,
+    # and only the documented JSON board APIs pass False.
     #
-    # No try/except around this: fetch.fetch catches HTTPError, OSError and
-    # ValueError itself and reports failure as status 0, which the next line
-    # already handles. Wrapping it would be catching a case that cannot
-    # happen, and every other collector here calls the fetcher bare.
+    # No try/except around this. Verified 2026-09-10 in fetch.fetch: it catches
+    # HTTPError, OSError and ValueError itself and reports them as a status the
+    # next line handles, and all 27 fetcher calls in the package are bare. A
+    # response cut off mid-body (http.client.HTTPException) is caught there
+    # too - verified 2026-09-10 by
+    # test_a_response_cut_off_mid_body_is_a_failed_fetch_not_a_crash.
+    #
     # `url_ok` carries the NEVER_FETCH rule into the fetcher so it is applied
-    # to every redirect hop as well as to this URL. Checking it only here was
-    # defeated by any 302: a shortened link, or a board that redirects, and
-    # this package fetched an aggregator it promises never to touch - a legal
-    # Rule, broken silently (found by a red-team review).
+    # to every redirect hop as well as to this URL - by construction,
+    # _GuardedRedirect.redirect_request calls it on each new URL. Checking it
+    # only here was defeated by any 302: a shortened link, or a board that
+    # redirects, and this package fetched an aggregator it promises never to
+    # touch - a legal rule, broken silently (found by a red-team review).
     def still_allowed(candidate: str) -> bool:
         return may_fetch(candidate, hand_added=hand_added)
 
@@ -304,10 +309,10 @@ def add(con: sqlite3.Connection, cfg: dict[str, Any], url: str, *,
         msg = "a link is required"
         raise ValueError(msg)
     # Refused rather than blanked, unlike the collectors: the person typed
-    # this, so they get told. stable_id alone did not catch it - for
-    # "file:///C:/Windows/System32/calc.exe" the hostname is empty but the
-    # path survives, producing a perfectly good id for a link that must never
-    # have become clickable (found by a red-team review).
+    # this, so they get told. stable_id alone does not catch it.
+    # Measured 2026-09-10: for "file:///C:/Windows/System32/calc.exe" it
+    # returns "c-windows-system32-calc-exe", a perfectly good id for a link
+    # that must never become clickable, while links.is_safe returns False.
     if not links_mod.is_safe(url):
         msg = (f"only http and https links can be added, got {url!r}. "
                "Copy the address out of your browser's address bar.")
@@ -396,11 +401,11 @@ def add(con: sqlite3.Connection, cfg: dict[str, Any], url: str, *,
         "location": location,
         "url": url,
         "posted_at": posted,
-        # Stored NORMALISED, so the cross-board join is a plain equality test at
-        # query time rather than a function every comparison has to remember to
-        # call. Empty when there is none - Easy Apply is a real answer, not a
-        # gap: the application stays on the board and there is no ATS row it
-        # could collide with.
+        # Stored NORMALISED. The duplicate check normalises on read as well
+        # (verified 2026-09-10 in dupes._destination), because rows written
+        # before apply_url existed never came through here. Empty when there is
+        # none - Easy Apply is a real answer, not a gap: the application stays on
+        # the board and there is no ATS row it could collide with.
         "apply_url": links_mod.normalise_apply_url(apply_url),
         "fetched_at": now,
         "last_seen": now,
@@ -408,7 +413,10 @@ def add(con: sqlite3.Connection, cfg: dict[str, Any], url: str, *,
         # Adding a job by hand is not a screening decision. Somebody pasting
         # a link is telling us they are interested, so it is never dropped
         # for failing the title filter or the salary floor - the reasons are
-        # still recorded and still shown, but the row stays.
+        # still recorded and still shown, but the row stays. A re-screen keeps
+        # it too: cli.cmd_screen leaves qualified at 1 for any source no
+        # built-in collector writes, verified 2026-09-10 by
+        # test_a_rescreen_keeps_what_a_person_added.
         "qualified": 1,
         "verdict": "keep" if fields.get("verdict") == "keep" else "alt",
     })
@@ -491,8 +499,9 @@ def _looks_gone(status: int, html: str) -> bool:
 
 
 def _hours_since(stamp: str | None, now: datetime) -> float:
-    """Hours since an ISO stamp. A missing or unreadable one reads as
-    "never checked", which makes it due rather than skipped.
+    """Hours from an ISO stamp to `now`. By construction a missing or
+    unreadable stamp returns infinity - "never checked" - so it is due
+    rather than skipped.
     """
     if not stamp:
         return float("inf")
@@ -558,9 +567,8 @@ def due_rows(con: sqlite3.Connection, now: datetime | None = None,
     # take N sources is to build "IN (?, ?, ?)" - and that is a query assembled
     # from a string, which reads identically to an injection whether or not the
     # interpolated part can only ever be punctuation. json_each turns the list
-    # into ONE bound parameter, so this string is a constant like every other
-    # query in the file, and there is nothing for a reader or a linter to
-    # decide about.
+    # into ONE bound parameter, so by construction this string is a constant
+    # and there is nothing for a reader or a linter to decide about.
     rows = con.execute(
         "SELECT j.key, j.url, j.source, j.last_seen, j.delisted_at, "
         "       (SELECT s.status FROM job_status s WHERE s.key = j.key) AS status "
@@ -600,12 +608,11 @@ def recheck(con: sqlite3.Connection, cfg: dict[str, Any], *,
     for row in due_rows(con, now, limit=limit,
                         sources=recheckable_sources(cfg)):
         url = row["url"] or ""
-        # PER ROW, NEVER PER RUN. This used to be a flat `hand_added=True`,
-        # which was true only because the population was hand-added rows and
-        # nothing else. Now a collector can put its rows in that population,
-        # and `hand_added` is the ONE exception that reads a host whose
-        # robots.txt says not to - so it has to be a fact about the row rather
-        # than a property of the button that started the run.
+        # PER ROW, NEVER PER RUN. A collector can put its rows in this population,
+        # and `hand_added` is the ONE exception that reads a host whose robots.txt
+        # says not to - so it has to be a fact about the row rather than a property
+        # of the button that started the run. By construction it is true only for
+        # rows whose source is this module's own.
         by_hand = (row["source"] or "") == SOURCE_NAME
         if not may_fetch(url, hand_added=by_hand):
             continue
@@ -627,20 +634,20 @@ def recheck(con: sqlite3.Connection, cfg: dict[str, Any], *,
                         (stamp, row["key"]))
             gone.append(row["key"])
         elif status == 200 and html:
-            # Still listed, nothing to record. There is no un-delisting branch
-            # here any more: due_rows never returns a row already marked
-            # closed, so the "postings reappear" case it used to handle cannot
-            # be reached - and a 200 from a sign-in wall taking a dead posting
-            # OUT of delisted was the failure mode that made it worse than
-            # useless. A posting that genuinely comes back is re-added by hand,
-            # which is how it got here in the first place.
+            # Still listed, nothing to record. There is no un-delisting branch, and
+            # by construction none is reachable: due_rows never returns a row already
+            # marked closed, since its query requires delisted_at IS NULL. A 200 from
+            # a sign-in wall taking a dead posting OUT of delisted is the failure that
+            # rules the branch out. A posting that genuinely comes back is re-added by
+            # hand, which is how it got here in the first place.
             pass
         else:
             unreadable.append(row["key"])
             continue
-        # Only a row we actually READ gets its clock reset. One that could
-        # not be reached stays due, so a site that is down for an hour is
-        # retried rather than quietly parked for a day.
+        # Only a row we actually READ gets its clock reset - by construction,
+        # the unreadable branch above continues before this line. One that could
+        # not be reached stays due, so a site that is down for an hour is retried
+        # rather than quietly parked for a day.
         con.execute("UPDATE jobs SET last_seen = ? WHERE key = ?",
                     (stamp, row["key"]))
     con.commit()
@@ -668,9 +675,9 @@ def recheck_status(con: sqlite3.Connection,
     if not names:
         return {"total": 0, "due": 0, "hours_until_due": 0.0}
     # The SAME population due_rows will actually read: still listed, and not
-    # touched. Counting a wider set would promise checks that never happen -
-    # "291 added links not re-checked" beside a button that then reads eleven
-    # of them is a number a person learns to disbelieve.
+    # touched - by construction, the same delisted_at and status tests its
+    # query applies. Counting a wider set would put a number beside the button
+    # that the button then does not read.
     rows = con.execute(
         "SELECT j.last_seen FROM jobs j "
         "WHERE j.source IN (SELECT value FROM json_each(?)) "

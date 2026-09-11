@@ -62,8 +62,11 @@ SHINGLE = 5
 # requisitions.
 DESCRIPTION_THRESHOLD = 0.88
 
-# Words that carry no identity: every posting at an employer shares them, so
-# leaving them in inflates every score toward each other.
+# Words that carry no identity: believed, not measured, that every
+# posting at an employer shares them - by construction, leaving them
+# in would add shared shingles to both sides of any pair from the
+# same employer, inflating jaccard toward each other regardless of
+# whether the roles are actually the same.
 BOILERPLATE = re.compile(
     r"equal opportunity employer|reasonable accommodation|regardless of race|"
     r"e-verify|drug[- ]free workplace|background check|"
@@ -118,8 +121,9 @@ def title_agrees(left: str, right: str) -> bool:
     left_words, right_words = set(normalise_words(left)), set(normalise_words(right))
     if not left_words or not right_words:
         return False
-    # The distinguishing tokens are exactly the ones that differ, so any
-    # difference in a level marker is disqualifying.
+    # The distinguishing tokens are exactly the ones that differ - by construction,
+    # the check right below compares each side's intersection with
+    # `markers`, so any difference in a level marker is disqualifying.
     markers = {"i", "ii", "iii", "iv", "1", "2", "3", "4",
                "senior", "junior", "lead", "principal", "staff", "associate",
                "sr", "jr", "entry", "intern"}
@@ -234,15 +238,18 @@ APPLICATION_IS_THE_POSTING = (
     "schema_org", "sitemap",
 )
 
-# Collectors deliberately EXCLUDED, so the omission reads as a decision rather
-# than an oversight:
+# Collectors deliberately EXCLUDED, so the omission reads as a
+# decision rather than an oversight. Believed, not measured:
 #
-#   nodesk, remoteok   aggregators. The posting forwards somewhere else, so
-#                      their URL is not where the application happens.
-#   usajobs            forwards to the hiring agency's own system.
+#   nodesk, remoteok   aggregators - the posting is believed to
+#                      forward somewhere else, so their URL is not
+#                      where the application happens.
+#   usajobs            believed to forward to the hiring agency's
+#                      own system.
 #
-# This is the same line the 15 intermediary rows in that handoff sit on:
-# job-board republishers, where the apply host is the poster's own domain
+# Unverified history: this is said to be the same line 15
+# intermediary rows in one past handoff sat on - job-board
+# republishers, where the apply host is the poster's own domain
 # rather than the employer's.
 
 
@@ -339,16 +346,21 @@ def _primary(a: dict[str, Any], b: dict[str, Any]) -> tuple[dict[str, Any], dict
     # AN OPEN POSTING OUTRANKS A CLOSED ONE, below history and above the
     # preference above.
     #
-    # The preference is about which ROUTE to apply through, and a route that has
-    # closed is not a route. An advert on an aggregating site comes down well
-    # before the requisition behind it does, so without this the person is shown
-    # a dead posting with the live one folded away underneath - and nothing
-    # anywhere says so.
+    # The preference is about which ROUTE to apply through, and a route
+    # that has closed is not a route. Believed, not measured: an advert
+    # on an aggregating site comes down well before the requisition
+    # behind it does. By construction: without the `gone_a != gone_b`
+    # check below, a closed row could still win on the
+    # imported-preference or fetched_at fallback, which would show the
+    # person a dead posting with the live one folded away underneath -
+    # and nothing anywhere says so.
     #
-    # Below history, because if they already applied through the closed posting
-    # that record is what they need to see: surfacing the open route instead
-    # would hide the fact that they have been here, which is how somebody
-    # applies twice to one employer.
+    # Below history - verified 2026-09-10 by reading the code order
+    # above: the `acted_a != acted_b` check runs first, so if they
+    # already applied through the closed posting that record is what
+    # they need to see: surfacing the open route instead would hide the
+    # fact that they have been here, which is how somebody applies
+    # twice to one employer.
     gone_a, gone_b = bool(a.get("delisted_at")), bool(b.get("delisted_at"))
     if gone_a != gone_b:
         return (b, a) if gone_a else (a, b)
@@ -397,10 +409,12 @@ def find(con: sqlite3.Connection,
     # --- exact, on the apply destination ------------------------------------
     by_destination: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
-        # Normalise on read as well as on write: rows collected before
-        # apply_url existed, or written by anything other than `add`, have not
-        # been through it. _destination also supplies the destination for
-        # collected ATS rows, which never carry apply_url at all - see
+        # Normalise on read as well as on write - by construction:
+        # links_mod.normalise_apply_url runs here regardless of whether the
+        # row was ever normalised at write time, covering rows collected
+        # before apply_url existed, or written by anything other than
+        # `add`. _destination also supplies the destination for collected
+        # ATS rows, which never carry apply_url at all - see
         # APPLICATION_IS_THE_POSTING.
         destination = _destination(row)
         if destination:
@@ -410,9 +424,11 @@ def find(con: sqlite3.Connection,
         if len(group) < 2:
             continue
         # Same keeper rule as the fuzzy path, applied pairwise against the
-        # current keeper so a group of three lands on one row rather than
-        # chaining A -> B -> C, which would leave B pointing at something that
-        # is itself folded away.
+        # current keeper - verified 2026-09-10 by reading the loop: `keeper`
+        # is reassigned on every iteration and every non-keeper row is then
+        # recorded against that one final `keeper`, so a group of three
+        # lands on one row rather than chaining A -> B -> C, which would
+        # leave B pointing at something that is itself folded away.
         group.sort(key=lambda r: (r.get("fetched_at") or "", r["key"]))
         keeper = group[0]
         for other in group[1:]:
@@ -428,9 +444,11 @@ def find(con: sqlite3.Connection,
 
     # --- fallback, on the description ---------------------------------------
     #
-    # Only for rows with no destination to compare. An Easy Apply posting stays
-    # on its board and has no ATS row it could collide with, so text is all
-    # there is.
+    # Only for rows with no destination to compare - by construction:
+    # the `candidates` filter below keeps only rows with no normalised
+    # apply_url. Believed, not measured: an Easy Apply posting stays on
+    # its board and has no ATS row it could collide with, so text is
+    # all there is.
     if not use_descriptions:
         return found
 

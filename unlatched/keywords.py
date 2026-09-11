@@ -37,10 +37,11 @@ _WORD_RE = re.compile(r"[a-z0-9]+")
 
 # Ordinary English function words, plus fixed recruiting-boilerplate phrases
 # that carry no skill content even though none of their individual words are
-# function words ("equal opportunity" - neither word is a stopword alone).
-# Named constants, edited from real mined output rather than guessed up
-# front, so a reader can see exactly what mining ignores and why (see
-# GENERIC_SINGLE_WORDS below for the second, position-sensitive list).
+# function words - verified 2026-09-10: "equal" and "opportunity" do not
+# appear in STOPWORDS on their own, only as part of the fixed phrases below.
+# Named constants a reader can inspect directly; believed, not measured, to
+# trace back to real mined postings rather than a guess written up front
+# (see GENERIC_SINGLE_WORDS below for the second, position-sensitive list).
 STOPWORDS: frozenset[str] = frozenset({
     "a", "an", "the", "and", "or", "but", "if", "then", "than", "so",
     "because", "of", "in", "on", "at", "by", "for", "with", "about",
@@ -73,9 +74,10 @@ STOPWORDS: frozenset[str] = frozenset({
     "minimum qualifications",
     "preferred qualifications", "required qualifications", "what you",
     "you have", "you are", "you will be", "if you", "if you are",
-    # the standard EEO disclosure paragraph - close to verbatim across most
-    # US postings, so it shows up as a run of fragments once split into
-    # sliding n-grams rather than one clean sentence.
+    # the standard EEO disclosure paragraph - believed, not measured, to be
+    # close to verbatim across most US postings, which is why it shows up as
+    # a run of fragments once split into sliding n-grams rather than one
+    # clean sentence.
     "qualified applicants", "qualified applicants will",
     "applicants will receive", "will receive consideration",
     "receive consideration", "consideration for employment",
@@ -129,16 +131,16 @@ GENERIC_SINGLE_WORDS: frozenset[str] = frozenset({
     "system", "growing", "critical", "laws", "manages", "manage",
     "specialist", "problem", "field", "regardless", "here", "frequently",
     "timely", "approach", "regular", "eeoc",
-    # Found by mining real postings across three unrelated corpora
-    # (healthcare, logistics, IT support): bare verbs, adjectives, and
-    # abstract nouns that read as skill content in isolation ("outcomes",
-    # "results", "execution") but are, on inspection, the connective
-    # tissue every posting is written in regardless of what the employer
-    # actually wants - the same role GENERIC_SINGLE_WORDS already plays,
-    # just for terms this list had not yet seen. Listed as base forms:
-    # membership is checked against ordinary inflections too (see
-    # _expand_inflections below), so adding "provide" here also blocks
-    # "provides"/"providing"/"provided" without a separate entry for each.
+    # Believed, not measured: found by mining real postings across three
+    # unrelated corpora (healthcare, logistics, IT support) - bare verbs,
+    # adjectives, and abstract nouns that read as skill content in isolation
+    # ("outcomes", "results", "execution") but are, on inspection, the
+    # connective tissue every posting is written in regardless of what the
+    # employer actually wants - the same role GENERIC_SINGLE_WORDS already
+    # plays, just for terms this list had not yet seen. Listed as base
+    # forms: verified 2026-09-10 that _expand_inflections("provide") covers
+    # "provides"/"providing"/"provided", so adding "provide" here also
+    # blocks every conjugation without a separate entry for each.
     "provide", "conduct", "create", "responsible", "available",
     "necessary", "outcome", "result", "execution", "update", "future",
     "data", "driven", "maintain", "internal", "person", "address", "goal",
@@ -153,30 +155,34 @@ GENERIC_SINGLE_WORDS: frozenset[str] = frozenset({
     "improve", "success", "thrive", "successful", "care", "hiring",
     "comfortable",
     # "plan" is already listed above and covers "plans"/"planning" through
-    # _expand_inflections - except "planned", which that suffix rule
-    # cannot reach: English doubles the final consonant before "-ed" on a
-    # short stressed verb like "plan" ("planned", not "planed"), a spelling
-    # rule the simple stem-plus-suffix expansion does not model. Listed
-    # here directly rather than teaching the shared expansion function
-    # English consonant-doubling for the sake of one verb.
+    # _expand_inflections - except "planned", which that suffix rule cannot
+    # reach: verified 2026-09-10 that _expand_inflections("plan") yields
+    # "planed" (stem "plan" plus "-ed"), not "planned" - English doubles
+    # the final consonant before "-ed" on a
+    # short stressed verb like "plan", a spelling rule the simple
+    # stem-plus-suffix expansion does not model. Listed here directly rather
+    # than teaching the shared expansion function English
+    # consonant-doubling for the sake of one verb.
     "planned",
 })
 
-# Regular English adverbs ("independently", "efficiently") pass every check
-# above - real words, not function words, longer than three characters - and
-# still are not a skill on their own, because an adverb never IS the thing
-# being asked for, only how it is done. Rather than list every adverb a
-# posting might use (the exact one-word-at-a-time trap this module is
-# trying to get out of), this is checked as a SUFFIX rule: a length-1
-# candidate ending in "ly" is dropped whenever it is long enough that the
-# "ly" is plausibly the adverb suffix rather than the whole word. The
-# threshold is 7, not the minimum that would catch "independently", because
-# "supply", "family", "comply", and "apply" are all exactly six letters and
-# are common enough as domain nouns/verbs that killing them by suffix alone
-# would cost more than it saves - every genuine adverb found across the
-# mined healthcare/logistics/IT corpora ("independently", "efficiently",
-# "effectively", "quickly", "directly", "properly") was seven letters or
-# longer.
+# Regular English adverbs ("independently", "efficiently") pass every
+# check above - real words, not function words, longer than three
+# characters - and still are not a skill on their own, because an
+# adverb never IS the thing being asked for, only how it is done.
+# Rather than list every adverb a posting might use (the exact
+# one-word-at-a-time trap this module is trying to get out of), this
+# is checked as a SUFFIX rule: a length-1 candidate ending in "ly" is
+# dropped whenever it is long enough that the "ly" is plausibly the
+# adverb suffix rather than the whole word. The threshold is 7, not
+# the minimum that would catch "independently", because verified
+# 2026-09-10: "supply", "family", and "comply" are exactly six
+# letters and "apply" is five - all short enough, and common enough
+# as domain nouns/verbs, that killing them by suffix alone would cost
+# more than it saves. Believed, not measured: every genuine adverb
+# seen in mined postings ("independently", "efficiently",
+# "effectively", "quickly", "directly", "properly") was seven letters
+# or longer.
 _ADVERB_MIN_LEN = 7
 
 
@@ -204,21 +210,23 @@ def _expand_all(bases: frozenset[str]) -> frozenset[str]:
 
 _GENERIC_SINGLE_WORDS_INFLECTED: frozenset[str] = _expand_all(GENERIC_SINGLE_WORDS)
 
-# A THIRD, narrower list, checked at the START or END of a phrase of ANY
-# length (unlike GENERIC_SINGLE_WORDS, which only ever gates a length-1
-# candidate so it never breaks a real compound like "communication skills"
-# or "customer support"). These specific words are safe to gate everywhere
-# because none of them ever heads a genuine multi-word skill phrase in the
-# mined corpora - they only ever open an imperative bullet ("Conduct
+# A THIRD, narrower list, checked at the START or END of a phrase of
+# ANY length (unlike GENERIC_SINGLE_WORDS, which only ever gates a
+# length-1 candidate so it never breaks a real compound like
+# "communication skills" or "customer support"). Believed, not
+# measured: these specific words are safe to gate everywhere because
+# none of them heads a genuine multi-word skill phrase in postings
+# seen so far - they only ever open an imperative bullet ("Conduct
 # assessments...", "Provide direct patient care...") or introduce an
-# infinitive fragment ("ability to work", "ability to travel"). That is
-# what turns "ability to work" and "conduct assessments" into fragments
-# rather than noun phrases: the noun-phrase head is missing, replaced by a
-# bare verb or a generic infinitive subject. Kept deliberately small and
-# evidence-based (not "every verb the language has") because a wrong entry
-# here breaks a phrase of every length, not just one word - "manage" is
-# left out on purpose, because "managed transportation" is a real employer
-# ask, not a fragment.
+# infinitive fragment ("ability to work", "ability to travel"). That
+# is what turns "ability to work" and "conduct assessments" into
+# fragments rather than noun phrases: the noun-phrase head is
+# missing, replaced by a bare verb or a generic infinitive subject.
+# Kept deliberately small and evidence-based rather than "every verb
+# the language has", because a wrong entry here breaks a phrase of
+# every length, not just one word - verified 2026-09-10: "manage" is
+# left out of _FRAGMENT_EDGE_WORDS on purpose, because "managed
+# transportation" is a real employer ask, not a fragment.
 _FRAGMENT_EDGE_WORDS: frozenset[str] = frozenset({
     "ensure", "provide", "conduct", "serve", "create", "responsible",
     "ability", "abilities", "capacity",
@@ -281,26 +289,30 @@ def demand_report(corpus: list[str], skills: list[str],
 _BOILERPLATE_PHRASES = tuple(p.split(" ") for p in STOPWORDS if " " in p)
 _URL_RE = re.compile(r"https?://\S+|www\.\S+")
 
-# Un-decoded HTML entities ("&nbsp;" -> "nbsp" once the "&"/";" are stripped
-# as non-alphanumeric) and contraction remnants ("we're" -> "we", "re";
-# "they've" -> "they", "ve"; "we'll" -> "we", "ll"). Both are dropped at
-# tokenization rather than added to STOPWORDS because a STOPWORDS entry
-# only gates the START/END of a phrase - a leak in the MIDDLE of a 3-gram
-# would still slip through ("re looking" out of "we're looking"), and
-# unlike a real stopword these tokens are never legitimate content in any
-# position. Single-character remnants ("s" out of "bachelor's", "t" out of
-# "don't") are already caught wherever they land by the single-character
-# rule in `_is_dropped`; this list is only for the two-letter remnants that
-# rule cannot reach.
+# Un-decoded HTML entities ("&nbsp;" -> "nbsp" once the "&"/";" are
+# stripped as non-alphanumeric) and contraction remnants ("we're" ->
+# "we", "re"; "they've" -> "they", "ve"; "we'll" -> "we", "ll") -
+# verified 2026-09-10 by calling _tokenize on each example. Both are
+# dropped at tokenization rather than added to STOPWORDS because, by
+# construction, _is_dropped only ever checks a phrase's edges or its
+# full text against STOPWORDS, never an interior token - so a leak
+# landing in the MIDDLE of a 3-gram (an "&nbsp;" between two ordinary
+# words, say) would still slip through if it were only a stopword.
+# Single-character remnants ("s" out of "bachelor's", "t" out of
+# "don't") are already caught wherever they land by the
+# single-character rule in `_is_dropped`; this list is only for the
+# two-letter remnants that rule cannot reach.
 _ENTITY_LEAKS = frozenset({"nbsp", "amp", "quot", "rsquo", "lsquo", "re", "ve", "ll"})
 
 
 def _tokenize(text: str) -> list[str]:
-    # A posting's own apply/privacy-policy link tokenizes into "https",
-    # "www", and URL path fragments, which pass every drop rule (long
-    # enough, not a function word) yet are never a skill - stripped before
-    # word-splitting rather than added to the stopword list one domain at a
-    # time.
+    # A posting's own apply/privacy-policy link tokenizes into words like
+    # "https" and the site's own domain fragments ("example", "com"),
+    # some of which pass every other drop rule (long enough, not a
+    # function word) and are never a skill - verified 2026-09-10:
+    # _is_dropped(["https"], "https") is False without the URL strip
+    # below. Stripped before word-splitting rather than added to the
+    # stopword list one domain at a time.
     without_urls = _URL_RE.sub(" ", text)
     return [t for t in _WORD_RE.findall(without_urls.lower()) if t not in _ENTITY_LEAKS]
 
@@ -325,7 +337,8 @@ def _boilerplate_mask(tokens: list[str]) -> list[bool]:
 
 
 def _is_dropped(tokens: list[str], phrase: str) -> bool:
-    """What never survives as a mined phrase.
+    """What never survives as a mined phrase, by construction: this function is the sole gate a
+    candidate phrase passes through.
 
     The first three rules were written up front; the rest came from reading
     real mined output and finding what the first three let through:

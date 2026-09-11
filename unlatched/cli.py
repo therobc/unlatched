@@ -88,6 +88,14 @@ def _load_resume_text(cfg: dict[str, Any], home: Any = None) -> str:
             # part, or unreadable - none of that is fatal to the CLI, it
             # just means there is no resume text to send.
             return ""
+    # ONLY WHAT attach CALLS READABLE. Anything else used to fall through to a
+    # lenient text read, and measured 2026-09-10 a PDF came back as 24
+    # characters of surviving bytes rather than nothing - so a file the person
+    # was told could not be read was still scored, and a skill name sitting in
+    # its internals counted as covered. The desktop's Keywords screen already
+    # refuses these; this is the same answer from the engine.
+    if path.suffix.lower() not in resumes.READABLE_SUFFIXES:
+        return ""
     try:
         return path.read_text(encoding="utf-8", errors="ignore")
     except OSError:
@@ -795,11 +803,25 @@ def cmd_screen(args: argparse.Namespace) -> int:
     rows = con.execute("SELECT * FROM jobs").fetchall()
     changed = 0
     results = []
+    # WHAT A PERSON PUT HERE STAYS QUALIFIED. A job added by hand or imported
+    # from somebody else's collector is stored qualified on purpose - see
+    # manual.add and importer.import_row - and this loop used to write the
+    # screen's verdict over it. Measured 2026-09-10 on a throwaway home: a
+    # hand-added job re-screened to qualified 0, and prune then listed it for
+    # deletion. The reasons and the score are still refreshed; only the
+    # verdict on whether it belongs stays with the person who put it here.
+    #
+    # Told apart by source: by construction every built-in collector writes
+    # its registry key as jobs.source, so any other source came in through
+    # add or import.
+    built_in = set(sources.registry())
     for row in rows:
         pseudo = SimpleNamespace(title=row["title"], location=row["location"],
                                   description=row["description"],
                                   employment_type=row["employment_type"])
         fields = screen.screen_job(pseudo, cfg, resume_text)
+        if (row["source"] or "") not in built_in:
+            fields["qualified"] = 1
         db.upsert_job(con, row["key"], fields)
         if fields["qualified"] != row["qualified"]:
             changed += 1
@@ -1459,7 +1481,12 @@ def cmd_closures(args: argparse.Namespace) -> int:
 
 
 def cmd_prune(args: argparse.Namespace) -> int:
-    """Delete postings that never matched and that nobody ever looked at.
+    """Delete prune.plan's candidates - by construction, unqualified and unmarked.
+
+    Unmarked means no status the person set or cleared, no note and no
+    attachment. A job added by hand or imported stays qualified through a
+    re-screen (test_a_rescreen_keeps_what_a_person_added), so it never becomes
+    one.
 
     REPORTS BY DEFAULT AND DELETES ONLY ON --apply. By construction this is
     the one command in the program that destroys rows, and the counts are the

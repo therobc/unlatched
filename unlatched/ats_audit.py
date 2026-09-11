@@ -14,8 +14,10 @@ or discards content:
     reads it fine.
   * date formats - a consistent, recognisable pattern is what lets a parser
     compute tenure; mixed formats produce gaps or zero-length roles.
-  * contact block - must be readable in the body text, not only in a header
-    or footer a parser may not read at all.
+  * contact block - checked in the body text, not only in a header or
+    footer a parser may not read at all. Verified by construction: body_text()
+    below reads only word/document.xml, never header1.xml or footer1.xml, and
+    the contact check searches that text alone.
   * fonts - an unusual or missing font is a common cause of a bad fallback
     render in whatever system ingests the file next.
 

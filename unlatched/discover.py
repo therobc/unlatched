@@ -59,11 +59,15 @@ MAX_DOMAINS_TRIED = 3
 # how it turns into hours.
 MAX_URL_ATTEMPTS = 16
 
-# Disjoint character classes: the "careers/jobs/apply/..." prefix class and
-# the hostname-tail class share no characters, so there is only ever one way
-# to parse a match. That is the fix for the catastrophic-backtracking defect
-# - the earlier version let both classes eat ".", so the engine could
-# split a long run at every position looking for a "/" that never came.
+# Disjoint character classes: the "careers/jobs/apply/..." prefix
+# class and the hostname-tail class share no characters - by
+# construction, the prefix class is [a-z0-9-]* while every
+# repetition of the tail class starts with a literal ".", which the
+# prefix class cannot consume - so there is only ever one way to
+# parse a match. Unverified history (see the module docstring): the
+# earlier version is said to have let both classes eat ".", so the
+# engine could split a long run at every position looking for a "/"
+# that never came.
 CAREERS_HOST_RE = re.compile(
     r"https?://((?:careers|jobs|apply|talent|workwith|joinus)[a-z0-9-]*"
     r"(?:\.[a-z0-9-]+)+)/", re.IGNORECASE)
@@ -120,21 +124,25 @@ ATS_FINGERPRINT = [
         r"https?://([\w-]+)\.(wd\d+)\.myworkdayjobs\.com/"
         r"(?:[a-z]{2}[-_][A-Za-z]{2,4}/)?"
         r"([\w-]+)", re.IGNORECASE)),
-    # Oracle Fusion Cloud Recruiting: every tenant is its own pod host
-    # ("{tenant}.fa.{pod}.oraclecloud.com", e.g. "tenant.fa.us2.oraclecloud.com"),
-    # linking to a candidate experience site keyed by an opaque site id that
-    # is NOT always "CX_<number>" - one tenant's is the bare slug "CX", and
-    # another's is a custom name of the employer's own choosing. Capturing
-    # whatever site id the company's own page actually links to is why the
-    # second group exists, rather than assuming a numbering scheme.
+    # Oracle Fusion Cloud Recruiting: believed, not measured, that every
+    # tenant is its own pod host ("{tenant}.fa.{pod}.oraclecloud.com",
+    # e.g. "tenant.fa.us2.oraclecloud.com"), linking to a candidate
+    # experience site keyed by an opaque site id that is not always
+    # "CX_<number>" - one tenant's is said to be the bare slug "CX", and
+    # another's a custom name of the employer's own choosing. By
+    # construction: the second capture group below is a generic
+    # `([\w-]+)`, not a `CX_\d+` pattern, which is why it captures
+    # whatever site id the company's own page actually links to rather
+    # than assuming a numbering scheme.
     ("oracle_hcm", re.compile(
         r"https?://([\w-]+\.fa\.[\w-]+\.oraclecloud\.com)/hcmUI/CandidateExperience/"
         r"[a-z-]+/sites/([\w-]+)", re.IGNORECASE)),
     # Same platform, weaker evidence: many careers pages reference the
     # Oracle host without the candidate-experience path that names the
-    # site. Two of three real employers checked were only reachable this
-    # way, so matching the host alone is what makes the collector usable;
-    # the site is resolved at collection time instead.
+    # site. Unverified history: two of three real employers checked are
+    # said to have been only reachable this way, so matching the host
+    # alone is what makes the collector usable; the site is resolved at
+    # collection time instead.
     ("oracle_hcm", re.compile(
         r"([\w-]+\.fa\.[\w-]+\.oraclecloud\.com)", re.IGNORECASE)),
 ]
@@ -155,19 +163,24 @@ def page_confirms_company(html: str, company: str) -> bool:
     toks = [t for t in re.findall(r"[a-z0-9]{4,}", (company or "").lower())
             if t not in GENERIC_TOKEN]
     if not toks:
-        # A name whose only distinctive part is an initialism and whose other
-        # words are all generic - "NWS Financial Services", "FBR Logistics",
-        # "TSP Supply Chain Solutions". Every 4+ token is generic, so the
-        # rule above finds nothing, and squashing the WHOLE name looks for
-        # "nwsfinancialservices", a string that appears on no page anywhere.
-        # One such employer's own careers page - 157KB, carrying its initials
-        # throughout - was rejected exactly this way and recorded as dead.
+        # A name whose only distinctive part is an initialism and whose
+        # other words are all generic - "NWS Financial Services", "FBR
+        # Logistics", "TSP Systems Group" - verified 2026-09-10: every 4+
+        # character token in all three is either under four characters or
+        # already in GENERIC_TOKEN, so the rule above finds nothing, and
+        # squashing the WHOLE name looks for "nwsfinancialservices", a
+        # string unlikely to appear on any real page. Unverified history:
+        # one such employer's own careers page - said to be 157KB, carrying
+        # its initials throughout - was rejected exactly this way and
+        # recorded as dead.
         #
-        # Three characters, as a whole word, matched individually. Two would
-        # be too loose to be evidence of anything ("at" appears on every
-        # page ever written); AT&T is still reached by the squashed form
-        # below, which is what already carries the ordinary three-letter
-        # initialisms.
+        # Three characters, as a whole word, matched individually. Two
+        # would be too loose to be evidence of anything ("at" appears on
+        # every page ever written); verified 2026-09-10: AT&T squashes to
+        # "att" and is reached by the whole-name branch below, since its
+        # tokenized words "at"/"t" are both under three characters and the
+        # per-word loop never sees them - the same branch that already
+        # carries the ordinary three-letter initialisms.
         words = re.findall(r"[a-z0-9]+", (company or "").lower())
         for short in (w for w in words if len(w) == 3 and w not in GENERIC_TOKEN):
             if re.search(r"\b" + re.escape(short) + r"\b", low):
@@ -276,9 +289,10 @@ CAREERS_LINK_HINT = re.compile(
     r"join[- _]?(?:us|our|the)|work[- _]?(?:with|for|at)[- _]?us|opportunit",
     re.IGNORECASE)
 
-# How many of a page's own careers links to follow. A large site can link
-# dozens of loosely-matching URLs; the real careers entry point is
-# essentially always among the first few.
+# How many of a page's own careers links to follow. A large site
+# can link dozens of loosely-matching URLs; believed, not measured,
+# that the real careers entry point is essentially always among the
+# first few.
 MAX_CAREERS_LINK_HOPS = 4
 
 # Scanned per anchor. Long enough for an href plus its label, short enough
@@ -421,8 +435,11 @@ def resolve(company: str, *, fetcher: FetchFn = default_fetch) -> dict[str, Any]
         res["note"] = "no domain resolved"
         return res
 
-    # Grouped by domain, so the ceiling below spends its budget finishing
-    # the most likely domain rather than sampling the front of each.
+    # Grouped by domain - verified 2026-09-10 by reading the loop below:
+    # the inner loop exhausts one domain's URL list (subject to the
+    # shared `attempts` ceiling) before the outer loop moves to the
+    # next domain, so the ceiling spends its budget finishing the most
+    # likely domain rather than sampling the front of each.
     by_domain: list[tuple[str, list[str]]] = []
     for d in verified:
         urls = [f"https://{h.format(d=d)}" for h in CAREERS_HOSTS]

@@ -160,9 +160,13 @@ QUIET_RUNS = 3
 # once, and that is precisely when this must not fire twenty times).
 MAX_HEALS_PER_RUN = 3
 
-# Where the per-company counter lives. `meta` already carries per-company run
-# state in this shape - see the workday/oracle backfill offset - so this needs
-# no column and therefore no matching migration in the desktop's db.rs.
+# Where the per-company counter lives. `meta` already carries per-company
+# run state in this shape - see the workday/oracle backfill offset, which
+# uses the same `db.get_meta`/`set_meta` calls under a different key
+# prefix. Verified by construction: desktop/src/db.rs's `meta` table is a
+# plain key/value table (key TEXT PRIMARY KEY, value TEXT) already used
+# for several unrelated keys, so a new key prefix here needs no column
+# and therefore no matching migration in the desktop's db.rs.
 def quiet_key(company_id: int) -> str:
     return f"quiet:{company_id}"
 

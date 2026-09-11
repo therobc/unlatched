@@ -1,4 +1,5 @@
-"""Hand back what this app knows is closed, so the sender can stop asking.
+"""Hand back what this app knows is closed - by construction: pending() below reads jobs.delisted_at
+and write() below files it, so the sender can stop asking.
 
 THE FLOW HAS ONLY EVER RUN ONE WAY. A collector hands over its rows and its
 closures; nothing goes back. So a posting the PERSON discovers is closed - they
@@ -34,9 +35,12 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
     import sqlite3
     from pathlib import Path
 
-# The shape the file declares. The incoming handoff carries no version and its
-# checker says so every time - "a contract without a version cannot change" -
-# so this side does not repeat that mistake.
+# The shape the file declares - by construction, CSV handoffs have
+# no field for a version at all (see importer.py). Verified
+# 2026-09-10: importer.py's own checker appends "a contract
+# without a version cannot change" whenever a JSON handoff's
+# declared version does not match CONTRACT_VERSION - so this side
+# does not repeat that mistake.
 VERSION = 1
 
 
@@ -57,9 +61,15 @@ def pending(con: sqlite3.Connection,
     theirs = _hosts(con, collector)
     rows = [r for r in rows
             if r["source"] == collector.id or _host(r["url"]) in theirs]
-    # ONE ENTRY PER POSTING. A job added by hand and the same job handed over
-    # by the collector are two rows here with two keys, and both spell back to
-    # the same key in the sender's namespace. The URL is what identifies the
+    # ONE ENTRY PER POSTING - by construction: the loop right below
+    # keeps only the first row per URL. A job added by hand and the
+    # same job handed over by the collector can be two rows here with
+    # two keys. Believed, not measured: _their_key is meant to make
+    # both spell back to the same key in the sender's namespace, but
+    # it only rewrites a key whose prefix matches this collector's id
+    # or a legacy alias of it (see importer.LEGACY_PREFIXES) - a
+    # manual-sourced row that wins the dedup for a non-legacy collector
+    # is handed back unchanged. The URL is what identifies the
     # posting, so it is what deduplicates.
     seen: set[str] = set()
     unique = []
@@ -115,7 +125,8 @@ def _hosts(con: sqlite3.Connection,
 
 
 def _stamp(value: str | None) -> str:
-    """A closure time the reader cannot misread.
+    """A closure time the reader cannot misread - by construction: this always attaches an explicit
+    UTC offset when one is missing, per the reasoning below.
 
     delisted_at is stored as UTC with NO OFFSET on it. The program reading this
     keeps its own timestamps in naive LOCAL time, so handing over "01:39" bare

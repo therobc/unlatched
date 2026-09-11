@@ -34,8 +34,10 @@ import re
 
 from unlatched.location import ABBREVS, STATES, split_places
 
-# Countries and regions, spelled out. Matched as whole words so "India" does
-# not fire inside "Indiana" and "Chile" does not fire inside "Chilean".
+# Countries and regions, spelled out. Matched as whole words -
+# verified 2026-09-10: COUNTRY.search finds "india" in "Remote -
+# India" but not inside "Indianapolis, Indiana", and not "chile"
+# inside "Chilean sea bass".
 _COUNTRY_WORDS = (
     r"canada|mexico|brazil|argentina|colombia|chile|peru|"
     r"united kingdom|england|scotland|wales|northern ireland|ireland|"
@@ -64,8 +66,11 @@ COUNTRY_CODE = re.compile(
 # Multi-country regions. A role posted to "Remote - EMEA" is not a US role.
 REGION = re.compile(r"\b(?:EMEA|APAC|LATAM|ANZ|MENA|DACH|BENELUX)\b")
 
-# Foreign cities common in tech postings. Only consulted when NO US state
-# appears in the same place string, because several have US namesakes.
+# Foreign cities common in tech postings - by construction:
+# foreign_evidence returns "" before FOREIGN_CITY is ever checked
+# whenever a US marker or US state already matched, so this list is
+# only consulted when no US state appears in the same place string,
+# because several have US namesakes (London, KY among them).
 _FOREIGN_CITY_WORDS = (
     r"toronto|vancouver|montreal|ottawa|calgary|"
     r"london|manchester|edinburgh|dublin|belfast|"
@@ -94,11 +99,15 @@ def _names_a_us_state(place: str) -> bool:
     lowered = place.lower()
     if any(re.search(rf"\b{re.escape(name)}\b", lowered) for name in STATES):
         return True
-    # ABBREVS holds lowercase values while a location writes them uppercase,
-    # so comparing them as stored matched nothing - "London, KY" read as
-    # foreign. Compared as UPPERCASE rather than case-insensitively on
-    # purpose: bare "in" and "or" are ordinary English words, while "IN" and
-    # "OR" in a place string are Indiana and Oregon.
+    # ABBREVS holds lowercase values while a location writes them
+    # uppercase. Unverified history: comparing them as stored is said
+    # to have once matched nothing - "London, KY" read as foreign.
+    # Verified 2026-09-10: compared as UPPERCASE rather than
+    # case-insensitively on purpose - matching "IN" with no IGNORECASE
+    # flag finds "Springfield, IN" but not the ordinary word "in"
+    # inside "worked in Springfield" - because bare "in" and "or" are
+    # ordinary English words, while "IN" and "OR" in a place string are
+    # Indiana and Oregon.
     return any(re.search(rf"\b{abbrev.upper()}\b", place) for abbrev in ABBREVS)
 
 
@@ -138,10 +147,14 @@ def is_foreign(location: str, title: str = "") -> tuple[bool, str]:
     if places and all(foreign_places):
         return True, foreign_places[0]
 
-    # The location did not settle it. A bare "(Remote)" or "Remote" says
-    # nothing about jurisdiction, so the title gets a look - "Support
-    # Engineer, Singapore" routinely carries exactly that location. Skipped
-    # when the location explicitly said US, which outranks a title.
+    # The location did not settle it. A bare "(Remote)" or "Remote"
+    # says nothing about jurisdiction, so the title gets a look.
+    # Believed, not measured: "Support Engineer, Singapore" is used as
+    # a routine example of a posting that carries exactly that location
+    # (see the module docstring). By construction: the check right
+    # below skips the title look entirely when a place already matched
+    # a US marker or US state, so an explicit US location outranks a
+    # title.
     if not any(US_MARKER.search(place) or _names_a_us_state(place) for place in places):
         from_title = foreign_evidence(title or "")
         if from_title:

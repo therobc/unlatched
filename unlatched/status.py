@@ -56,10 +56,10 @@ def now_iso() -> str:
 # The desktop half owns the labels, colours and dependency rules because it is
 # the half that draws them. What the engine needs is narrower: which statuses
 # mean a person has closed the loop on a job, and which prove an application
-# was made. Both are hand-written here and both are checked against status.rs
-# by tests/test_status_vocabulary.py - two SQL lists that disagreed across the
-# two halves is exactly the failure that test exists to catch, and this file
-# and that one are edited by different hands weeks apart.
+# was made. Both are hand-written here. Verified 2026-09-10:
+# tests/test_status_vocabulary.py holds FLOW, SETTLED and PROVES_APPLIED
+# against status.rs - two SQL lists that disagreed across the two halves is
+# exactly the failure that test exists to catch.
 FLOW = ("applied", "interviewed", "offer", "accepted_offer", "hired",
         "offer_withdrawn", "declined_offer", "no_offer", "rejection_email",
         "no_response", "pass")
@@ -70,19 +70,23 @@ SETTLED = ("hired", "offer_withdrawn", "declined_offer", "no_offer",
 
 # What the app writes onto a taken-down posting nobody ever judged.
 #
-# DELIBERATELY NOT IN `FLOW`, which is what keeps it out of every dropdown: it
-# is a word the app writes, never one a person picks, so it cannot compete with
-# the statuses they set. `delisted_at` remains the fact that the employer
-# pulled the advert - this is only the status filled in where the person had
-# recorded nothing, so those rows stop reading "not set" for ever.
+# DELIBERATELY NOT IN `FLOW`, which is what keeps it out of every dropdown -
+# by construction, the desktop builds its dropdowns from FLOW and "closed" is
+# in neither half's FLOW. It is a word the app writes, never one a person
+# picks, so it cannot compete with the statuses they set. `delisted_at`
+# remains the fact that the employer pulled the advert - this is only the
+# status filled in where the person had recorded nothing, so those rows stop
+# reading "not set" for ever.
 #
-# Written by db.close_untouched_delisted here and by db.rs::mark_taken_down in
-# the desktop. Both halves are checked against each other by
-# tests/test_status_vocabulary.py.
+# Written by db.close_untouched_delisted here and by db.rs::mark_taken_down
+# in the desktop, which uses status::CLOSED. The two spellings are held
+# together by test_both_halves_write_the_same_closed_status, added
+# 2026-09-10 - verified that day, nothing had checked them before.
 CLOSED = "closed"
 
 # Every status that proves an application was actually sent. Read from the LOG
-# rather than the current status, so a job since marked No Offer still counts:
+# rather than the current status - verified 2026-09-10, db.applied_among
+# queries job_status_log - so a job since marked No Offer still counts:
 # somebody clearing out rejections is removing exactly the rows worth warning
 # about.
 # Rejection Email and No Response are both here: each of them is an
@@ -92,8 +96,9 @@ PROVES_APPLIED = ("applied", "interviewed", "offer", "accepted_offer", "hired",
                   "offer_withdrawn", "declined_offer", "no_offer",
                   "rejection_email", "no_response")
 
-# Statuses renamed since they were first written, applied on open by
-# db._migrate_status_tables. Mirrors status::RENAMES in the desktop.
+# Statuses renamed since they were first written. Verified 2026-09-10:
+# db._migrate_status_tables applies them on open to both job_status and
+# job_status_log. Mirrors status::RENAMES in the desktop.
 #
 # "Denied" was the app's word for it; "No Offer" replaced it - the same event,
 # said without the verdict on the person. `closed` is deliberately NOT in here:
@@ -168,9 +173,10 @@ def clear_status(con: sqlite3.Connection, key: str, at: str | None = None) -> No
 
 
 def get_status(con: sqlite3.Connection, key: str) -> sqlite3.Row | None:
-    # sqlite3.Cursor.fetchone() is typed Any in the stdlib stubs; the row
-    # factory is set to sqlite3.Row for every connection this package opens
-    # (db.py), so the cast states a fact the stubs cannot express.
+    # sqlite3.Cursor.fetchone() is typed Any in the stdlib stubs; the cast states
+    # a fact they cannot express. Verified 2026-09-10: db.connect and
+    # db.connect_at both set row_factory to sqlite3.Row, and the only other
+    # connection the package opens is a backup destination nothing reads from.
     row = con.execute("SELECT * FROM job_status WHERE key = ?", (key,)).fetchone()
     return cast("sqlite3.Row | None", row)
 
@@ -205,9 +211,9 @@ def export_status(con: sqlite3.Connection) -> dict[str, Any]:
         key = row["key"]
         entry: dict[str, Any] = {
             "key": key, "from": prev.get(key), "to": row["status"], "at": row["at"]}
-        # Written only when present, so an ordinary transition stays the three
-        # fields it always was and an older reader is unaffected by fields it
-        # has never seen.
+        # Written only when present, so an ordinary transition stays key, from, to
+        # and at - by construction, the loop below adds a field only when it has a
+        # value - and an older reader is unaffected by fields it has never seen.
         for name in ("note", "pay", "offer_date"):
             if row[name]:
                 entry[name] = row[name]
@@ -313,9 +319,10 @@ def import_status(con: sqlite3.Connection, data: dict[str, Any]) -> dict[str, An
         at = entry.get("at") or entry.get("updated") or now
         existing = _log_row_id(con, key, new_status, at)
         if existing is not None:
-            # Already recorded. COALESCE the three optional fields so a
-            # re-export carrying detail this database lacks still lands, while
-            # one carrying less cannot blank what is here.
+            # Already recorded. COALESCE the three optional fields: by definition it
+            # keeps the stored value when there is one, so a re-export carrying detail
+            # this database lacks still lands, while one carrying less cannot blank
+            # what is here.
             con.execute(
                 "UPDATE job_status_log SET note = COALESCE(note, ?), "
                 "pay = COALESCE(pay, ?), offer_date = COALESCE(offer_date, ?) "
@@ -356,10 +363,11 @@ def import_status(con: sqlite3.Connection, data: dict[str, Any]) -> dict[str, An
         if not key or not note:
             continue
         at = entry.get("at") or now
-        # A note is its own text at its own moment, so all three identify it.
-        # The same words written twice about one job on different days are two
-        # notes and both are kept; the same words at the same moment are the
-        # same note arriving twice.
+        # A note is its own text at its own moment, so all three identify it -
+        # by construction, the lookup below matches key, note and at together. The
+        # same words written twice about one job on different days are two notes and
+        # both are kept; the same words at the same moment are the same note arriving
+        # twice.
         already = con.execute(
             "SELECT 1 FROM job_note WHERE key = ? AND note = ? AND at = ?",
             (key, note, at)).fetchone()

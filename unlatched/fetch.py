@@ -21,6 +21,7 @@ test suite ever touches a live socket.
 from __future__ import annotations
 
 import gzip
+import http.client
 import io
 import random
 import time
@@ -253,10 +254,8 @@ def employer_expired() -> bool:
 
 
 def seconds_left() -> float | None:
-    """Time remaining, for the caller that wants to say so.
-
-    None means no ceiling, which by construction is what the two lines
-    below return when no deadline has been set.
+    """Time remaining, for the caller that wants to say so - by construction,
+    None means no ceiling, exactly when `_run_deadline is None` below.
     """
     if _run_deadline is None:
         return None
@@ -327,11 +326,13 @@ def _robots_allows(url: str, timeout: float) -> bool:
             with urllib.request.urlopen(req, timeout=timeout) as r:  # noqa: S310
                 raw = r.read(MAX_FETCH_BYTES).decode("utf-8", "replace")
             rp = robots_mod.parse(raw, USER_AGENT)
-        except (OSError, ValueError):
+        except (OSError, ValueError, http.client.HTTPException):
             # No reachable robots.txt is not a block - most career sites do
             # not publish one at all. OSError covers DNS/connection/timeout
             # failures (URLError, HTTPError and TimeoutError all subclass
-            # it); ValueError covers a malformed robots_url.
+            # it); ValueError covers a malformed robots_url; HTTPException
+            # covers a response cut off mid-body, which is neither - see the
+            # same clause in fetch().
             rp = None
         _robots_cache[host] = rp
     if rp is None:
@@ -455,10 +456,15 @@ def fetch(url: str, *, timeout: float = DEFAULT_TIMEOUT_S,
         if e.code in THROTTLE_STATUSES:
             _note_throttled(host, e.code, e.headers.get("Retry-After"))
         return e.code, "", url
-    except (OSError, ValueError):
+    except (OSError, ValueError, http.client.HTTPException):
         # OSError covers URLError/ConnectionError/TimeoutError/SSLError (all
         # subclass it) for DNS failure, refused connection or a stalled
         # socket; ValueError covers a malformed url reaching Request().
+        # HTTPException covers a server that closes mid-body (IncompleteRead)
+        # or answers with a malformed status line - measured 2026-09-10, not
+        # an OSError, so before this it escaped every caller that fetches
+        # bare: a hand-add crashed with a traceback, and a re-check stopped
+        # before its commit.
         return 0, "", url
 
 

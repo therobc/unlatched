@@ -30,10 +30,12 @@ class AgentNotConfiguredError(RuntimeError):
     pass
 
 
-# This module does not go through fetch() - it posts to an endpoint the user
-# configured, not to a job board - so it has to bring fetch()'s size cap with
-# it. Without one, r.read() is unbounded and a misbehaving endpoint (or a
-# mistyped address that lands on something enormous) exhausts memory.
+# This module does not go through fetch() - it posts to an endpoint the
+# user configured, not to a job board - so it has to bring fetch()'s
+# size cap with it. Verified by construction: MAX_RESPONSE_BYTES below
+# is the same 2,000,000 as fetch.MAX_FETCH_BYTES. Without one, r.read()
+# is unbounded and a misbehaving endpoint (or a mistyped address that
+# lands on something enormous) exhausts memory.
 MAX_RESPONSE_BYTES = 2_000_000
 
 

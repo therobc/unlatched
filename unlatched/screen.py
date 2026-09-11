@@ -194,16 +194,14 @@ def salary_is_credible(description: str, matched_display: str) -> bool:
 
 
 def term_in_title(term: str, title: str) -> bool:
-    """Whole-word (or whole-phrase) match, never a bare substring.
+    """Whole-word (or whole-phrase) match, never a bare substring - by construction, the regex below
+    wraps the term in word boundaries.
 
-    The regex below wraps the term in word boundaries, so that holds by
-    construction rather than by convention.
-
-    A substring test lets a short term hide inside an unrelated word: the
-    term "NOC" matched "Nocturnist" and qualified a physician posting for
-    an IT support search. Word boundaries are what every one of these
-    lists means, so every list uses them - include, exclude and seniority
-    alike, rather than only the last.
+    A plain substring test - measured 2026-09-10 - lets a short term hide
+    inside an unrelated word - "NOC" matches inside "Nocturnist" - which
+    would qualify a physician posting for an IT support search. Word
+    boundaries are what every one of these lists means, so every list uses
+    them - include, exclude and seniority alike, rather than only the last.
     """
     return re.search(r"\b" + re.escape(term.strip()) + r"\b", title,
                       re.IGNORECASE) is not None

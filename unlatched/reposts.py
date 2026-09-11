@@ -177,9 +177,11 @@ class Repost(NamedTuple):
         longest = max(real)
         again = (f", and {len(real)} times in all" if len(real) > 1 else "")
         if longest > NEW_ENTRY_DAYS:
-            # The seat came back, but this row is not the one that brought it
-            # back - so it is stated as history rather than as a claim about
-            # what happened to this posting.
+            # The seat came back, but this row is not the one that brought it back.
+            # Verified by construction: this branch runs only when `key is None or
+            # not self.follows(key)` above - the row that IS the new entry after a
+            # real gap takes the earlier branch instead - so it is stated as
+            # history rather than as a claim about what happened to this posting.
             return (f"This seat was advertised again {_span(longest)} later"
                     f"{again} - see the newer entry.")
         return (f"Advertised again after {_span(longest)}{again} - the earlier "
@@ -210,8 +212,11 @@ def seat_key(company: str, title: str, location: str) -> str:
     """
     place = (location or "").strip()
     if VAGUE_PLACE.match(place):
-        # Kept in the key so the seat still groups its own duplicates, but
-        # flagged so repost counting can refuse to trust it.
+        # Kept in the key so the seat still groups its own duplicates -
+        # verified by construction: `_normalise("?multi")` collapses to plain
+        # "multi", so the key still ends in `|multi` - but flagged so repost
+        # counting can refuse to trust it: is_vague() below checks for exactly
+        # that suffix.
         place = "?multi"
     return f"{_normalise(company)}|{_normalise(title)}|{_normalise(place) or '?'}"
 

@@ -1,4 +1,4 @@
-"""refresh.py - Is today a day worth collecting, and what is new since last time?
+"""refresh.py - Is today a day worth collecting, and what is new after the last one?
 
 Anchored on measured behaviour rather than a timer. Postings arrive in daily
 weekday batches: across 8,331 dated postings in our own corpus, 69% landed
@@ -160,15 +160,20 @@ def due(last: str | None, now: datetime, *,
         first = min(time(h, m) for h, m in today_anchors)
         # The morning-batch explanation belongs to the WEEKDAY anchor it was
         # chosen for. On a weekend, or against a time somebody has set for
-        # their own reasons, it is simply not the reason - and a message that
-        # explains a decision with something untrue is worse than one that
-        # just states the time.
+        # their own reasons, it is simply not the reason - verified
+        # 2026-09-10: the `because` guard right below only adds that text
+        # when not weekend and the first anchor is at or before noon, so a
+        # message that explains a decision with something untrue is worse
+        # than one that just states the time.
         because = ("" if weekend or first > time(12, 0)
                    else " - most postings go live between 8 and 10:30 a.m.")
         return False, f"before {first.strftime('%H:%M')}{because}"
-    # Nothing ever collected still waits for the anchor: the FIRST collection
-    # comes from pressing Search, which is deliberate, so there is no backlog
-    # here to be late for.
+    # Nothing ever collected still waits for the anchor - by
+    # construction, `last_dt is None` below skips the anchor check
+    # entirely and returns True unconditionally. Believed, not measured:
+    # the FIRST collection comes from pressing Search elsewhere in the
+    # app, which is deliberate (see the module docstring's 2026-08-05
+    # split), so there is no backlog here to be late for.
     if last_dt is None:
         return True, "nothing collected yet"
     if last_dt.time() >= anchor:
@@ -202,23 +207,25 @@ def next_anchor(now: datetime, *,
     after the anchor satisfies it, so waking is not the same as collecting.
     """
     day = now.date()
-    # A fortnight is far more than enough - the only way to skip days is
-    # weekdays_only, which can never skip more than two in a row - and it
-    # terminates rather than looping forever on a config that somehow has no
-    # usable anchor at all.
+    # A fortnight is far more than enough - by definition, the only way
+    # to skip days is weekdays_only, and a calendar week has at most two
+    # consecutive weekend days, so it can never skip more than two in a
+    # row - and it terminates rather than looping forever on a config
+    # that somehow has no usable anchor at all.
     for offset in range(15):
         when = date.fromordinal(day.toordinal() + offset)
         weekend = when.weekday() not in WEEKDAYS
         if weekend and weekdays_only:
             continue
         for hour, minute in sorted(weekend_anchors if weekend else anchors):
-            # CARRIES `now`'s TZINFO, whatever it is. Callers pass both shapes:
-            # the desktop hands us a naive local clock, the test suite uses
-            # zone-aware datetimes so a run in another timezone still means
-            # what it says. datetime.combine produces a NAIVE moment, and
-            # comparing naive against aware raises TypeError rather than
-            # returning a wrong answer - so this would have failed loudly the
-            # first time it met the aware caller.
+            # CARRIES `now`'s TZINFO, whatever it is - verified 2026-09-10:
+            # datetime.combine with no tzinfo argument produces a naive moment,
+            # and comparing it against an aware datetime raises TypeError rather
+            # than returning a wrong answer. Callers pass both shapes: cli.py
+            # hands this a naive local clock (its own `datetime.now()` call),
+            # while the test suite uses zone-aware datetimes so a run in
+            # another timezone still means what it says - so this would have
+            # failed loudly the first time it met the aware caller.
             moment = datetime.combine(when, time(hour, minute), tzinfo=now.tzinfo)
             if moment > now:
                 return moment
@@ -231,7 +238,9 @@ def next_anchor(now: datetime, *,
 
 
 def seconds_until_next_anchor(now: datetime, **kwargs: Any) -> float:
-    """How long to sleep, as seconds. Never negative, never zero."""
+    """How long to sleep, as seconds - by construction, max(1.0, ...) below means never negative,
+    never zero.
+    """
     return max(1.0, (next_anchor(now, **kwargs) - now).total_seconds())
 
 
@@ -249,12 +258,13 @@ def _moment_of(stamp: str) -> datetime | None:
             return datetime.combine(date.fromisoformat(text[:10]), time(0, 0))
         except ValueError:
             return None
-    # CONVERTED to local, not truncated. jobs.fetched_at is written in UTC
-    # with an offset, while the anchors are wall-clock times on this
-    # person's own day - so dropping the offset made a collection that ran
-    # at 12:50 in a UTC-4 zone read as 16:50, which then satisfied the 16:30
-    # afternoon slot that had not yet happened. Four hours of the day's
-    # postings, missed, every day, and silently.
+    # CONVERTED to local, not truncated. jobs.fetched_at is written in
+    # UTC with an offset, while the anchors are wall-clock times on this
+    # person's own day. Unverified history: dropping the offset instead
+    # of converting is believed to have once made a collection that ran
+    # at 12:50 in a UTC-4 zone read as 16:50, which then satisfied the
+    # 16:30 afternoon slot that had not yet happened - hours of the
+    # day's postings missed, silently.
     return parsed.astimezone().replace(tzinfo=None) if parsed.tzinfo else parsed
 
 
@@ -304,10 +314,13 @@ def settings(cfg: dict[str, Any]) -> tuple[bool, tuple[tuple[int, int], ...], bo
     block = cfg.get("refresh") or {}
     daily = block.get("daily")
     enabled = True if daily is None else bool(daily)
-    # Weekdays-only defaults OFF, so the weekend catch-up run happens unless
-    # somebody deliberately turns it off. A config written before the weekend
-    # slot existed therefore GAINS it, which is the behaviour it would have
-    # been given had it been written today.
+    # Weekdays-only defaults OFF - by construction: `weekdays_only`
+    # below is False whenever the config key is absent, and due() only
+    # skips the weekend anchor when weekdays_only is True - so the
+    # weekend catch-up run happens unless somebody deliberately turns it
+    # off. A config written before the weekend slot existed therefore
+    # gains it, the behaviour it would have been given had it been
+    # written today.
     weekdays = block.get("weekdays_only")
     return enabled, _anchors(block.get("at")), False if weekdays is None else bool(weekdays)
 

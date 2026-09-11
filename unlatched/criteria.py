@@ -61,7 +61,7 @@ def write(cfg: dict[str, Any], path: Path) -> dict[str, Any]:
 
 
 class CriteriaError(ValueError):
-    """A file that cannot be read as criteria, named so the caller can say why."""
+    """Unreadable criteria file; by construction each raise in read() names why."""
 
 
 def read(path: Path) -> dict[str, Any]:

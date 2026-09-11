@@ -29,35 +29,45 @@ if TYPE_CHECKING:
 
 # What a collector entry may say, and what it means if it says nothing.
 #
-# EVERY FIELD EXCEPT id AND path HAS A DEFAULT, so the smallest usable entry is
-# two lines. A contract that demands seven fields is one nobody implements.
+# EVERY FIELD EXCEPT id AND path HAS A DEFAULT - by construction: DEFAULTS
+# below covers every Collector field except those two - so the smallest
+# usable entry is two lines. A contract that demands seven fields is one
+# nobody implements.
 DEFAULTS: dict[str, Any] = {
     "label": "",
     "enabled": True,
     # WHEN TO LOOK, not when the sender runs. Empty means "every time the app
-    # refreshes", which is what the single pre-list handoff did and what the
-    # live profile depends on - a default that quietly stopped a daily pull
-    # would not be visible until jobs went missing.
+    # refreshes" - verified 2026-09-10: migrated_from_ingest_path leaves
+    # schedule at its dataclass default of (), and scheduled_now treats an
+    # empty schedule as always due, so the single pre-list handoff runs that
+    # way. Believed, not measured: a live profile's daily pull depends on
+    # that default - a default that quietly stopped it would not be visible
+    # until jobs went missing.
     #
     # Times narrow that: ["13:00"] looks once, after 13:00, on days the app is
-    # running. Looking is a stat() and an unchanged file is refused by
-    # fingerprint, so this exists to give a person control over WHEN a
-    # collector's rows appear, not to save work.
+    # running. Verified 2026-09-10 in cli.py: looking is a stat() call, and an
+    # unchanged file is refused by comparing collector.marker against a
+    # mtime+size fingerprint, so this exists to give a person control over
+    # WHEN a collector's rows appear, not to save work.
     "schedule": [],
     # DEFAULTS TO FALSE, and this is the safe direction. A collector saying
     # "you may re-fetch my rows" is asking this app to make requests to a site
     # somebody else already read - and for the sites this feature exists for,
     # that is the thing we promised not to do.
     "we_may_refetch": False,
-    # Whether the collector reports its own closures. False by default because
-    # assuming a collector sends closures it does not send would leave dead
-    # postings on the board looking live.
+    # Whether the collector reports its own closures. False by default -
+    # believed, not measured: this flag is documentation for the person, not
+    # an enforced code path (nothing in this app reads it to gate closure
+    # handling), and assuming a collector sends closures it does not send
+    # would leave dead postings on the board looking live.
     "pushes_closures": False,
 }
 
 
 class BadCollectorError(ValueError):
-    """A collector entry that cannot be used, named so the caller can say which."""
+    """A collector entry that cannot be used - by construction, every raise site below names the
+    offending collector's id or index.
+    """
 
 
 @dataclass(frozen=True)
@@ -71,9 +81,11 @@ class Collector:
     schedule: tuple[str, ...] = ()
     we_may_refetch: bool = False
     pushes_closures: bool = False
-    # True for the single unnamed handoff that predates this list. It keeps the
-    # old key behaviour and the old marker, so upgrading does not re-import a
-    # live board's file - see `migrated_from_ingest_path`.
+    # True for the single unnamed handoff that predates this list. It keeps
+    # the old key behaviour and the old marker - verified 2026-09-10: `marker`
+    # returns the bare "ingest_last" key when legacy is True, the same key a
+    # pre-list profile already has fingerprint history under, so upgrading
+    # does not re-import a live board's file - see `migrated_from_ingest_path`.
     legacy: bool = False
 
     @property
@@ -232,20 +244,22 @@ def configured(cfg: dict[str, Any]) -> tuple[list[Collector], list[str]]:
     """
     raw = cfg.get("collectors")
     # A `collectors` key that is not a list is a MISTAKE, not an absence, and
-    # the two were collapsed here. Writing an object instead of a list - the
-    # obvious slip, since every other block in config.json IS an object -
-    # discarded the whole thing and fell back to the legacy path without a
-    # word, so the collectors simply never ran and nothing anywhere said why.
-    # That is the shape of failure this file already refuses elsewhere: a
-    # typo'd schedule is quoted back rather than dropped, for exactly the same
-    # reason.
+    # the two are kept separate here. Unverified history: writing an object
+    # instead of a list - the obvious slip, since every other block in
+    # config.json IS an object - is believed to have once discarded the
+    # whole thing and fallen back to the legacy path without a word, so the
+    # collectors simply never ran and nothing anywhere said why. This
+    # function instead reports the mistake as a problem line: the same shape
+    # of failure this file already refuses elsewhere, where a typo'd
+    # schedule is quoted back rather than dropped.
     if raw is not None and not isinstance(raw, list):
         return migrated_from_ingest_path(cfg), [
             f"collectors: expected a list of entries, found "
             f"{type(raw).__name__} - the whole list was ignored"]
     if not raw:
-        # Absent or empty. Nothing was configured, so there is nothing to
-        # report; the legacy handoff still applies if one is set.
+        # Absent or empty. Nothing was configured - by construction, this
+        # branch returns an empty problems list right below - so there is
+        # nothing to report; the legacy handoff still applies if one is set.
         return migrated_from_ingest_path(cfg), []
 
     found: list[Collector] = []
@@ -258,9 +272,11 @@ def configured(cfg: dict[str, Any]) -> tuple[list[Collector], list[str]]:
             problems.append(str(e))
             continue
         if entry.id in seen:
-            # TWO ENTRIES CANNOT SHARE A NAMESPACE. Allowing it would put two
-            # different files' rows in one id, which is the collision the
-            # namespace exists to prevent, arriving through the front door.
+            # TWO ENTRIES CANNOT SHARE A NAMESPACE. By construction (see the module
+            # docstring): a collector's id becomes jobs.source and the key prefix on
+            # every row it writes, so allowing two entries with the same id would
+            # put two different files' rows under one id, which is the collision
+            # the namespace exists to prevent, arriving through the front door.
             problems.append(f"collector {entry.id!r}: listed more than once, "
                             "so the second entry is ignored")
             continue

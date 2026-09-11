@@ -35,9 +35,11 @@ if TYPE_CHECKING:
     from pathlib import Path
 
 # Every column anywhere in the schema that holds a job key. A table missing
-# from this list is a table whose rows would be orphaned by a rename, so it is
-# written out in full rather than discovered - and the test asserts this list
-# matches what the database actually has.
+# from this list is a table whose rows would be orphaned by a rename, so it
+# is written out in full rather than discovered. Verified by reading
+# tests/test_rekey.py: test_no_table_holding_a_job_key_is_missing_from_the_list
+# asserts this list against `PRAGMA table_info` for every table in the
+# database.
 KEY_COLUMNS: tuple[tuple[str, str], ...] = (
     ("jobs", "key"),
     # The posting this one was folded behind. A key that moved without this
@@ -61,7 +63,8 @@ def _table_exists(con: sqlite3.Connection, table: str) -> bool:
 
 
 def plan(con: sqlite3.Connection) -> tuple[list[tuple[str, str]], list[dict[str, Any]]]:
-    """What would change, and what cannot. Reads only.
+    """What would change, and what cannot - verified by construction: every
+    con.execute call below is a SELECT, never a write.
 
     Returns (moves, conflicts) where moves is [(old_key, new_key)].
     """

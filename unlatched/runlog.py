@@ -50,17 +50,21 @@ class RunLog:
         self._handle = None
         self.path: Path | None = None
         try:
-            # THE PACKAGE'S OWN RULE, not this module's. --home is optional, so
-            # callers routinely pass None; db.connect and config.load both go
-            # through resolve_home for that reason, and a second answer here
-            # would put the log somewhere the database is not.
+            # THE PACKAGE'S OWN RULE, not this module's - verified 2026-09-10:
+            # db.connect and config.load both resolve through
+            # paths.data_dir -> paths.resolve_home, the same function this
+            # module calls directly below, and --home defaults to None so
+            # callers routinely pass it unset. A second answer here would put
+            # the log somewhere the database is not.
             folder = paths.resolve_home(home) / "logs"
             folder.mkdir(parents=True, exist_ok=True)
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S")  # noqa: DTZ005 - filename
             self.path = folder / f"{kind}-{stamp}.log"
-            # Line buffered, so a run that is killed still leaves everything it
-            # had written. A crashed run's last line is the interesting one and
-            # a full buffer would take exactly that away.
+            # Line buffered - measured 2026-09-10: a line written with
+            # buffering=1 is readable from a second file handle before this
+            # one is closed or flushed - so a run that is killed still leaves
+            # everything it had written. A crashed run's last line is the
+            # interesting one and a full buffer would take exactly that away.
             self._handle = self.path.open("w", encoding="utf-8", buffering=1)
             _prune(folder, kind)
         except OSError:
@@ -68,7 +72,7 @@ class RunLog:
 
     # -- writing ----------------------------------------------------------
     def line(self, text: str) -> None:
-        """One record: local time, elapsed since the run began, and the text."""
+        """One record: local time, elapsed from the run's start, and the text."""
         if self._handle is None:
             return
         elapsed = time.monotonic() - self._started
