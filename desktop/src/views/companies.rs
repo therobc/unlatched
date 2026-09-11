@@ -1,7 +1,8 @@
 // Companies: probe status table, a way to add a company and run discovery
 // against it, and a streamed log of whatever the command-line tool prints
-// while it works. The desktop app never talks to a network itself here;
-// it only launches the CLI process and reads what it writes to stdout.
+// while it works. This view never talks to a network itself - by construction
+// it only calls db and app.start_process/refresh_companies, which spawn the
+// CLI as a child process and read its stdout into the log.
 
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
@@ -14,14 +15,18 @@ use crate::fmt;
 pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     ui.heading("Companies");
 
-    // The CLI invocation setting only matters in dev mode: a bundled
-    // engine is a standalone executable and never touches this field.
+    // The CLI invocation setting only matters in dev mode - verified by
+    // construction: engine_invocation() in app.rs reads python_invocation only
+    // for EngineMode::Python; EngineMode::Bundled ignores this field entirely.
     if matches!(app.engine_mode, EngineMode::Python) {
         ui.horizontal(|ui| {
             ui.label("CLI invocation:");
-            if ui
-                .text_edit_singleline(&mut app.settings.python_invocation)
-                .lost_focus()
+            if crate::access::text_field(
+                ui,
+                &mut app.settings.python_invocation,
+                "companies-python-invocation",
+            )
+            .lost_focus()
             {
                 app.save_settings();
             }
@@ -64,45 +69,50 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
         if let Some(chosen) = crate::views::collect_menu::menu(app, ui) {
             pending = Some(chosen);
         }
-        // Twelve of the fifteen collectors are per-employer and sit idle
-        // until this list has something in it, and nobody can invent forty
-        // employer names cold. Offered, never forced: it writes into the
-        // person's own list, so it is a button rather than something that
-        // happens to them on first run.
-        if ui
-            .button("Add starter employers")
-            .on_hover_text(
-                "National employers with boards this app can read, measured rather \
+        // Twelve of the fifteen collectors are per-employer and sit idle until this
+        // list has something in it - measured 2026-09-10: 15 modules in
+        // unlatched/sources/, 3 flagged IS_SEARCH_SOURCE (nodesk, remoteok, usajobs),
+        // the other 12 need an employer's own board. Nobody can invent forty
+        // employer names cold. Offered, never forced: it writes into the person's
+        // own list, so it is a button rather than something that happens to them
+        // on first run.
+        if crate::access::tag(
+            ui.button("Add starter employers"),
+            egui::WidgetType::Button,
+            "companies-add-starters",
+        )
+        .on_hover_text(
+            "National employers with boards this app can read, measured rather \
                  than assumed. Yours are kept as they are; this only adds names you \
                  do not already have, and you can delete any of them.",
-            )
-            .clicked()
+        )
+        .clicked()
         {
             app.start_process(
                 "add starter employers",
                 vec!["starter".to_string(), "--add".to_string()],
             );
         }
-        // WHY THIS IS HERE AND NOT ON A TIMER. An employer that changes
-        // applicant tracking system does not announce it: the stored
-        // reference simply stops returning postings and they go quiet, which
-        // looks exactly like nobody hiring. Re-probing every careers page on
-        // a schedule would be the crawl this app refuses to be, so it is a
-        // button somebody presses when they wonder.
-        if ui
-            .button("Re-check for moved employers")
-            .on_hover_text(
-                "Re-probes the employers in this list and reports who moved to \
+        // WHY THIS IS HERE AND NOT ON A TIMER - believed, not measured: an employer
+        // that changes applicant tracking system does not announce it, so the
+        // stored reference would simply stop returning postings and go quiet,
+        // indistinguishable from nobody hiring. Re-probing every careers page on
+        // a schedule would be the crawl this app refuses to be, so it is a button
+        // somebody presses when they wonder.
+        if crate::access::tag(
+            ui.button("Re-check for moved employers"),
+            egui::WidgetType::Button,
+            "companies-recheck-moved",
+        )
+        .on_hover_text(
+            "Re-probes the employers in this list and reports who moved to \
                  a different system, who became readable, and who cannot be \
                  read any more. Reports only - nothing is changed until you \
                  run it with --apply.",
-            )
-            .clicked()
+        )
+        .clicked()
         {
-            app.start_process(
-                "re-check employers",
-                vec!["rediscover".to_string()],
-            );
+            app.start_process("re-check employers", vec!["rediscover".to_string()]);
         }
         if crate::access::tag(
             ui.button("Refresh table"),
@@ -199,9 +209,10 @@ fn render_table(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                 let c = &app.companies[idx];
                 row.col(|ui| {
                     let name = fmt::truncate(&c.name, 30);
-                    // careers_url is discovered by following links on remote
-                    // pages, so it gets the same scheme guard as a job URL -
-                    // only http(s) is handed to the OS. See fmt::safe_link.
+                    // careers_url is discovered by following links on remote pages, so it
+                    // gets the same scheme guard as a job URL - verified 2026-09-10:
+                    // fmt::safe_link's authority_of only strips an "http://" or "https://"
+                    // prefix, so anything else is refused before it reaches the OS.
                     let response = match c.careers_url.as_deref().and_then(fmt::safe_link) {
                         Some(url) => crate::browse::link(ui, name, url),
                         None => ui.label(name),
@@ -220,10 +231,10 @@ fn render_table(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                 });
                 row.col(|ui| {
                     let (text, why) = origin_label(c.origin.as_deref());
-                    // Named per employer, with the word in the value slot, so
-                    // a test can ask what this cell says rather than hunting
-                    // for a bare word in the tree - and so a screen reader
-                    // reads a cell that otherwise has no context.
+                    // Named per employer, with the word in the value slot - by construction:
+                    // tag_with_value stores it as current_text_value, the text slot a screen
+                    // reader reads and the same slot access.rs documents as what lets an
+                    // automated test ask what a cell says instead of hunting for a bare word.
                     let cell = crate::access::tag_with_value(
                         ui.label(text),
                         egui::WidgetType::Label,
@@ -262,10 +273,11 @@ fn render_table(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
 
 /// The provenance cell: the stored word, and a sentence saying what it means.
 ///
-/// THE WORD IS SHOWN AS STORED rather than prettied up, because it is the same
-/// word the Collect menu uses out loud ("seeded employers only") and the same
-/// one `collect --origin` takes. A display name here would quietly make three
-/// vocabularies out of one.
+/// THE WORD IS SHOWN AS STORED rather than prettied up - verified
+/// 2026-09-10: it is the same word views::collect_menu sends out loud
+/// ("Seeded employers only") and the same one `collect --origin`'s argparse
+/// choices list takes (cli.py). A display name here would quietly make
+/// three vocabularies out of one.
 fn origin_label(origin: Option<&str>) -> (&str, &'static str) {
     match origin.map(str::trim).unwrap_or("") {
         "seeded" => (
@@ -300,10 +312,12 @@ mod tests {
     use crate::db;
 
     /// The menu passes `db::SEEDED` to `collect --origin`, whose argparse
-    /// `choices` list rejects any other spelling. If that constant ever drifts
-    /// from the word this table knows, the column would read "unknown" for
-    /// exactly the rows the menu claims to collect - so the two are checked
-    /// against each other rather than each against itself.
+    /// `choices` list rejects any other spelling - verified 2026-09-10: cli.py's
+    /// --origin argument is declared with choices=[db.SEEDED, db.DISCOVERED,
+    /// db.MANUAL, db.IMPORTED]. If that constant ever drifts from the word this
+    /// table knows, the column would read "unknown" for exactly the rows the
+    /// menu claims to collect - so the two are checked against each other
+    /// rather than each against itself.
     #[test]
     fn the_word_the_menu_sends_is_the_word_the_column_explains() {
         let (shown, why) = origin_label(Some(db::SEEDED));

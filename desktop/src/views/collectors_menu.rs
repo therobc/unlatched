@@ -1,25 +1,24 @@
 //! "From a collector": the menu that takes in what another program left.
 //!
-//! SHARED BY THE TWO SCREENS THAT OFFER IT, rather than written twice. It
-//! began on Companies, beside the board-collecting actions, and the Dashboard
-//! is where somebody actually notices a collector has delivered - the file's
-//! age and whether it has been taken in are both on that screen already, so
-//! being sent to another page to act on what it says was a step with no
-//! purpose.
+//! SHARED BY THE TWO SCREENS THAT OFFER IT, rather than written twice -
+//! verified 2026-09-10: companies.rs and dashboard_view.rs are the only two
+//! call sites of collect_menu::menu, which draws this menu in turn. It began
+//! on Companies, beside the board-collecting actions; that the Dashboard
+//! saves a trip because it already shows a collector's age and whether it
+//! has been taken in is believed, not measured.
 //!
-//! Two copies of this menu would drift the way every other pair in this app
-//! has: a collector added to one list and not the other, or two screens
-//! disagreeing about whether a disabled collector is offered. One definition,
-//! two call sites.
+//! Two copies of this menu drifting the way other pairs in this app have is
+//! believed, not measured - this file avoids the risk with one definition
+//! and two call sites rather than pointing at a documented incident.
 //!
 //! HANDOFFS ARE NOT BOARDS, which is why this is its own control wherever it
-//! appears. Everything a board action does reads a site this app is allowed to
-//! read; this reads a FILE another program wrote, and Unlatched never touches
-//! the site those rows came from. That separation is the whole reason the
-//! arrangement exists.
+//! appears - verified 2026-09-10: cmd_ingest (cli.py) only reads a configured
+//! local path, never fetches a URL, matching COLLECTORS.md's "we pull, you
+//! never push" contract. That separation is the whole reason the arrangement
+//! exists.
 //!
-//! ASKING IGNORES THE SCHEDULE. A schedule says when the app looks by itself;
-//! somebody who opened this menu has already said when they want it.
+//! ASKING IGNORES THE SCHEDULE - verified 2026-09-10: cmd_ingest's own
+//! docstring in cli.py says "on demand ignores the schedule".
 
 use eframe::egui;
 
@@ -27,17 +26,21 @@ use crate::app::UnlatchedApp;
 
 /// What the caller should run, as (label, engine arguments).
 ///
-/// RETURNED RATHER THAN STARTED. The menu is drawn inside a closure that has
-/// already borrowed the app to read its collector list, so starting a process
-/// in there would need a second, mutable borrow. Every caller does the same
-/// thing with the answer: hand it to `start_process` once the menu is closed.
+/// RETURNED RATHER THAN STARTED - by construction: `menu` takes `app:
+/// &UnlatchedApp`, an immutable borrow already captured by the closure
+/// below, and `start_process` needs `&mut self` - a second, mutable borrow
+/// the borrow checker refuses inside that closure. Every caller does the
+/// same thing with the answer: hand it to `start_process` once the menu is
+/// closed.
 pub type Pending = Option<(String, Vec<String>)>;
 
 /// Draw the menu button and its entries. Returns what was chosen, if anything.
 ///
-/// `label` is the button's own text, so a screen can say "From a collector"
-/// where that reads naturally and something shorter where it does not - the
-/// ENTRIES are what must not differ between screens, and those are here.
+/// `label` is the button's own text - by construction: it is passed
+/// straight to `ui.menu_button(label, ...)` below, so a screen can say
+/// "From a collector" where that reads naturally and something shorter
+/// where it does not. The ENTRIES are what must not differ between
+/// screens, and those are here.
 pub fn menu(app: &UnlatchedApp, ui: &mut egui::Ui, label: &str) -> Pending {
     let mut pending: Pending = None;
 
@@ -64,9 +67,12 @@ pub fn menu(app: &UnlatchedApp, ui: &mut egui::Ui, label: &str) -> Pending {
             ui.label("No collectors are set up.");
         }
         for entry in &live {
-            // The name is built per collector, so this tags directly rather
-            // than through a helper taking a 'static string. The harness
-            // addresses these as handoff-<id>.
+            // The name is built per collector, so this tags directly with a
+            // formatted String rather than through a helper expecting a fixed name -
+            // by construction: format!("handoff-{}", entry.id) below builds a
+            // different name per collector. Every access::tag call is addressable by
+            // an automated test through Windows UIA (see access.rs), which is what
+            // these names are for.
             if crate::access::tag(
                 ui.button(&entry.name),
                 egui::WidgetType::Button,
@@ -99,8 +105,9 @@ pub fn menu(app: &UnlatchedApp, ui: &mut egui::Ui, label: &str) -> Pending {
             }
         }
         for problem in &problems {
-            // Shown, never dropped. A collector missing because of a typo
-            // three lines into a config file otherwise looks exactly like one
+            // Shown, never dropped - by construction: the loop below renders every
+            // entry in `problems` unfiltered. A collector missing because of a typo
+            // three lines into a config file would otherwise look exactly like one
             // nobody ever added.
             ui.colored_label(egui::Color32::LIGHT_RED, problem);
         }
@@ -129,9 +136,7 @@ pub fn offer_from(listing: &crate::collectors::Collectors) -> bool {
         // second the engine takes to reply: the button appears when the answer
         // arrives, rather than flickering from empty to full.
         None => false,
-        Some((entries, problems)) => {
-            entries.iter().any(|c| c.enabled) || !problems.is_empty()
-        }
+        Some((entries, problems)) => entries.iter().any(|c| c.enabled) || !problems.is_empty(),
     }
 }
 
@@ -139,9 +144,12 @@ pub fn offer_from(listing: &crate::collectors::Collectors) -> bool {
 mod tests {
     use crate::collectors::{Collectors, Handoff};
 
-    /// `has_anything_to_offer` decides whether the Dashboard draws the control
-    /// at all, so the cases it has to get right are the two empty ones - and
-    /// they are not the same emptiness.
+    /// `offer_from` decides whether the handoff submenu shows "No collectors
+    /// are set up" in place of any entries - verified 2026-09-10: not whether
+    /// the surrounding menu is drawn at all, since dashboard_view.rs now
+    /// always draws the Collect button (see its own "NO EMPTINESS GATE HERE"
+    /// note). The cases this function has to get right are the two empty
+    /// ones - and they are not the same emptiness.
     ///
     /// Built from the same `Collectors` the app holds, so the answer comes
     /// from the type the screen actually reads rather than from a stand-in.
@@ -163,7 +171,10 @@ mod tests {
 
     #[test]
     fn a_configured_collector_is_worth_offering() {
-        assert!(super::offer_from(&listing(vec![entry("partner", true)], vec![])));
+        assert!(super::offer_from(&listing(
+            vec![entry("partner", true)],
+            vec![]
+        )));
     }
 
     /// A collector somebody turned OFF is not one to offer a pull for -
@@ -171,15 +182,23 @@ mod tests {
     /// the app arguing with that.
     #[test]
     fn a_disabled_collector_is_not() {
-        assert!(!super::offer_from(&listing(vec![entry("partner", false)], vec![])));
+        assert!(!super::offer_from(&listing(
+            vec![entry("partner", false)],
+            vec![]
+        )));
     }
 
-    /// A PROBLEM IS SOMETHING TO OFFER. A collector refused over a typo three
-    /// lines into a config file is exactly the case somebody needs to see, and
-    /// hiding the menu would hide the only place this app says so.
+    /// A PROBLEM IS SOMETHING TO OFFER - by construction: offer_from returns
+    /// true whenever `problems` is non-empty, whatever `entries` holds (see
+    /// offer_from below). Problems are rendered unconditionally by the loop
+    /// in `menu` regardless of this function's answer; what offer_from alone
+    /// decides is whether the submenu also shows "No collectors are set up."
     #[test]
     fn a_refused_entry_still_earns_the_menu() {
-        assert!(super::offer_from(&listing(vec![], vec!["collector 0: needs a path".into()])));
+        assert!(super::offer_from(&listing(
+            vec![],
+            vec!["collector 0: needs a path".into()]
+        )));
     }
 
     #[test]

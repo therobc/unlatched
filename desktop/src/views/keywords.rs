@@ -276,24 +276,34 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.heading("Keywords");
         ui.add_space(16.0);
-        if ui
-            .selectable_label(!app.keywords_show_all, "Qualified only")
-            .clicked()
+        if crate::access::tag(
+            ui.selectable_label(!app.keywords_show_all, "Qualified only"),
+            egui::WidgetType::SelectableLabel,
+            "keywords-qualified-only",
+        )
+        .clicked()
             && app.keywords_show_all
         {
             app.keywords_show_all = false;
             app.refresh_keywords();
         }
-        if ui
-            .selectable_label(app.keywords_show_all, "All jobs")
-            .clicked()
+        if crate::access::tag(
+            ui.selectable_label(app.keywords_show_all, "All jobs"),
+            egui::WidgetType::SelectableLabel,
+            "keywords-all-jobs",
+        )
+        .clicked()
             && !app.keywords_show_all
         {
             app.keywords_show_all = true;
             app.refresh_keywords();
         }
-        if crate::access::tag(ui.button("Refresh"), egui::WidgetType::Button, "keywords-refresh")
-            .clicked()
+        if crate::access::tag(
+            ui.button("Refresh"),
+            egui::WidgetType::Button,
+            "keywords-refresh",
+        )
+        .clicked()
         {
             app.refresh_keywords();
         }
@@ -359,8 +369,7 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                      below is checked against your resume - every skill is \
                      listed as a gap because none of them can be evidenced."
                 ),
-                "Attach a .txt, .md or .docx copy on the Resumes tab."
-                    .to_string(),
+                "Attach a .txt, .md or .docx copy on the Resumes tab.".to_string(),
             ),
         };
         ui.colored_label(egui::Color32::from_rgb(217, 164, 65), line);
@@ -430,7 +439,10 @@ mod tests {
     #[test]
     fn tokens_borrow_and_split_on_punctuation() {
         let low = lowered("Help-Desk, Tier II / on-call!");
-        assert_eq!(tokens_of(&low), ["help", "desk", "tier", "ii", "on", "call"]);
+        assert_eq!(
+            tokens_of(&low),
+            ["help", "desk", "tier", "ii", "on", "call"]
+        );
     }
 
     #[test]
@@ -469,8 +481,7 @@ mod tests {
         ];
 
         let lowered_corpus: Vec<String> = corpus.iter().map(|d| lowered(d)).collect();
-        let corpus_tokens: Vec<Vec<&str>> =
-            lowered_corpus.iter().map(|d| tokens_of(d)).collect();
+        let corpus_tokens: Vec<Vec<&str>> = lowered_corpus.iter().map(|d| tokens_of(d)).collect();
 
         let owned: Vec<String> = skills.iter().map(|s| (*s).to_string()).collect();
         let report = compute_report(&corpus, &owned, "");
@@ -497,8 +508,14 @@ mod tests {
     /// rewrites a document the app never read.
     #[test]
     fn an_unreadable_resume_is_named_rather_than_read_as_a_bad_match() {
-        assert_eq!(load_resume_text(None), (String::new(), Some(ResumeGap::None)));
-        assert_eq!(load_resume_text(Some("   ")), (String::new(), Some(ResumeGap::None)));
+        assert_eq!(
+            load_resume_text(None),
+            (String::new(), Some(ResumeGap::None))
+        );
+        assert_eq!(
+            load_resume_text(Some("   ")),
+            (String::new(), Some(ResumeGap::None))
+        );
 
         // A .docx is the case where the command line really can do what this
         // window cannot, so it must not be lumped in with the rest. Verified by

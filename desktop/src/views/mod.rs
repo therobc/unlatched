@@ -26,14 +26,18 @@ pub mod triage;
 
 #[cfg(test)]
 mod tests {
-    /// The engine is the authority on this number and this file says so, but
-    /// nothing held the two together - which is exactly how the default
-    /// refresh times came to differ between the halves for four days, with
-    /// three copies of the same decision and no check between any of them.
+    /// The engine is the authority on this number and this file says so,
+    /// but nothing held the two together. Unverified history: this is
+    /// believed to be exactly how the default refresh times once came to
+    /// differ between the halves for four days, with three copies of the
+    /// same decision and no check between any of them.
     ///
-    /// A drift here greys out the Re-check button while the engine would have
-    /// re-read the link, or offers it while the engine refuses - a control
-    /// that lies about what pressing it does.
+    /// A drift here greys out the Re-check button while the engine would
+    /// have re-read the link, or offers it while the engine refuses - by
+    /// construction: app.rs feeds this constant straight into
+    /// db::manual_link_state, which is what decides whether that control is
+    /// enabled, so it and the engine's own RECHECK_MIN_HOURS have to agree
+    /// or the control lies about what pressing it does.
     #[test]
     fn the_engine_agrees_on_how_long_a_link_waits() {
         let py = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))

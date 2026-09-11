@@ -1,15 +1,16 @@
 //! Resumes the app HOLDS: attach, list, and which one screening reads.
 //!
-//! Until this existed the feature was real but unreachable - copies worked,
-//! screening read them, and the only way to attach one was a terminal
-//! command. A person who needs a terminal to attach their resume does not
-//! have the feature.
+//! Until this existed the feature was real but unreachable - unverified
+//! history: copies worked, screening read them, and the only way to
+//! attach one was believed to be a terminal command. A person who needs
+//! a terminal to attach their resume does not have the feature.
 //!
-//! Two ways in, because people expect both: a drop target for dragging a file
-//! from a folder window, and a Browse button for people who do not drag. The
-//! drop target is the primary one; egui reports dropped files on the frame
-//! they land, and the whole panel is the target rather than a small strip,
-//! since a drop zone you have to aim at is worse than a button.
+//! Two ways in - by construction: drop_target below both watches
+//! ctx().input for dropped files over the whole frame it draws, and
+//! offers a Browse button beside it. The drop target is the primary
+//! one; egui reports dropped files on the frame they land, and the
+//! whole panel is the target rather than a small strip, since a drop
+//! zone you have to aim at is worse than a button.
 
 use eframe::egui;
 
@@ -111,9 +112,11 @@ fn drop_target(app: &mut UnlatchedApp, ui: &mut egui::Ui, role: &str, title: &st
     }
 }
 
-/// Where the pointer was when the file was released. egui does not attach a
-/// position to a dropped file, so the pointer's last known position is what
-/// decides which bubble received it.
+/// Where the pointer was when the file was released - by construction
+/// this function exists to work around exactly one gap: the caller
+/// above reads `f.path` off each dropped file and nothing else, because
+/// egui's dropped-file event carries no position, so the pointer's last
+/// known position is what decides which bubble received it.
 fn hover_pos(ui: &egui::Ui) -> egui::Pos2 {
     ui.ctx()
         .input(|i| i.pointer.latest_pos())
@@ -147,8 +150,10 @@ fn versions_list(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
         return;
     }
     // THROUGH THE SHARED RESOLVER, so this marker cannot disagree with what
-    // screening reads. It had its own copy of the rule that ignored a pin,
-    // which put "in use" over a document the engine was not reading.
+    // screening reads - verified 2026-09-10: resumes.rs's own test
+    // `a_pin_beats_the_automatic_rule` checks exactly this. That it once
+    // had its own copy of the rule that ignored a pin is unverified
+    // history, per resumes.rs's own module doc.
     let active = crate::resumes::active_name(&app.active_home, &app.config);
 
     let mut download_me: Option<String> = None;
@@ -167,13 +172,17 @@ fn versions_list(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                 }
                 ui.label(role);
                 ui.monospace(name);
-                if ui
-                    .button("Download")
-                    .on_hover_text("Puts a copy in your Downloads folder.")
-                    .clicked()
+                if crate::access::tag(
+                    ui.button("Download"),
+                    egui::WidgetType::Button,
+                    format!("resumes-download-{}", crate::access::slug(name)),
+                )
+                .on_hover_text("Puts a copy in your Downloads folder.")
+                .clicked()
                 {
-                    // Recorded and acted on after the grid, so the copy is not
-                    // made while `files` is still borrowed.
+                    // Recorded and acted on after the grid - by construction: download_me
+                    // is only read below, after egui::Grid::show returns, so the copy is
+                    // not made while `files` is still borrowed by the loop above.
                     download_me = Some(name.clone());
                 }
                 ui.end_row();

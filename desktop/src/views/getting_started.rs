@@ -1,23 +1,26 @@
 //! First-run guidance, shown until a search has been set up.
 //!
-//! The hardest part of a first search is not the software, it is knowing
-//! what to type. A person knows the work they do; they usually do not know
-//! the twenty different titles employers file that work under. A real search
-//! only worked because someone researched 55 real role titles first -
+//! The hardest part of a first search is not the software, it is
+//! knowing what to type. A person knows the work they do; they usually
+//! do not know the twenty different titles employers file that work
+//! under. Unverified history: a real search is believed to have worked
+//! only because someone researched 55 real role titles first -
 //! "Technical Support Engineer", "Application Support Specialist",
-//! "Escalation Engineer" - and a term list built from a job seeker's own
-//! vocabulary misses most of what is posted.
+//! "Escalation Engineer" - and a term list built from a job seeker's
+//! own vocabulary misses most of what is posted.
 //!
-//! So the guidance is mostly about that one step, and it teaches a method
-//! rather than handing over a list: a list ages and only fits one trade.
+//! So the guidance is mostly about that one step, and it teaches a
+//! method rather than handing over a list: a list ages and only fits
+//! one trade.
 
 use eframe::egui;
 
 use crate::app::{UnlatchedApp, View};
 
-/// Shown when the active profile has no title terms and no employers - the
-/// state a brand new profile is in. It disappears on its own once either
-/// exists, so nobody has to dismiss it.
+/// Shown when the active profile has no title terms and no employers -
+/// the state a brand new profile is in. By construction: needed() below
+/// is the AND of both empty checks, so it disappears on its own once
+/// either exists, and nobody has to dismiss it.
 pub fn needed(app: &UnlatchedApp) -> bool {
     app.config.search.title_include.is_empty() && app.companies.is_empty()
 }
@@ -144,9 +147,7 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
 
     ui.add_space(12.0);
     ui.separator();
-    ui.weak(
-        "This page goes away by itself once you have added titles or employers.",
-    );
+    ui.weak("This page goes away by itself once you have added titles or employers.");
 }
 
 fn step(ui: &mut egui::Ui, number: u8, title: &str) {

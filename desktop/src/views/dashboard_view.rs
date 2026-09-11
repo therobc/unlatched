@@ -96,14 +96,17 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
             app.show_add_job_modal = true;
             app.add_job_draft = Default::default();
         }
-        if ui
-            .button("Refresh")
-            .on_hover_text(
-                "Re-reads the dashboard, and takes in anything a collector has \
+        if crate::access::tag(
+            ui.button("Refresh"),
+            egui::WidgetType::Button,
+            "dashboard-refresh",
+        )
+        .on_hover_text(
+            "Re-reads the dashboard, and takes in anything a collector has \
                  left for you. It does not go out to the boards - the daily \
                  collection does that.",
-            )
-            .clicked()
+        )
+        .clicked()
         {
             // TAKES IN THE HANDOFF TOO. Re-reading the database alone meant a
             // collector that finished early sat unread until the next scheduled
@@ -121,8 +124,10 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                 // otherwise do nothing visible. How long a collect takes is not
                 // measured here and the sentence no longer claims it - what matters is
                 // that it holds the lock for its whole run, whatever that run costs.
-                app.say("Collecting right now - the handoff will be taken in \
-                         when that finishes.");
+                app.say(
+                    "Collecting right now - the handoff will be taken in \
+                         when that finishes.",
+                );
             } else {
                 app.start_process("pull collectors", vec!["ingest".to_string()]);
             }
@@ -190,7 +195,6 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
             "How many postings a collection READ is in its own summary - the \
              list only holds what was kept.",
         );
-
     });
 
     // THE STALENESS ROW, under the buttons that act on it.
@@ -291,8 +295,7 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                     // Read now, every frame, because by construction it cannot be carried
                     // in with the counts - see DashboardStats::local_offset_secs for what
                     // those are loaded from and why the clock is not among them.
-                    let now_local =
-                        crate::date::seconds_into_local_day(stats.local_offset_secs);
+                    let now_local = crate::date::seconds_into_local_day(stats.local_offset_secs);
                     let bars: Vec<SourceBar> = stats
                         .by_source
                         .iter()
@@ -304,10 +307,7 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                                 age: crate::fmt::source_age(last_seen.as_deref()),
                                 // Only a collector somebody set up can be late.
                                 stale: external
-                                    && crate::fmt::source_is_late(
-                                        last_seen.as_deref(),
-                                        now_local,
-                                    ),
+                                    && crate::fmt::source_is_late(last_seen.as_deref(), now_local),
                                 external,
                             }
                         })
@@ -323,7 +323,6 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                 card(ui, "EMPLOYER COVERAGE", |ui| coverage(app, ui, &stats));
             });
         });
-
     });
 }
 
@@ -370,8 +369,16 @@ fn stat_cards(app: &mut UnlatchedApp, ui: &mut egui::Ui, stats: &DashboardStats)
         let text = format!(
             "{} job{} you applied to {} been taken down.",
             stats.withdrawn_after_applying,
-            if stats.withdrawn_after_applying == 1 { "" } else { "s" },
-            if stats.withdrawn_after_applying == 1 { "has" } else { "have" },
+            if stats.withdrawn_after_applying == 1 {
+                ""
+            } else {
+                "s"
+            },
+            if stats.withdrawn_after_applying == 1 {
+                "has"
+            } else {
+                "have"
+            },
         );
         // A LINK RATHER THAN A LABEL. The count on its own is a dead end - the
         // person already knows something went wrong and still has to find the
@@ -455,10 +462,7 @@ fn stat(
 
     // The card's coloured left border. Painted after the frame rather than
     // before, which by construction puts it over the fill and not under it.
-    let bar = egui::Rect::from_min_size(
-        response.rect.min,
-        egui::vec2(3.0, response.rect.height()),
-    );
+    let bar = egui::Rect::from_min_size(response.rect.min, egui::vec2(3.0, response.rect.height()));
     ui.painter().rect_filled(bar, 1.0, colour);
 
     // interact() over the whole frame: a number you can see but not click is
@@ -484,7 +488,10 @@ fn card(ui: &mut egui::Ui, title: &str, contents: impl FnOnce(&mut egui::Ui)) {
     egui::Frame::none()
         .inner_margin(egui::Margin::same(12.0))
         .rounding(egui::Rounding::same(4.0))
-        .stroke(egui::Stroke::new(1.0, ui.visuals().widgets.noninteractive.bg_stroke.color))
+        .stroke(egui::Stroke::new(
+            1.0,
+            ui.visuals().widgets.noninteractive.bg_stroke.color,
+        ))
         .show(ui, |ui| {
             // A Frame shrinks to its content. Observed: a card holding a narrow
             // chart ended up a quarter of the width of the card under it and the
@@ -580,7 +587,8 @@ fn doughnut(ui: &mut egui::Ui, slices: &[(String, i64, egui::Color32)], total: i
         let mut angle = -std::f32::consts::FRAC_PI_2;
         for (_, count, colour) in slices {
             let sweep = std::f32::consts::TAU * (*count as f32 / total as f32);
-            let steps = ((sweep / std::f32::consts::TAU) * SEGMENTS_PER_TURN as f32).ceil() as usize;
+            let steps =
+                ((sweep / std::f32::consts::TAU) * SEGMENTS_PER_TURN as f32).ceil() as usize;
             let steps = steps.max(1);
             let mut points = Vec::with_capacity(steps + 2);
             points.push(centre);
@@ -648,9 +656,7 @@ fn funnel(ui: &mut egui::Ui, stats: &DashboardStats) {
     let bars: Vec<(String, i64, egui::Color32)> = FUNNEL
         .iter()
         .enumerate()
-        .map(|(i, (value, label))| {
-            ((*label).to_string(), reached[i], status_colour(value))
-        })
+        .map(|(i, (value, label))| ((*label).to_string(), reached[i], status_colour(value)))
         .collect();
     bar_chart(ui, &bars);
 
@@ -791,8 +797,7 @@ fn collector_file_status(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
             } else {
                 ui.visuals().weak_text_color()
             };
-            ui.colored_label(colour, text)
-                .on_hover_text(entry.detail());
+            ui.colored_label(colour, text).on_hover_text(entry.detail());
             ui.add_space(10.0);
         }
     });
@@ -935,7 +940,8 @@ fn coverage(app: &mut UnlatchedApp, ui: &mut egui::Ui, stats: &DashboardStats) {
                 egui::vec2(full * (1.0 - readable), 10.0),
                 egui::Sense::hover(),
             );
-            ui.painter().rect_filled(rest, 2.0, NEUTRAL.gamma_multiply(0.4));
+            ui.painter()
+                .rect_filled(rest, 2.0, NEUTRAL.gamma_multiply(0.4));
         });
         ui.weak(format!(
             "{unreadable} have no board we can collect from, so nothing they post can \

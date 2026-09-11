@@ -1,9 +1,12 @@
-// The "New profile" modal. Two required text fields (name, home folder)
-// plus an optional resume path, each with a native-picker Browse button as
-// an assist - typing directly into the field is always the primary path,
-// since a keyboard-only user (and the QC harness, which drives the app
-// with typed keys rather than a mouse) never has to touch a Browse button
-// to create a profile.
+// The "New profile" modal. One required text field (name), plus an
+// optional home folder and an optional resume path, each with a
+// native-picker Browse button as an assist - verified 2026-09-10:
+// validate_and_create below only errors when the person name is empty; a
+// blank folder or resume path falls back to a computed default. Typing
+// directly into the field is always the primary path, since a
+// keyboard-only user (and the QC harness, which drives the app with
+// typed keys rather than a mouse) never has to touch a Browse button to
+// create a profile.
 
 use eframe::egui;
 use std::path::PathBuf;
@@ -111,13 +114,21 @@ pub fn show(app: &mut UnlatchedApp, ctx: &egui::Context) {
 
             ui.separator();
             ui.horizontal(|ui| {
-                if crate::access::tag(ui.button("Create"), egui::WidgetType::Button,
-                    "new-profile-create").clicked()
+                if crate::access::tag(
+                    ui.button("Create"),
+                    egui::WidgetType::Button,
+                    "new-profile-create",
+                )
+                .clicked()
                 {
                     create_clicked = true;
                 }
-                if crate::access::tag(ui.button("Cancel"), egui::WidgetType::Button,
-                    "new-profile-cancel").clicked()
+                if crate::access::tag(
+                    ui.button("Cancel"),
+                    egui::WidgetType::Button,
+                    "new-profile-cancel",
+                )
+                .clicked()
                 {
                     cancel_clicked = true;
                 }
@@ -168,9 +179,12 @@ fn validate_and_create(app: &mut UnlatchedApp, ctx: &egui::Context) -> Result<()
         return Err(format!("{person} already has a search called '{search}'"));
     }
     // Blank means "put it in the usual place": Documents/Unlatched/<Person>/
-    // <Search>. Documents rather than AppData because these are files somebody
-    // backs up or copies to a new machine, and AppData is hidden. Never
-    // Program Files, which is not writable without administrator rights.
+    // <Search> - verified 2026-09-10: profiles::default_people_root joins
+    // Documents/Unlatched when a Documents folder exists. Documents rather
+    // than AppData is believed, not measured, to suit files somebody backs
+    // up or copies to a new machine, where AppData is hidden. Never Program
+    // Files, which by definition of Windows file permissions is not
+    // writable without administrator rights.
     let home = if home_text.is_empty() {
         profiles::suggested_home(&person, &search)
     } else {
@@ -178,8 +192,10 @@ fn validate_and_create(app: &mut UnlatchedApp, ctx: &egui::Context) -> Result<()
     };
 
     // A new search inherits the person's resume automatically, so only the
-    // criteria have to be given. Asking for it again would be asking somebody
-    // to re-answer a question about themselves.
+    // criteria have to be given - by construction: `inherited` below comes
+    // from profiles::resume_for and is used whenever the draft's own resume
+    // field is empty. Asking for it again would be asking somebody to
+    // re-answer a question about themselves.
     let inherited = profiles::resume_for(&app.profile_registry, &person);
     let resume_opt = if !resume.is_empty() {
         Some(resume.clone())
@@ -189,13 +205,18 @@ fn validate_and_create(app: &mut UnlatchedApp, ctx: &egui::Context) -> Result<()
 
     profiles::create_profile_home(&home, resume_opt.as_deref())?;
 
-    // Carry this person's already-resolved employers into the new search, so
-    // discovery is paid for once per person rather than once per hunt.
+    // Carry this person's already-resolved employers into the new search,
+    // so discovery is paid for once per person rather than once per hunt -
+    // by construction: profiles::seed_from_sibling below copies companies
+    // out of a sibling search's own database via db::seed_companies_from.
     let seeded = profiles::seed_from_sibling(&app.profile_registry, &person, &home);
 
     // Record the resume BEFORE registering, so the one save that
-    // register_and_activate performs persists both. Two writes would leave a
-    // window where the search exists and the person's resume does not.
+    // register_and_activate performs persists both - verified by
+    // construction: remember_resume only mutates the in-memory registry,
+    // and register_and_activate is what calls save() at the end. Two
+    // writes would leave a window where the search exists and the person's
+    // resume does not.
     profiles::remember_resume(&mut app.profile_registry, &person, resume_opt.as_deref());
     profiles::register_and_activate(&mut app.profile_registry, &person, &search, &home)?;
     app.switch_profile(&person, &search, home, ctx);

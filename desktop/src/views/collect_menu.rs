@@ -28,13 +28,13 @@ use crate::app::UnlatchedApp;
 use crate::db;
 use crate::views::collectors_menu::Pending;
 
-/// The boards worth offering, from the employer list: named, trimmed, sorted,
-/// each once.
+/// The boards worth offering, from the employer list: named, trimmed,
+/// sorted, each once - by construction, matching the filter chain below.
 ///
-/// A FUNCTION RATHER THAN A CLOSURE BODY, so the test exercises THIS and not a
-/// copy of it. Written inline first, and the test that came with it restated
-/// the same filter chain - which would have gone on passing had the menu's
-/// version changed underneath it.
+/// A FUNCTION RATHER THAN A CLOSURE BODY, so the test exercises THIS and
+/// not a copy of it. That it was written inline first, and that the test
+/// which came with it restated the same filter chain, is unverified
+/// history.
 pub fn boards_offered(companies: &[crate::db::Company]) -> Vec<String> {
     let mut boards: Vec<&str> = companies
         .iter()
@@ -52,10 +52,13 @@ pub fn boards_offered(companies: &[crate::db::Company]) -> Vec<String> {
 /// somebody's list.
 const EMPLOYER_LIST_HEIGHT: f32 = 320.0;
 
-/// A menu entry with a stable name. Every button in this file goes through
-/// one line rather than five, and the sweep in access.rs recognises it because
-/// it takes a Response and its body calls access::tag - which is the rule that
-/// sweep applies to any wrapper, rather than to this name in particular.
+/// A menu entry with a stable name. Every button in this file goes
+/// through one line rather than five, and the sweep in access.rs
+/// recognises it - verified 2026-09-10: access.rs's own test
+/// `every_control_on_every_screen_publishes_a_name` accepts any wrapper
+/// whose signature takes an egui::Response and whose body calls
+/// access::tag, which is the rule that sweep applies to any wrapper,
+/// rather than to this name in particular.
 fn named_button(response: egui::Response, name: impl Into<String>) -> egui::Response {
     crate::access::tag(response, egui::WidgetType::Button, name)
 }
@@ -72,27 +75,35 @@ fn named_button(response: egui::Response, name: impl Into<String>) -> egui::Resp
 /// this existed: it said "Nothing is due yet" whenever it was greyed, a collect
 /// running included, so somebody whose links WERE due was told the opposite.
 /// The three cases are kept apart here so neither caller can collapse them.
-pub fn added_links_offer(due: i64, busy: bool, reading_on: bool)
-    -> (bool, &'static str) {
+pub fn added_links_offer(due: i64, busy: bool, reading_on: bool) -> (bool, &'static str) {
     // Checked before the other two: with the reading off there is nothing to
     // re-check whether or not anything is due, and this is the only one of the
     // three refusals a person can act on from where they are standing.
     if !reading_on {
-        return (false,
-                "The app is set not to open links you add, so a re-check would \
+        return (
+            false,
+            "The app is set not to open links you add, so a re-check would \
                  read nothing. Turn on \"Read the page when I add a job by \
-                 link\" in Settings.");
+                 link\" in Settings.",
+        );
     }
     if due == 0 {
-        return (false,
-                "Each added link is checked at most once a day. Nothing is due yet.");
+        return (
+            false,
+            "Each added link is checked at most once a day. Nothing is due yet.",
+        );
     }
     if busy {
-        return (true,
-                "Re-reads the links you added by hand. A run is in progress, so \
-                 this starts when it finishes.");
+        return (
+            true,
+            "Re-reads the links you added by hand. A run is in progress, so \
+                 this starts when it finishes.",
+        );
     }
-    (true, "Re-reads the links you added by hand: still live, or taken down?")
+    (
+        true,
+        "Re-reads the links you added by hand: still live, or taken down?",
+    )
 }
 
 /// Draw the Collect button and its entries. Returns what to run, if anything.

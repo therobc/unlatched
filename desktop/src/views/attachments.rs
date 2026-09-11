@@ -38,7 +38,9 @@ pub struct Files<'a> {
     pub rows: &'a [Attachment],
     pub message: Option<&'a str>,
     /// Where the last download went, or None if none has. Shown so the person
-    /// can see which folder this profile is using without opening a dialog.
+    /// can see which folder this profile is using without opening a dialog -
+    /// by construction: show() below renders "Downloads go to {folder}"
+    /// whenever download_dir is Some.
     pub download_dir: Option<&'a str>,
     /// This machine's UTC offset, for the dates below. Passed rather than
     /// looked up: db::local_offset_secs is a query, and this runs while a
@@ -48,9 +50,11 @@ pub struct Files<'a> {
 
 /// The teaching line under the paste button.
 ///
-/// Somebody who does not know the shortcut cannot use the feature at all, and
-/// the confirmation screen is the artefact people most often wish they had
-/// kept.
+/// Somebody who does not know the shortcut cannot use the feature at all -
+/// by construction: paste_screenshot (app.rs) only reads an image already
+/// on the clipboard, it never invokes screen capture itself. The
+/// confirmation screen being what people most often wish they had kept is
+/// believed, not measured.
 pub const SNIP_HINT: &str = "Win+Shift+S to snip part of your screen, then paste it here";
 
 pub fn show(ui: &mut egui::Ui, files: &Files<'_>) -> Action {
@@ -86,16 +90,16 @@ pub fn show(ui: &mut egui::Ui, files: &Files<'_>) -> Action {
         }
     });
     ui.weak(SNIP_HINT);
-    // WHERE DOWNLOADS GO, ON SCREEN. The choice is remembered per profile so
-    // several people on one machine can keep their files apart;
-    // a remembered folder nobody can see is one they cannot tell from the
+    // WHERE DOWNLOADS GO, ON SCREEN - verified 2026-09-10: settings.rs
+    // documents download_dir as stored in the profile's own settings file, so
+    // several people on one machine keep their files apart by construction. A
+    // remembered folder nobody can see is one they cannot tell from the
     // default, which is the whole difference this setting makes.
     if let Some(folder) = files.download_dir {
-        ui.weak(format!("Downloads go to {folder}"))
-            .on_hover_text(
-                "Where this profile last saved an attachment. The save dialog \
+        ui.weak(format!("Downloads go to {folder}")).on_hover_text(
+            "Where this profile last saved an attachment. The save dialog \
                  opens here, and picking somewhere else moves it.",
-            );
+        );
     }
     if let Some(message) = files.message {
         ui.colored_label(crate::theme::ACCENT, message);
@@ -125,11 +129,7 @@ pub fn show(ui: &mut egui::Ui, files: &Files<'_>) -> Action {
     action
 }
 
-fn attachment_row(
-    ui: &mut egui::Ui,
-    row: &Attachment,
-    local_offset: i64,
-) -> Option<Action> {
+fn attachment_row(ui: &mut egui::Ui, row: &Attachment, local_offset: i64) -> Option<Action> {
     let mut action = None;
     ui.horizontal(|ui| {
         ui.label(icon_for(row.kind));
@@ -137,7 +137,8 @@ fn attachment_row(
         match row.kind {
             // A link is the one kind with somewhere to go, so it goes there.
             // fmt::safe_link is the same http(s)-only guard every other
-            // outbound link in this app passes through.
+            // outbound link in this app passes through - verified 2026-09-10:
+            // also used in companies.rs, browse.rs and triage.rs.
             Kind::Link => {
                 let label = fmt::truncate(&row.display_name, 44);
                 match row.url.as_deref().and_then(fmt::safe_link) {
@@ -151,10 +152,11 @@ fn attachment_row(
                     }
                 }
             }
-            // EVERY FILE IS A LABEL, NOT A CONTROL. There is nothing to click
-            // it for: the app opens no attachment, so a name that looked
-            // pressable would promise something that never happens. The hover
-            // says what to do instead.
+            // EVERY FILE IS A LABEL, NOT A CONTROL - by construction: the arm
+            // above uses ui.label, never a button, for every non-link kind, so
+            // there is nothing to click. A name that looked pressable would
+            // promise something that never happens. The hover says what to do
+            // instead.
             Kind::Image | Kind::Text | Kind::Pdf | Kind::Office | Kind::Other => {
                 let label = ui.label(fmt::truncate(&row.display_name, 44));
                 if let Some(hover) = row.kind.hover() {
@@ -167,8 +169,10 @@ fn attachment_row(
             ui.weak(human_size(bytes));
         }
         // WHEN, because attachments belong to the job rather than to one
-        // application: re-applying months later adds a second resume beside
-        // the first, and the date is what tells them apart.
+        // application - by construction: list_for() keys on the job's own
+        // `key`, not an application id, so re-applying months later adds a
+        // second resume beside the first, and the date is what tells them
+        // apart.
         ui.weak(fmt::short_date(&row.added_at, local_offset))
             .on_hover_text(format!("added {} for {}", row.added_at, row.key));
 
@@ -257,7 +261,8 @@ mod tests {
     #[test]
     fn the_paste_control_teaches_the_shortcut() {
         // The shortcut has to be IN the string. Without it, a person who does
-        // not already know it cannot use the feature at all.
+        // not already know it cannot use the feature at all - verified by the
+        // assertion below.
         assert!(SNIP_HINT.contains("Win+Shift+S"));
         assert!(SNIP_HINT.contains("paste"));
     }

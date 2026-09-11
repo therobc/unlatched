@@ -4,15 +4,17 @@
 //! API for this app, does the agent not just connect? - needed to live
 //! somewhere a user would find it rather than in a chat log.
 //!
-//! There is no API and no server. Nothing listens on a port. What an agent
-//! connects to is a local command-line tool and a SQLite file on this machine,
-//! so it "connects" by RUNNING COMMANDS, and it can discover the whole surface
-//! with --help. That is why no key and no account are needed for the case that
-//! matters most: an assistant already running on the same computer.
+//! There is no API and no server - verified 2026-09-10: neither the engine
+//! nor the desktop app binds a socket or runs a listener anywhere in this
+//! tree. What an agent connects to is a local command-line tool and a
+//! SQLite file on this machine, so it "connects" by RUNNING COMMANDS, and
+//! it can discover the whole surface with --help by definition of how
+//! argparse builds that output from the registered subcommands.
 //!
-//! The optional endpoint below is a different, smaller thing - it lets the app
-//! itself call a model. It is off unless configured, and scoring never touches
-//! it.
+//! The optional endpoint below is a different, smaller thing - it lets the
+//! app itself call a model. Verified 2026-09-10: agent_api.py's own
+//! `enabled()` returns false unless config.agent_api.base_url is set, and
+//! `agent_api` does not appear anywhere scoring reads from.
 
 use eframe::egui;
 
@@ -46,7 +48,9 @@ const SETUP_COMMANDS: [(&str, &str); 4] = [
 ];
 
 /// The commands worth putting in front of somebody once a search exists.
-/// `brief` is first because it answers "what should I work on" in one call.
+/// `brief` is first - by construction: it is the first entry in the
+/// COMMANDS array below - because it answers "what should I work on" in
+/// one call.
 const COMMANDS: [(&str, &str); 4] = [
     (
         "unlatched brief --json",
@@ -143,7 +147,10 @@ fn no_api_card(ui: &mut egui::Ui) {
         ui.add_space(8.0);
         ui.label("Tell your assistant this much and it can work out the rest:");
         ui.add_space(4.0);
-        copyable(ui, "There is a CLI for my job search app. Run: unlatched --help");
+        copyable(
+            ui,
+            "There is a CLI for my job search app. Run: unlatched --help",
+        );
         ui.add_space(8.0);
         ui.weak(
             "No API key, no endpoint, and nothing leaves this computer - the \
@@ -153,27 +160,31 @@ fn no_api_card(ui: &mut egui::Ui) {
 }
 
 fn setup_card(ui: &mut egui::Ui) {
-    card(ui, "SETTING UP A SEARCH - AN ASSISTANT CAN DO ALL OF THIS", |ui| {
-        ui.label(
-            "Deciding which job titles to search for is the step that decides \
+    card(
+        ui,
+        "SETTING UP A SEARCH - AN ASSISTANT CAN DO ALL OF THIS",
+        |ui| {
+            ui.label(
+                "Deciding which job titles to search for is the step that decides \
              whether the search works, and the one most people get wrong. An \
              assistant can talk it through with you and write the answer straight \
              in.",
-        );
-        ui.add_space(8.0);
-        for (command, note) in SETUP_COMMANDS {
-            copyable(ui, command);
-            ui.indent(command, |ui| {
-                ui.weak(note);
-            });
-            ui.add_space(9.0);
-        }
-        ui.weak(
-            "Best done twice: once to start, then again after a collection - by \
+            );
+            ui.add_space(8.0);
+            for (command, note) in SETUP_COMMANDS {
+                copyable(ui, command);
+                ui.indent(command, |ui| {
+                    ui.weak(note);
+                });
+                ui.add_space(9.0);
+            }
+            ui.weak(
+                "Best done twice: once to start, then again after a collection - by \
              then the app knows what employers actually posted, so the second \
              pass is grounded in evidence instead of guesswork.",
-        );
-    });
+            );
+        },
+    );
 }
 
 fn commands_card(ui: &mut egui::Ui) {
@@ -197,9 +208,7 @@ fn copyable(ui: &mut egui::Ui, text: &str) {
             .rounding(egui::Rounding::same(4.0))
             .inner_margin(egui::Margin::symmetric(8.0, 4.0))
             .show(ui, |ui| {
-                ui.add(
-                    egui::Label::new(egui::RichText::new(text).monospace()).selectable(true),
-                );
+                ui.add(egui::Label::new(egui::RichText::new(text).monospace()).selectable(true));
             });
         if crate::access::tag(
             ui.small_button("Copy"),
@@ -218,7 +227,11 @@ fn endpoint_card(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     let model = app.config.agent_api.model.clone().unwrap_or_default();
     let mut go_to_config = false;
     let mut test_requested = false;
-    // Captured before the card is drawn, since the closure borrows `app`.
+    // Captured before the card is drawn, since the closure borrows `app` -
+    // by construction: `card`'s closure below only touches base_url, model,
+    // checking and check_lines, never `app` itself, because `app` is still
+    // needed mutably after the card returns (see go_to_config/test_requested
+    // below).
     let checking = app.running_process.is_some();
     let check_lines: Vec<String> = match app.agent_check_from {
         Some(from) => app.log_lines.get(from..).unwrap_or_default().to_vec(),
@@ -232,12 +245,13 @@ fn endpoint_card(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                 ui.weak("- and nothing above needs it.");
             });
             ui.add_space(7.0);
-            // "OpenAI-compatible endpoint" was the phrase here, and it reads to
-            // a normal user as "you need an OpenAI account" - the opposite of
-            // the truth, since the option being recommended is a free model on
-            // their own machine. What it actually means is that nearly every
-            // model service accepts the same shape of request, so there is
-            // nothing for the reader to choose between. Say that instead.
+            // "OpenAI-compatible endpoint" is unverified history as the phrase once
+            // used here; it would read to a normal user as "you need an OpenAI
+            // account" - the opposite of the truth, since the option being
+            // recommended is a free model on their own machine. What it actually
+            // means is that nearly every model service accepts the same shape of
+            // request, so there is nothing for the reader to choose between - verified
+            // 2026-09-10: the label below says exactly that and never uses the phrase.
             ui.label(
                 "This is the other direction: the APP calling a model, rather than \
                  an assistant calling the app. It works with a free model running \
@@ -295,8 +309,12 @@ fn endpoint_card(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
             ui.horizontal(|ui| {
                 // Verifying beats guessing. A wrong address otherwise shows up
                 // much later as a suggestion that silently never arrives.
-                if crate::access::tag(ui.button("Test connection"), egui::WidgetType::Button, "agent-test-connection")
-                    .clicked()
+                if crate::access::tag(
+                    ui.button("Test connection"),
+                    egui::WidgetType::Button,
+                    "agent-test-connection",
+                )
+                .clicked()
                 {
                     test_requested = true;
                 }
@@ -314,8 +332,10 @@ fn endpoint_card(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
         app.view = crate::app::View::Config;
     }
     if test_requested {
-        // Remember where this test's output starts so it can be rendered
-        // below, on this card. The view does NOT change.
+        // Remember where this test's output starts so it can be rendered below,
+        // on this card - by construction: agent_check_from is set from
+        // log_lines.len() below and read back by show_test_result. The view does
+        // NOT change: unlike go_to_config, this branch never assigns app.view.
         app.agent_check_from = Some(app.log_lines.len());
         app.start_process(
             "test agent endpoint",
@@ -335,9 +355,11 @@ fn limits_card(ui: &mut egui::Ui) {
             "The optional endpoint only ever receives text you wrote yourself - \
              your resume, your own prompt.",
         ] {
-            // horizontal_top does NOT wrap, so the longest of these ran off
-            // the right edge of the window. The bullet is drawn, then the text
-            // is given the rest of the width with wrapping on.
+            // horizontal_top not wrapping is believed, not measured, to be why the
+            // longest of these ran off the right edge of the window. The fix is by
+            // construction below: the bullet is drawn with horizontal_top, then the
+            // text is given the rest of the width through allocate_ui_with_layout
+            // with wrapping on.
             ui.horizontal_top(|ui| {
                 ui.label(egui::RichText::new("-").color(theme::ACCENT).strong());
                 ui.allocate_ui_with_layout(

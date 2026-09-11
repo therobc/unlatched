@@ -136,12 +136,7 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui, ctx: &egui::Context) {
     show_list(app, ui, ctx, &heading);
 }
 
-fn show_list(
-    app: &mut UnlatchedApp,
-    ui: &mut egui::Ui,
-    ctx: &egui::Context,
-    heading: &str,
-) {
+fn show_list(app: &mut UnlatchedApp, ui: &mut egui::Ui, ctx: &egui::Context, heading: &str) {
     // THE OPENED ROW PAYS FOR ITS OWN TEXT. Lists carry a 400-character
     // preview (see SELECT_TRIAGE_COLUMNS); the full description is fetched
     // once, here, for whichever row is open. Before the table because the row
@@ -203,14 +198,18 @@ fn show_list(
         {
             app.refresh_triage();
         }
-        if ui
-            .checkbox(&mut app.triage_every_location, "every location")
-            .on_hover_text(
-                "One opening advertised in several cities is folded into a single \
+        if crate::access::tick(
+            ui,
+            &mut app.triage_every_location,
+            "every location",
+            "show-every-location",
+        )
+        .on_hover_text(
+            "One opening advertised in several cities is folded into a single \
                  row, with the other places on hover. Tick this to see each city \
                  as its own row.",
-            )
-            .changed()
+        )
+        .changed()
         {
             app.refresh_triage();
         }
@@ -224,24 +223,30 @@ fn show_list(
         // Every other route into this list starts with a board we can read.
         // This one starts with a person who has already found the job and is
         // about to apply to it (decided 2026-08-06).
-        if ui
-            .button("Add a job by link")
-            .on_hover_text(
-                "Paste the link to a posting you found yourself. It joins this \
+        if crate::access::tag(
+            ui.button("Add a job by link"),
+            egui::WidgetType::Button,
+            "list-add-job",
+        )
+        .on_hover_text(
+            "Paste the link to a posting you found yourself. It joins this \
                  list and takes a status like any other job.",
-            )
-            .clicked()
+        )
+        .clicked()
         {
             app.show_add_job_modal = true;
             app.add_job_draft = Default::default();
         }
-        if ui
-            .button("Refresh")
-            .on_hover_text(
-                "Re-reads this list from what has already been collected. It does \
+        if crate::access::tag(
+            ui.button("Refresh"),
+            egui::WidgetType::Button,
+            "list-refresh",
+        )
+        .on_hover_text(
+            "Re-reads this list from what has already been collected. It does \
                  not go out to the boards - the daily collection does that.",
-            )
-            .clicked()
+        )
+        .clicked()
         {
             app.refresh_triage();
         }
@@ -256,11 +261,15 @@ fn show_list(
             // Through the shared rule: by construction this button and the
             // Collect entry read the same answer, so they cannot disagree
             // about whether a check is due.
-            let (ready, hover) =
-                crate::views::collect_menu::added_links_offer(
-                    links.due, busy, app.config.fetch.read_added_links);
-            let response = ui
-                .add_enabled(ready, egui::Button::new(format!("Check added links ({})", links.total)));
+            let (ready, hover) = crate::views::collect_menu::added_links_offer(
+                links.due,
+                busy,
+                app.config.fetch.read_added_links,
+            );
+            let response = ui.add_enabled(
+                ready,
+                egui::Button::new(format!("Check added links ({})", links.total)),
+            );
             if response.on_hover_text(hover).clicked() {
                 app.queue_process("check added links", vec!["recheck".to_string()]);
             }
@@ -556,168 +565,173 @@ fn show_list(
         egui::ScrollArea::horizontal()
             .auto_shrink([false, false])
             .show(ui, |ui| {
-        ui.set_min_width(natural_width);
-        ui.set_max_width(natural_width);
+                ui.set_min_width(natural_width);
+                ui.set_max_width(natural_width);
 
-    let mut builder = TableBuilder::new(ui)
-        .max_scroll_height(table_height)
-        .striped(true)
-        .resizable(true)
-        .sense(egui::Sense::click())
-        // TOP-aligned, not centred. An open row is ~260px tall and centring
-        // put its job line in the middle of that space, with a large empty gap
-        // above and the detail crammed below. Ordinary rows are exactly one
-        // row high, so by construction top and centre are identical for
-        // them.
-        .cell_layout(egui::Layout::left_to_right(egui::Align::Min))
-        .min_scrolled_height(200.0);
-    // Asked for by key, resolved to an index here: the caller wanting the row
-    // on screen knows the job, not its position - and by construction the
-    // position depends on the sort, the scope and the filters, none of which
-    // are that caller's business.
-    //
-    // A key that is not in THIS list scrolls nowhere rather than to row 0.
-    if app.scroll_to_selected {
-        if let Some(index) = app.triage_selected.as_ref().and_then(|key| {
-            app.triage_rows.iter().position(|r| &r.job.key == key)
-        }) {
-            builder = builder.scroll_to_row(index, Some(egui::Align::Center));
-        }
-        app.scroll_to_selected = false;
-    }
-    for (i, id) in shown.iter().enumerate() {
-        let spec = columns::spec(*id);
-        // One column stretches so the table reaches the window edge; the rest
-        // keep the widths they were measured at.
-        let column = if i == flex_at {
-            Column::remainder().at_least(spec.min)
-        } else {
-            Column::initial(spec.width).at_least(spec.min)
-        };
-        builder = builder.column(if spec.clip { column.clip(true) } else { column });
-    }
-    builder
-        .header(22.0, |mut header| {
-            for id in &shown {
-                let spec = columns::spec(*id);
-                let (_, cell) = header.col(|ui| {
-                    // The tick-box column's heading selects or clears every
-                    // row currently listed - by construction the filtered set,
-                    // not the whole table, which is what "all" has to mean
-                    // when a filter or a search is exactly why somebody wants
-                    // to act on a set in bulk.
-                    if spec.id == columns::ColumnId::Select {
-                        let mut all = !app.triage_rows.is_empty()
-                            && app.triage_rows.iter().all(|r| {
-                                app.selected_keys.contains(&r.job.key)
-                            });
-                        // An unlabelled checkbox has nothing for the tree to
-                        // report, so by construction it is invisible to a
-                        // screen reader and unaddressable by automation.
-                        let response = crate::access::tag(
-                            ui.checkbox(&mut all, "")
-                                .on_hover_text("Select everything in this list"),
-                            egui::WidgetType::Checkbox,
-                            "select-all",
-                        );
-                        if response.changed() {
-                            select_all = Some(all);
-                        }
-                        return;
-                    }
-                    // Clicking a heading sorts, as it always has. Reordering
-                    // lives on the gear rather than on a drag, so
-                    // by construction neither gesture can be mistaken for the
-                    // other.
-                    let response = match spec.sort {
-                        Some(column) => sort_heading(ui, app, column, spec.heading),
-                        None => ui.strong(spec.heading),
-                    };
-                    // The heading itself senses clicks too - see below for
-                    // why both. Set here rather than returned, so the borrow
-                    // of `ui` ends with the cell - enforced by the type.
-                    if let Some(column) = spec.sort {
-                        if response.clicked() {
-                            sort_click = Some(column);
-                        }
-                    }
-                    if let Some(hover) = spec.hover {
-                        response.on_hover_text(hover);
-                    }
-                });
-                // BOTH THE CELL AND THE HEADING, deliberately.
+                let mut builder = TableBuilder::new(ui)
+                    .max_scroll_height(table_height)
+                    .striped(true)
+                    .resizable(true)
+                    .sense(egui::Sense::click())
+                    // TOP-aligned, not centred. An open row is ~260px tall and centring
+                    // put its job line in the middle of that space, with a large empty gap
+                    // above and the detail crammed below. Ordinary rows are exactly one
+                    // row high, so by construction top and centre are identical for
+                    // them.
+                    .cell_layout(egui::Layout::left_to_right(egui::Align::Min))
+                    .min_scrolled_height(200.0);
+                // Asked for by key, resolved to an index here: the caller wanting the row
+                // on screen knows the job, not its position - and by construction the
+                // position depends on the sort, the scope and the filters, none of which
+                // are that caller's business.
                 //
-                // egui_extras registers an interaction over the whole cell rect
-                // AFTER the contents are drawn (StripLayout::add, last line),
-                // using this table's sense - Sense::click(), so that body rows
-                // can be clicked. Which of the two a given click reaches was
-                // not something reading the source settled. The reported
-                // symptom was that clicking BESIDE a heading sorted while
-                // clicking ON it did nothing.
-                //
-                // So both are read. Whichever receives the click, the
-                // heading sorts, and the dead strip beside the words is gone
-                // either way. They cannot fight by construction: both assign
-                // the same column to `sort_click`, so a click reaching both
-                // still sorts once rather than toggling twice back to where
-                // it started.
-                if let Some(column) = spec.sort {
-                    if cell.clicked() {
-                        sort_click = Some(column);
+                // A key that is not in THIS list scrolls nowhere rather than to row 0.
+                if app.scroll_to_selected {
+                    if let Some(index) = app
+                        .triage_selected
+                        .as_ref()
+                        .and_then(|key| app.triage_rows.iter().position(|r| &r.job.key == key))
+                    {
+                        builder = builder.scroll_to_row(index, Some(egui::Align::Center));
                     }
+                    app.scroll_to_selected = false;
                 }
-            }
-        })
-        .body(|body| {
-            // Per-row heights, so the open row can be taller than the rest.
-            // egui_extras rows are uniform by construction otherwise, which is
-            // what forced the description into a separate panel underneath.
-            let heights: Vec<f32> = app
-                .triage_rows
-                .iter()
-                .map(|r| {
-                    if app.triage_expanded.as_deref() == Some(r.job.key.as_str()) {
-                        row_height + EXPANDED_EXTRA
+                for (i, id) in shown.iter().enumerate() {
+                    let spec = columns::spec(*id);
+                    // One column stretches so the table reaches the window edge; the rest
+                    // keep the widths they were measured at.
+                    let column = if i == flex_at {
+                        Column::remainder().at_least(spec.min)
                     } else {
-                        row_height
-                    }
-                })
-                .collect();
-            body.heterogeneous_rows(heights.into_iter(), |mut row| {
-                let idx = row.index();
-                let r = &app.triage_rows[idx];
-                let expanded_row = app.triage_expanded.as_deref() == Some(r.job.key.as_str());
-                let is_selected = selected_key.as_deref() == Some(r.job.key.as_str());
-                // An open row reserves ~260px for its detail, and a selection
-                // FILL over that is a wall of solid colour with the job line
-                // lost inside it. The open row is outlined instead - the job
-                // line, the detail and the next job stay three distinct things.
-                row.set_selected(is_selected && !expanded_row);
-
-                let expanded = app.triage_expanded.as_deref() == Some(r.job.key.as_str());
-                let cell = CellCtx {
-                    r,
-                    idx,
-                    expanded,
-                    selected: app.selected_keys.contains(&r.job.key),
-                    row_height,
-                    table_width,
-                    latest_collect: latest_collect.as_deref(),
-                    local_offset: offset,
-                };
-                for id in &shown {
-                    row.col(|ui| draw_cell(ui, *id, &cell, &mut actions));
+                        Column::initial(spec.width).at_least(spec.min)
+                    };
+                    builder = builder.column(if spec.clip { column.clip(true) } else { column });
                 }
+                builder
+                    .header(22.0, |mut header| {
+                        for id in &shown {
+                            let spec = columns::spec(*id);
+                            let (_, cell) = header.col(|ui| {
+                                // The tick-box column's heading selects or clears every
+                                // row currently listed - by construction the filtered set,
+                                // not the whole table, which is what "all" has to mean
+                                // when a filter or a search is exactly why somebody wants
+                                // to act on a set in bulk.
+                                if spec.id == columns::ColumnId::Select {
+                                    let mut all = !app.triage_rows.is_empty()
+                                        && app
+                                            .triage_rows
+                                            .iter()
+                                            .all(|r| app.selected_keys.contains(&r.job.key));
+                                    // An unlabelled checkbox has nothing for the tree to
+                                    // report, so by construction it is invisible to a
+                                    // screen reader and unaddressable by automation.
+                                    let response = crate::access::tag(
+                                        ui.checkbox(&mut all, "")
+                                            .on_hover_text("Select everything in this list"),
+                                        egui::WidgetType::Checkbox,
+                                        "select-all",
+                                    );
+                                    if response.changed() {
+                                        select_all = Some(all);
+                                    }
+                                    return;
+                                }
+                                // Clicking a heading sorts, as it always has. Reordering
+                                // lives on the gear rather than on a drag, so
+                                // by construction neither gesture can be mistaken for the
+                                // other.
+                                let response = match spec.sort {
+                                    Some(column) => sort_heading(ui, app, column, spec.heading),
+                                    None => ui.strong(spec.heading),
+                                };
+                                // The heading itself senses clicks too - see below for
+                                // why both. Set here rather than returned, so the borrow
+                                // of `ui` ends with the cell - enforced by the type.
+                                if let Some(column) = spec.sort {
+                                    if response.clicked() {
+                                        sort_click = Some(column);
+                                    }
+                                }
+                                if let Some(hover) = spec.hover {
+                                    response.on_hover_text(hover);
+                                }
+                            });
+                            // BOTH THE CELL AND THE HEADING, deliberately.
+                            //
+                            // egui_extras registers an interaction over the whole cell rect
+                            // AFTER the contents are drawn (StripLayout::add, last line),
+                            // using this table's sense - Sense::click(), so that body rows
+                            // can be clicked. Which of the two a given click reaches was
+                            // not something reading the source settled. The reported
+                            // symptom was that clicking BESIDE a heading sorted while
+                            // clicking ON it did nothing.
+                            //
+                            // So both are read. Whichever receives the click, the
+                            // heading sorts, and the dead strip beside the words is gone
+                            // either way. They cannot fight by construction: both assign
+                            // the same column to `sort_click`, so a click reaching both
+                            // still sorts once rather than toggling twice back to where
+                            // it started.
+                            if let Some(column) = spec.sort {
+                                if cell.clicked() {
+                                    sort_click = Some(column);
+                                }
+                            }
+                        }
+                    })
+                    .body(|body| {
+                        // Per-row heights, so the open row can be taller than the rest.
+                        // egui_extras rows are uniform by construction otherwise, which is
+                        // what forced the description into a separate panel underneath.
+                        let heights: Vec<f32> = app
+                            .triage_rows
+                            .iter()
+                            .map(|r| {
+                                if app.triage_expanded.as_deref() == Some(r.job.key.as_str()) {
+                                    row_height + EXPANDED_EXTRA
+                                } else {
+                                    row_height
+                                }
+                            })
+                            .collect();
+                        body.heterogeneous_rows(heights.into_iter(), |mut row| {
+                            let idx = row.index();
+                            let r = &app.triage_rows[idx];
+                            let expanded_row =
+                                app.triage_expanded.as_deref() == Some(r.job.key.as_str());
+                            let is_selected = selected_key.as_deref() == Some(r.job.key.as_str());
+                            // An open row reserves ~260px for its detail, and a selection
+                            // FILL over that is a wall of solid colour with the job line
+                            // lost inside it. The open row is outlined instead - the job
+                            // line, the detail and the next job stay three distinct things.
+                            row.set_selected(is_selected && !expanded_row);
 
-                if row.response().clicked() {
-                    click_target = Some(r.job.key.clone());
-                    // Clicking the open row closes it again; clicking a
-                    // different one moves the open block to that row.
-                    expand_target = Some(r.job.key.clone());
-                }
+                            let expanded =
+                                app.triage_expanded.as_deref() == Some(r.job.key.as_str());
+                            let cell = CellCtx {
+                                r,
+                                idx,
+                                expanded,
+                                selected: app.selected_keys.contains(&r.job.key),
+                                row_height,
+                                table_width,
+                                latest_collect: latest_collect.as_deref(),
+                                local_offset: offset,
+                            };
+                            for id in &shown {
+                                row.col(|ui| draw_cell(ui, *id, &cell, &mut actions));
+                            }
+
+                            if row.response().clicked() {
+                                click_target = Some(r.job.key.clone());
+                                // Clicking the open row closes it again; clicking a
+                                // different one moves the open block to that row.
+                                expand_target = Some(r.job.key.clone());
+                            }
+                        });
+                    });
             });
-        });
-        });
     }
 
     // The gear now lives in the toolbar - see the Columns button up there. It
@@ -739,8 +753,13 @@ fn show_list(
         app.mark_taken_down(&key);
     }
 
-    // Applied before anything that changes the list, so the band lands on the
-    // row the person touched rather than on whatever ends up in its place.
+    // Applied before anything that reorders the in-memory list this frame -
+    // verified 2026-09-10: taken_down above only writes the database and
+    // defers via mark_data_changed to the next refresh cycle, while
+    // sort_by_column below is the one handler here that reorders
+    // app.triage_rows synchronously, and select_row runs before it. So the
+    // band lands on the row the person touched rather than on whatever
+    // ends up in its place.
     if let Some(key) = select_row {
         app.triage_selected = Some(key);
     }
@@ -862,7 +881,6 @@ fn show_list(
             app.set_status_for(&key, &status);
         }
     }
-
 }
 
 /// What you can do to everything you have ticked.
@@ -911,10 +929,13 @@ fn bulk_bar(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                             if status.requires.is_some() {
                                 continue;
                             }
-                            if ui
-                                .selectable_label(false, status.label)
-                                .on_hover_text(status.hint)
-                                .clicked()
+                            if crate::access::tag(
+                                ui.selectable_label(false, status.label),
+                                egui::WidgetType::SelectableLabel,
+                                format!("bulk-status-{}", status.value),
+                            )
+                            .on_hover_text(status.hint)
+                            .clicked()
                             {
                                 set_status = Some(status.value);
                             }
@@ -951,7 +972,8 @@ fn bulk_bar(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                     }
                 } else if app.show_retired {
                     let response = crate::access::tag(
-                        ui.button("Put back").on_hover_text("Return these to your lists"),
+                        ui.button("Put back")
+                            .on_hover_text("Return these to your lists"),
                         egui::WidgetType::Button,
                         "bulk-restore",
                     );
@@ -1381,7 +1403,10 @@ struct RowActions {
     /// A tick box that changed, as (key, now selected).
     toggle_select: Option<(String, bool)>,
     /// A row that should become the highlighted one, because the person
-    /// touched a control inside it that consumes the row's own click.
+    /// touched a control inside it that consumes the row's own click -
+    /// verified 2026-09-10: the status combo below sets this exactly when
+    /// its own response is clicked or focused, which is the click the row's
+    /// own handler never sees.
     select_row: Option<String>,
 }
 
@@ -1430,8 +1455,7 @@ fn draw_cell(ui: &mut egui::Ui, id: columns::ColumnId, c: &CellCtx, out: &mut Ro
                 // drawn after the table, in its own layer, which nothing
                 // clips.
                 let top_left = ui.min_rect().min;
-                out.expanded_anchor =
-                    Some((c.idx, top_left + egui::vec2(0.0, c.row_height - 4.0)));
+                out.expanded_anchor = Some((c.idx, top_left + egui::vec2(0.0, c.row_height - 4.0)));
                 // Painted over the job line only, not the reserved detail
                 // space below it.
                 ui.painter().rect_stroke(
@@ -1540,10 +1564,7 @@ fn draw_cell(ui: &mut egui::Ui, id: columns::ColumnId, c: &CellCtx, out: &mut Ro
                 // only work in one of them.
                 let extra = r.other_locations.len();
                 ui.label(format!("{place} +{extra}"))
-                    .on_hover_text(format!(
-                        "Also listed in:\n{}",
-                        r.other_locations.join("\n")
-                    ));
+                    .on_hover_text(format!("Also listed in:\n{}", r.other_locations.join("\n")));
             }
         }
 
@@ -1677,9 +1698,8 @@ fn draw_cell(ui: &mut egui::Ui, id: columns::ColumnId, c: &CellCtx, out: &mut Ro
             if verdict == "alt" {
                 // The column is 60px. A word that fits is the constraint;
                 // the hover carries the card name in full.
-                let module = crate::modules::Module::for_alt_reason(
-                    fmt::opt_str(&r.job.alt_reason),
-                );
+                let module =
+                    crate::modules::Module::for_alt_reason(fmt::opt_str(&r.job.alt_reason));
                 let word = if module == crate::modules::Module::BelowSalary {
                     "pay"
                 } else {
@@ -1753,14 +1773,15 @@ fn draw_cell(ui: &mut egui::Ui, id: columns::ColumnId, c: &CellCtx, out: &mut Ro
                                     .on_disabled_hover_text(reason);
                                 }
                                 None => {
-                                    let picked = ui
-                                        .selectable_label(current == status.value, status.label)
-                                        .on_hover_text(status.hint);
+                                    let picked = crate::access::tag(
+                                        ui.selectable_label(current == status.value, status.label),
+                                        egui::WidgetType::SelectableLabel,
+                                        format!("row-status-{}", status.value),
+                                    )
+                                    .on_hover_text(status.hint);
                                     if picked.clicked() {
-                                        out.status_change = Some((
-                                            r.job.key.clone(),
-                                            status.value.to_string(),
-                                        ));
+                                        out.status_change =
+                                            Some((r.job.key.clone(), status.value.to_string()));
                                     }
                                 }
                             }
@@ -1778,17 +1799,20 @@ fn draw_cell(ui: &mut egui::Ui, id: columns::ColumnId, c: &CellCtx, out: &mut Ro
                         // you pick when you open an untriaged job and find it
                         // gone.
                         if r.job.delisted_at.is_none()
-                            && ui
-                                .selectable_label(false, "Posting taken down")
-                                .on_hover_text(
-                                    "You opened it and the advert had closed. \
+                            && crate::access::tag(
+                                ui.selectable_label(false, "Posting taken down"),
+                                egui::WidgetType::SelectableLabel,
+                                "row-posting-taken-down",
+                            )
+                            .on_hover_text(
+                                "You opened it and the advert had closed. \
                                      Takes it out of this list without waiting \
                                      for the next collection to notice.",
-                                )
-                                .clicked()
-                            {
-                                out.taken_down = Some(r.job.key.clone());
-                            }
+                            )
+                            .clicked()
+                        {
+                            out.taken_down = Some(r.job.key.clone());
+                        }
                     });
                 // The combo's own response, which is the control the click
                 // actually landed on. Selecting from here rather than from the
@@ -1965,13 +1989,21 @@ fn link_prompt(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                 crate::access::text_field(ui, &mut app.link_label, "add-link-label");
             });
             ui.horizontal(|ui| {
-                if crate::access::tag(ui.button("Add"), egui::WidgetType::Button, "add-link-confirm")
-                    .clicked()
+                if crate::access::tag(
+                    ui.button("Add"),
+                    egui::WidgetType::Button,
+                    "add-link-confirm",
+                )
+                .clicked()
                 {
                     confirmed = true;
                 }
-                if crate::access::tag(ui.button("Cancel"), egui::WidgetType::Button, "add-link-cancel")
-                    .clicked()
+                if crate::access::tag(
+                    ui.button("Cancel"),
+                    egui::WidgetType::Button,
+                    "add-link-cancel",
+                )
+                .clicked()
                 {
                     cancelled = true;
                 }
@@ -2052,7 +2084,11 @@ fn expanded_block(
                         ui.selectable_label(tab == ExpandedTab::Fit, "Fit"),
                         egui::WidgetType::SelectableLabel,
                         "expanded-tab-fit",
-                        if tab == ExpandedTab::Fit { "true" } else { "false" },
+                        if tab == ExpandedTab::Fit {
+                            "true"
+                        } else {
+                            "false"
+                        },
                     )
                     .clicked()
                     {
@@ -2076,9 +2112,12 @@ fn expanded_block(
                     {
                         action = BlockAction::Switch(ExpandedTab::Files);
                     }
-                    if ui
-                        .selectable_label(tab == ExpandedTab::Posting, "Posting")
-                        .clicked()
+                    if crate::access::tag(
+                        ui.selectable_label(tab == ExpandedTab::Posting, "Posting"),
+                        egui::WidgetType::SelectableLabel,
+                        "expanded-tab-posting",
+                    )
+                    .clicked()
                     {
                         action = BlockAction::Switch(ExpandedTab::Posting);
                     }
@@ -2104,13 +2143,16 @@ fn expanded_block(
             // a reference, not a replacement - so this offers the earlier
             // posting rather than describing it.
             if let Some(original) = r.job.repost_of.clone().filter(|k| !k.is_empty()) {
-                if ui
-                    .small_button("Open the earlier round")
-                    .on_hover_text(
-                        "The advertisement this one followed. It is kept as its own \
+                if crate::access::tag(
+                    ui.small_button("Open the earlier round"),
+                    egui::WidgetType::Button,
+                    "expanded-open-earlier-round",
+                )
+                .on_hover_text(
+                    "The advertisement this one followed. It is kept as its own \
                          entry, not folded into this one.",
-                    )
-                    .clicked()
+                )
+                .clicked()
                 {
                     open_earlier = Some(original);
                 }
@@ -2155,10 +2197,7 @@ fn expanded_block(
                 if description.trim().is_empty() {
                     ui.weak("No description was captured for this posting.");
                 } else {
-                    ui.add(
-                        egui::Label::new(egui::RichText::new(&description).monospace())
-                            .wrap(),
-                    );
+                    ui.add(egui::Label::new(egui::RichText::new(&description).monospace()).wrap());
                 }
             });
         });
@@ -2366,7 +2405,8 @@ fn show_note_editor(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
             edit_response.request_focus();
         }
         ui.horizontal(|ui| {
-            if crate::access::tag(ui.button("Save"), egui::WidgetType::Button, "note-save").clicked()
+            if crate::access::tag(ui.button("Save"), egui::WidgetType::Button, "note-save")
+                .clicked()
             {
                 app.submit_note_for_selected();
             }

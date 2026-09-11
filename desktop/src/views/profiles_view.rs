@@ -1,17 +1,22 @@
 //! Profile management: create, re-point, and remove job seekers.
 //!
-//! These used to sit as two buttons directly under the profile dropdown, in
-//! the sidebar, next to the control you use every time you switch profiles.
-//! Remove fired on a single click with no confirmation - one misclick and a
-//! seeker left the registry. Their data survived on disk, but getting them
-//! back meant knowing the exact folder path, and a profile absent from the
-//! registry is invisible in the app entirely. That is not a hypothetical:
-//! two of five test seekers were found in precisely that state, complete on
-//! disk and unreachable in the UI.
+//! Unverified history: these are believed to have once sat as two
+//! buttons directly under the profile dropdown, in the sidebar, next
+//! to the control used every time a profile is switched, with Remove
+//! firing on a single click and no confirmation - one misclick and a
+//! seeker left the registry. Their data would have survived on disk,
+//! but getting it back meant knowing the exact folder path. Not a
+//! hypothetical: two of five test seekers are believed to have been
+//! found in precisely that state, complete on disk and unreachable
+//! in the UI.
 //!
-//! So the destructive and creative operations live here, behind a deliberate
-//! navigation step, and the sidebar keeps only the dropdown - which is the
-//! frequent, harmless action.
+//! Verified by construction below: a profile absent from
+//! `profile_registry` is invisible in the app entirely, since the
+//! grid here is built only from `profiles::people(&app.profile_registry)`.
+//!
+//! So the destructive and creative operations live here, behind a
+//! deliberate navigation step, and the sidebar keeps only the
+//! dropdown - which is the frequent, harmless action.
 
 use eframe::egui;
 
@@ -56,8 +61,12 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
         return;
     }
 
-    if crate::access::tag(ui.button("New profile"), egui::WidgetType::Button, "profiles-new")
-        .clicked()
+    if crate::access::tag(
+        ui.button("New profile"),
+        egui::WidgetType::Button,
+        "profiles-new",
+    )
+    .clicked()
     {
         app.show_new_profile_modal = true;
         app.new_profile_draft = NewProfileDraft::default();
@@ -92,8 +101,7 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
             let mut last_person: Option<String> = None;
             for (person, search) in &pairs {
                 let home = profiles::home_for(&app.profile_registry, person, search);
-                let is_active =
-                    *person == app.active_person && *search == app.active_search;
+                let is_active = *person == app.active_person && *search == app.active_search;
 
                 // The name is written once per person, not repeated down every
                 // one of their searches - repeating it makes four searches look
@@ -114,13 +122,20 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                 }
                 ui.label(home.display().to_string());
 
-                if ui
-                    .button("Remove")
-                    .on_hover_text(
-                        "Asks for confirmation. Removes this search from the list only; \
+                if crate::access::tag(
+                    ui.button("Remove"),
+                    egui::WidgetType::Button,
+                    format!(
+                        "profiles-remove-{}-{}",
+                        crate::access::slug(person),
+                        crate::access::slug(search)
+                    ),
+                )
+                .on_hover_text(
+                    "Asks for confirmation. Removes this search from the list only; \
                          the folder and everything in it are kept.",
-                    )
-                    .clicked()
+                )
+                .clicked()
                 {
                     app.profile_pending_removal = Some((person.clone(), search.clone()));
                 }
@@ -132,15 +147,17 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     show_removal_confirmation(app, ui);
 }
 
-/// Anything registered that cannot actually be opened, stated where it will be
-/// seen.
+/// Anything registered that cannot actually be opened, stated where
+/// it will be seen.
 ///
-/// Both failure modes here have already happened silently and cost real time:
-/// two seekers had complete configs, resumes and employer lists on disk but were
-/// absent from the registry, so they could not be selected at all; and one had
-/// no database, which a refresh script stepped straight over with "no database,
-/// skipping". Nothing said a word. A registry problem should be loud, and this
-/// is the screen a person is on when they are wondering where somebody went.
+/// Unverified history: both failure modes here are believed to have
+/// already happened silently and cost real time - two seekers with
+/// complete configs, resumes and employer lists on disk but absent
+/// from the registry, so they could not be selected at all; and one
+/// with no database, which a refresh script stepped straight over
+/// with "no database, skipping". Nothing said a word. A registry
+/// problem should be loud, and this is the screen a person is on
+/// when they are wondering where somebody went.
 fn show_registry_problems(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     let problems = profiles::preflight(&app.profile_registry);
     if problems.is_empty() {
@@ -197,14 +214,23 @@ fn show_removal_confirmation(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
             );
             ui.add_space(10.0);
             ui.horizontal(|ui| {
-                if crate::access::tag(ui.button("Cancel"), egui::WidgetType::Button,
-                    "profiles-delete-cancel").clicked()
+                if crate::access::tag(
+                    ui.button("Cancel"),
+                    egui::WidgetType::Button,
+                    "profiles-delete-cancel",
+                )
+                .clicked()
                 {
                     close = true;
                 }
-                if ui
-                    .button(egui::RichText::new("Remove from list").color(egui::Color32::LIGHT_RED))
-                    .clicked()
+                if crate::access::tag(
+                    ui.button(
+                        egui::RichText::new("Remove from list").color(egui::Color32::LIGHT_RED),
+                    ),
+                    egui::WidgetType::Button,
+                    "profiles-delete-confirm",
+                )
+                .clicked()
                 {
                     confirmed = true;
                     close = true;
@@ -218,8 +244,9 @@ fn show_removal_confirmation(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
         if let Err(e) = profiles::save(&app.profile_registry) {
             app.profile_message = Some(format!("could not save profiles.json: {e}"));
         } else {
-            app.profile_message =
-                Some(format!("removed \"{name}\" from the list; its data is untouched"));
+            app.profile_message = Some(format!(
+                "removed \"{name}\" from the list; its data is untouched"
+            ));
         }
         // Only leave the removed search if it was the one being viewed.
         if was_active {
@@ -236,10 +263,11 @@ fn show_removal_confirmation(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
 
 /// Light or dark, saved per profile in desktop_settings.json.
 ///
-/// Per profile rather than machine-wide because a profile is already the unit
-/// that owns its own home directory and its own settings file, and adding a
-/// second, global place for preferences to live would mean two files to keep
-/// in step for one checkbox.
+/// Per profile rather than machine-wide - verified by construction,
+/// a profile already owns its own home directory and its own
+/// settings file (see settings.rs), so a second, global place for
+/// preferences would mean two files to keep in step for one
+/// checkbox.
 fn appearance(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     ui.strong("Appearance");
     ui.horizontal(|ui| {
@@ -283,14 +311,16 @@ fn appearance(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
 
 /// Which browser a job link opens in.
 ///
-/// SHIPS AS THE DEVICE DEFAULT, and that is not a placeholder. A posting is a
-/// web page, so the browser this machine already opens web pages with is
-/// correct until somebody says otherwise; naming one in the code would be
-/// right on exactly one machine.
+/// SHIPS AS THE DEVICE DEFAULT - verified by construction, `browser`
+/// defaults to an empty string in settings.rs, which this file
+/// treats as "whichever browser this device already opens web pages
+/// with". Believed, not measured, that naming one in the code would
+/// be right on exactly one machine.
 ///
-/// WHY ANYBODY WOULD CHANGE IT: a job hunt has its own logins - the ATS
-/// accounts, the saved profile, the autofill - and the browser holding those is
-/// often not the one that opens email. Sending postings to that browser and
+/// WHY ANYBODY WOULD CHANGE IT: believed, not measured, that a job
+/// hunt has its own logins - the ATS accounts, the saved profile,
+/// the autofill - and that the browser holding those is often not
+/// the one that opens email. Sending postings to that browser and
 /// only that browser is what the setting is for.
 fn opening_links(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     ui.strong("Open job links in");
@@ -313,10 +343,13 @@ fn opening_links(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                     );
                 }
             });
-        if ui
-            .button("Choose...")
-            .on_hover_text("Pick a browser this list does not know about")
-            .clicked()
+        if crate::access::tag(
+            ui.button("Choose..."),
+            egui::WidgetType::Button,
+            "browser-choose",
+        )
+        .on_hover_text("Pick a browser this list does not know about")
+        .clicked()
         {
             if let Some(picked) = rfd::FileDialog::new().pick_file() {
                 choice = picked.to_string_lossy().into_owned();
@@ -346,18 +379,22 @@ fn opening_links(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     }
 }
 
-/// Getting the pipeline out, and saying plainly that it is already being kept.
+/// Getting the pipeline out, and saying plainly that it is already
+/// being kept.
 ///
-/// Two applications were once lost because their status existed in exactly one
-/// place with no way to read it out. A single authoritative store is the right
-/// architecture and also a single point of loss, so the way out has to be
-/// somewhere a person can find on the day they need it - which is not a day
-/// they will spend reading documentation.
+/// Unverified history: two applications are believed to have once
+/// been lost because their status existed in exactly one place with
+/// no way to read it out. A single authoritative store is the right
+/// architecture and also a single point of loss, so the way out has
+/// to be somewhere a person can find on the day they need it - which
+/// is not a day they will spend reading documentation.
 /// Moving the search between this app and another tool.
 ///
-/// ON SETTINGS RATHER THAN CONFIG, beside "Your data": what this writes is a
-/// file about the search, not part of the search. Somebody on the Config
-/// screen is editing what they are looking for; somebody here is moving it.
+/// ON SETTINGS RATHER THAN CONFIG, beside "Your data": what this
+/// writes is a file about the search, not part of the search.
+/// Believed, not measured, that somebody on the Config screen is
+/// editing what they are looking for while somebody here is moving
+/// it.
 fn criteria(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     ui.strong("Your criteria, in another tool");
     ui.horizontal(|ui| {
@@ -393,14 +430,16 @@ fn criteria(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
 
 /// What a criteria file would do, before it does it.
 ///
-/// A CENTRED WINDOW, built the same way show_removal_confirmation is: egui
-/// 0.28 has no modal, so what is behind stays clickable. What this DOES
-/// guarantee is that the dialog never closes by accident - it carries no X
-/// (egui only draws one when given an `open` flag) and nothing outside the
-/// Cancel and apply branches clears `criteria_import`. That matters here
-/// because this is the one moment the change is visible, and a dialog that
-/// closed on a stray click would take that moment away while applying
-/// nothing, which reads as the app having ignored the file.
+/// A CENTRED WINDOW, built the same way show_removal_confirmation is -
+/// by definition, egui 0.28 has no modal, so what is behind stays
+/// clickable. Verified by construction: this dialog never closes by
+/// accident. It carries no X (egui only draws one when given an
+/// `open` flag, and this window is not given one) and nothing
+/// outside the Cancel and apply branches below clears
+/// `criteria_import`. That matters here because this is the one
+/// moment the change is visible, and a dialog that closed on a
+/// stray click would take that moment away while applying nothing,
+/// which reads as the app having ignored the file.
 fn show_criteria_preview(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     let Some(pending) = &app.criteria_import else {
         return;
@@ -432,10 +471,16 @@ fn show_criteria_preview(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                     ui.horizontal(|ui| {
                         ui.label("Lists in this file:");
                         for (value, label, hint) in [
-                            ("replace", "replace mine",
-                             "Your titles, skills and places become the ones in the file."),
-                            ("merge", "add to mine",
-                             "Anything new in the file is added. Nothing of yours is removed."),
+                            (
+                                "replace",
+                                "replace mine",
+                                "Your titles, skills and places become the ones in the file.",
+                            ),
+                            (
+                                "merge",
+                                "add to mine",
+                                "Anything new in the file is added. Nothing of yours is removed.",
+                            ),
                         ] {
                             let chosen = mode == value;
                             if crate::access::tag_with_value(
@@ -457,25 +502,31 @@ fn show_criteria_preview(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                         report.preview.len(),
                         if report.preview.len() == 1 { "" } else { "s" }
                     ));
-                    egui::ScrollArea::vertical().max_height(260.0).show(ui, |ui| {
-                        egui::Grid::new("criteria_preview")
-                            .num_columns(2)
-                            .striped(true)
-                            .show(ui, |ui| {
-                                for change in &report.preview {
-                                    ui.label(change.where_it_is());
-                                    ui.label(change.what_happens());
-                                    ui.end_row();
-                                }
-                            });
-                    });
+                    egui::ScrollArea::vertical()
+                        .max_height(260.0)
+                        .show(ui, |ui| {
+                            egui::Grid::new("criteria_preview")
+                                .num_columns(2)
+                                .striped(true)
+                                .show(ui, |ui| {
+                                    for change in &report.preview {
+                                        ui.label(change.where_it_is());
+                                        ui.label(change.what_happens());
+                                        ui.end_row();
+                                    }
+                                });
+                        });
                 }
             }
 
             ui.add_space(10.0);
             ui.horizontal(|ui| {
                 let can_apply = matches!(&pending.report, Ok(r) if !r.is_empty());
-                let label = if mode == "merge" { "Add these" } else { "Replace mine" };
+                let label = if mode == "merge" {
+                    "Add these"
+                } else {
+                    "Replace mine"
+                };
                 if crate::access::tag(
                     ui.add_enabled(can_apply, egui::Button::new(label)),
                     egui::WidgetType::Button,
@@ -485,8 +536,12 @@ fn show_criteria_preview(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                 {
                     apply = true;
                 }
-                if crate::access::tag(ui.button("Cancel"), egui::WidgetType::Button, "criteria-cancel")
-                    .clicked()
+                if crate::access::tag(
+                    ui.button("Cancel"),
+                    egui::WidgetType::Button,
+                    "criteria-cancel",
+                )
+                .clicked()
                 {
                     close = true;
                 }
@@ -506,14 +561,17 @@ fn show_criteria_preview(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
 fn your_data(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     ui.strong("Your data");
     ui.horizontal(|ui| {
-        if ui
-            .button("Export to a spreadsheet")
-            .on_hover_text(
-                "Every job, its status, when you applied and the whole history - \
+        if crate::access::tag(
+            ui.button("Export to a spreadsheet"),
+            egui::WidgetType::Button,
+            "data-export-spreadsheet",
+        )
+        .on_hover_text(
+            "Every job, its status, when you applied and the whole history - \
                  including ones you removed or that were taken down. Opens in \
                  Excel, Numbers or Sheets.",
-            )
-            .clicked()
+        )
+        .clicked()
         {
             app.export_pipeline();
         }
@@ -532,22 +590,27 @@ fn your_data(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
 
 /// Which build this is.
 ///
-/// THE WINDOW COULD NOT ANSWER "AM I ON THE LATEST", and the question came up
-/// twice in one day of shipping several times. The version was on the exe's
-/// file properties and in the Windows apps list, and nowhere a person looking
-/// at the app could see it.
+/// Unverified history: the window is believed to have been unable
+/// to answer "am I on the latest", with the question coming up
+/// twice in one day of shipping several times. The version was on
+/// the exe's file properties and in the Windows apps list, and
+/// nowhere a person looking at the app could see it.
 ///
-/// IT ALSO SAYS WHEN THIS IS NOT THE INSTALLED COPY. A test build is compiled
-/// from the same source and carries the same version number, so a version
-/// alone cannot tell the two apart - which is exactly the confusion it is here
-/// to end. The install location is the only thing that differs, so that is
+/// IT ALSO SAYS WHEN THIS IS NOT THE INSTALLED COPY. A test build
+/// is compiled from the same source and carries the same version
+/// number, so a version alone cannot tell the two apart.
+///
+/// Verified by construction below: the install location is the
+/// only thing compared - `installed` against `here` - so that is
 /// what is read.
 fn which_build(ui: &mut egui::Ui) {
     let version = env!("CARGO_PKG_VERSION");
     let installed = std::env::var_os("LOCALAPPDATA")
         .map(std::path::PathBuf::from)
         .map(|base| base.join("Programs").join("Unlatched"));
-    let here = std::env::current_exe().ok().and_then(|p| p.parent().map(PathBuf::from));
+    let here = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(PathBuf::from));
     let is_installed = match (&installed, &here) {
         (Some(want), Some(got)) => want == got,
         // Nowhere to compare against - say nothing rather than guess. On a
@@ -557,19 +620,22 @@ fn which_build(ui: &mut egui::Ui) {
     if is_installed {
         ui.weak(format!("Unlatched {version}"));
     } else {
-        ui.weak(format!("Unlatched {version} - test build, not the installed copy"))
-            .on_hover_text(
-                here.map(|p| p.display().to_string())
-                    .unwrap_or_else(|| "running from an unknown location".to_string()),
-            );
+        ui.weak(format!(
+            "Unlatched {version} - test build, not the installed copy"
+        ))
+        .on_hover_text(
+            here.map(|p| p.display().to_string())
+                .unwrap_or_else(|| "running from an unknown location".to_string()),
+        );
     }
 }
 
 /// Which status changes stop to ask for a note.
 ///
-/// The note is worth asking for on an interview or a declined offer and almost
-/// never wanted on Applied, which is the one set most often - so this is per
-/// status rather than one switch that would take the useful prompts with it.
+/// Believed, not measured, that the note is worth asking for on an
+/// interview or a declined offer and almost never wanted on
+/// Applied - the one set most often - so this is per status rather
+/// than one switch that would take the useful prompts with it.
 fn note_prompts(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     ui.strong("Ask for a note when I set");
     ui.weak(
@@ -578,8 +644,9 @@ fn note_prompts(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     );
     ui.add_space(4.0);
 
-    // FROM THE VOCABULARY ITSELF, so a status added later shows up here
-    // without anybody remembering to come back.
+    // FROM THE VOCABULARY ITSELF - verified by construction: this loop
+    // reads `status::FLOW` directly, so a status added there later
+    // shows up here without anybody remembering to come back.
     let mut changed = false;
     for spec in crate::status::FLOW.iter() {
         if spec.value == "offer" {
@@ -618,10 +685,13 @@ fn note_prompts(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     }
 }
 
-/// How long the walkthrough takes, as told to somebody deciding whether to
-/// start it. The walkthrough's own opening step makes the same promise, and
-/// the two drifted apart once already - this screen said a minute over
-/// eleven steps. Held as a constant so a test can hold them together.
+/// How long the walkthrough takes, as told to somebody deciding
+/// whether to start it. The walkthrough's own opening step makes
+/// the same promise. Unverified history: the two are believed to
+/// have drifted apart once already - this screen is believed to
+/// have said a minute over eleven steps. Verified by construction:
+/// held as a constant so the test below can assert
+/// `crate::tutorial::STEPS[0].body` contains the same string.
 const TOUR_LENGTH: &str = "two minutes";
 
 /// Help. Currently one thing, but it is the thing people look for by name

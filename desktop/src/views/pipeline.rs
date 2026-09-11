@@ -1,6 +1,7 @@
 // Pipeline: the job_status_log timeline grouped by key, with days-since
 // for anything still sitting at "applied" and a simple response-rate
-// summary. This view is read-only; all writes happen from Triage.
+// summary. This view is read-only - verified 2026-09-10, it calls no db
+// write; opening a card hands the job to the list, where writes happen.
 
 use eframe::egui;
 use std::collections::BTreeMap;
@@ -17,8 +18,12 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     let offset = app.local_offset;
     ui.horizontal(|ui| {
         ui.heading("Pipeline");
-        if crate::access::tag(ui.button("Refresh"), egui::WidgetType::Button, "pipeline-refresh")
-            .clicked()
+        if crate::access::tag(
+            ui.button("Refresh"),
+            egui::WidgetType::Button,
+            "pipeline-refresh",
+        )
+        .clicked()
         {
             app.refresh_pipeline();
         }
@@ -28,16 +33,20 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     render_summary(app, ui);
     ui.separator();
 
-    // Group log entries by key. The query already orders by key then id,
-    // so a simple linear scan into a BTreeMap preserves chronological
-    // order within each group without a second sort pass.
+    // Group log entries by key. The query already orders by key then id -
+    // verified 2026-09-10 in db::list_status_log - so a linear scan into a
+    // BTreeMap keeps each group in the order it was recorded; timeline() then
+    // sorts each group on its timestamp.
     let mut groups: BTreeMap<String, Vec<&crate::db::StatusLogEntry>> = BTreeMap::new();
     for entry in &app.pipeline_log {
         groups.entry(entry.key.clone()).or_default().push(entry);
     }
     let mut notes_by_key: BTreeMap<&str, Vec<&crate::db::Note>> = BTreeMap::new();
     for note in &app.pipeline_notes {
-        notes_by_key.entry(note.key.as_str()).or_default().push(note);
+        notes_by_key
+            .entry(note.key.as_str())
+            .or_default()
+            .push(note);
     }
     // IN PLAY ONLY: applied to, and not finished. See the module note.
     //
@@ -109,65 +118,65 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                     .unwrap_or_else(|| (key.clone(), None));
                 let company_label = company.unwrap_or_default();
 
-                let response = ui.group(|ui| {
-                    ui.vertical(|ui| {
-                        ui.horizontal(|ui| {
-                            ui.strong(fmt::truncate(&title, 60));
-                            if !company_label.is_empty() {
-                                ui.label(format!("({company_label})"));
-                            }
-                            if let Some(current) = app.pipeline_current.get(key) {
-                                status_pill(ui, &current.status);
-                                if current.status == "applied" {
-                                    if let Some(days) = date::days_since(&current.updated) {
-                                        ui.weak(format!("applied {days} day(s) ago"));
+                let response = ui
+                    .group(|ui| {
+                        ui.vertical(|ui| {
+                            ui.horizontal(|ui| {
+                                ui.strong(fmt::truncate(&title, 60));
+                                if !company_label.is_empty() {
+                                    ui.label(format!("({company_label})"));
+                                }
+                                if let Some(current) = app.pipeline_current.get(key) {
+                                    status_pill(ui, &current.status);
+                                    if current.status == "applied" {
+                                        if let Some(days) = date::days_since(&current.updated) {
+                                            ui.weak(format!("applied {days} day(s) ago"));
+                                        }
                                     }
+                                }
+                            });
+                            // The header already shows the CURRENT status. A
+                            // single-entry history with nothing written against it
+                            // repeats that pill verbatim, which put the same badge
+                            // on the card twice; the timeline is worth drawing once
+                            // there is a progression, or anything written down.
+                            let empty: Vec<&crate::db::Note> = Vec::new();
+                            let items =
+                                timeline(entries, notes_by_key.get(key.as_str()).unwrap_or(&empty));
+                            if items.len() > 1 || items.iter().any(|i| !i.note.is_empty()) {
+                                for item in &items {
+                                    ui.horizontal(|ui| {
+                                        stamp(ui, &item.at, offset);
+                                        if item.note_only {
+                                            ui.weak("note");
+                                        } else {
+                                            status_pill(ui, &item.status);
+                                        }
+                                        if item.note.is_empty() {
+                                            // A MISSING NOTE SHOWS. Never
+                                            // mandatory, but a transition nobody
+                                            // wrote anything about is the one a
+                                            // person cannot reconstruct later.
+                                            // Believed, not measured: a silent
+                                            // blank looked identical to a note
+                                            // too long to fit.
+                                            ui.weak("- no note").on_hover_text(
+                                                "Nothing was written down when this \
+                                             was recorded.",
+                                            );
+                                        } else {
+                                            ui.label(fmt::truncate(&item.note, 60))
+                                                .on_hover_text(&item.note);
+                                        }
+                                        if let Some(terms) = item.offer_terms() {
+                                            ui.weak(terms.clone()).on_hover_text(terms);
+                                        }
+                                    });
                                 }
                             }
                         });
-                        // The header already shows the CURRENT status. A
-                        // single-entry history with nothing written against it
-                        // repeats that pill verbatim, which put the same badge
-                        // on the card twice; the timeline is worth drawing once
-                        // there is a progression, or anything written down.
-                        let empty: Vec<&crate::db::Note> = Vec::new();
-                        let items = timeline(
-                            entries,
-                            notes_by_key.get(key.as_str()).unwrap_or(&empty),
-                        );
-                        if items.len() > 1 || items.iter().any(|i| !i.note.is_empty()) {
-                            for item in &items {
-                                ui.horizontal(|ui| {
-                                    stamp(ui, &item.at, offset);
-                                    if item.note_only {
-                                        ui.weak("note");
-                                    } else {
-                                        status_pill(ui, &item.status);
-                                    }
-                                    if item.note.is_empty() {
-                                        // A MISSING NOTE SHOWS. Never
-                                        // mandatory, but a transition nobody
-                                        // wrote anything about is the one a
-                                        // person cannot reconstruct later, and
-                                        // a silent blank looked identical to a
-                                        // note that was simply too long to fit.
-                                        ui.weak("- no note").on_hover_text(
-                                            "Nothing was written down when this \
-                                             was recorded.",
-                                        );
-                                    } else {
-                                        ui.label(fmt::truncate(&item.note, 60))
-                                            .on_hover_text(&item.note);
-                                    }
-                                    if let Some(terms) = item.offer_terms() {
-                                        ui.weak(terms.clone()).on_hover_text(terms);
-                                    }
-                                });
-                            }
-                        }
-                    });
-                })
-                .response;
+                    })
+                    .response;
 
                 // A card that does nothing when clicked reads as broken. This
                 // opens the posting in the list, where every action on a job
@@ -189,10 +198,11 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
         app.list_scope = crate::app::ListScope::All;
         app.refresh_triage();
         app.view = crate::app::View::AllJobs;
-        // The half that was missing. Everything above was already right - the
-        // row was selected and its posting opened - and none of it was visible,
-        // because All jobs draws from the top and the row is wherever score
-        // ordering put it. See UnlatchedApp::scroll_to_selected.
+        // The half that was missing: the row was selected and its posting opened,
+        // but All jobs draws from the top and the row sits wherever score ordering
+        // put it - by construction, so this asks the list to scroll to it. See
+        // UnlatchedApp::scroll_to_selected. Unverified history: before this line
+        // none of it was visible.
         app.scroll_to_selected = true;
     }
 }
@@ -243,7 +253,6 @@ fn render_summary(app: &UnlatchedApp, ui: &mut egui::Ui) {
     });
 }
 
-
 /// One thing that happened to a job: a status change, or a note written on its
 /// own.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -278,9 +287,13 @@ impl TimelineItem {
 /// tables (see db::add_note), but a person reading their own record of a job
 /// wants one column of events, not two lists to interleave in their head.
 ///
-/// Sorted on the stored timestamp, which is ISO-8601 and therefore sorts
-/// correctly as text. Ties keep the status change ahead of the note, because a
-/// note written in the same second as a transition was written ABOUT it.
+/// Sorted on the stored timestamp as text. By construction both halves stamp
+/// local time with its offset, to the second, so text order is time order
+/// while the offset holds; across a daylight-saving fall-back the repeated
+/// hour can sort out of order (01:10-05:00 sorts before 01:30-04:00 though
+/// it happened later). Ties keep the status change ahead of the note, on the
+/// reading - believed, not measured - that a note in the same second as a
+/// transition is about it.
 pub fn timeline(
     entries: &[&crate::db::StatusLogEntry],
     notes: &[&crate::db::Note],
@@ -303,9 +316,10 @@ pub fn timeline(
         ..Default::default()
     }));
     // The tie-break is the reason this is sort_by rather than sort_by_key on
-    // `at` alone: the two sources are concatenated, so at an identical
-    // timestamp a stable sort would order by which list the item came from.
-    // `note_only` false sorts before true, putting the transition first.
+    // `at` alone: by definition Rust's sort is stable, so at an identical
+    // timestamp `at` alone would leave items in whichever order the two lists
+    // were concatenated. `note_only` false sorts before true, putting the
+    // transition first whatever the concatenation order.
     out.sort_by(|a, b| a.at.cmp(&b.at).then(a.note_only.cmp(&b.note_only)));
     out
 }
@@ -326,11 +340,11 @@ fn stamp(ui: &mut egui::Ui, at: &str, offset_secs: i64) {
 
 /// A filled pill, drawn rather than coloured text: on a dark theme a coloured
 /// label is easy to miss among other coloured labels, where a filled badge
-/// still reads at a glance.
+/// still reads at a glance - believed, not measured.
 ///
-/// The colour and the wording both come from crate::status, which is why this
-/// file no longer carries a copy of either. It carried both, and the copy here
-/// had "denied" in it - a value the app stopped writing.
+/// The colour and the wording both come from crate::status - by construction,
+/// status::colour and status::label below - so this file carries a copy of
+/// neither. Unverified history: it once carried both, with "denied" in it.
 fn status_pill(ui: &mut egui::Ui, value: &str) {
     if value.trim().is_empty() {
         return;
@@ -406,10 +420,10 @@ mod tests {
 
     #[test]
     fn a_note_written_in_the_same_second_as_a_change_follows_it() {
-        // Identical timestamps happen: the note prompt saves both in one
-        // action. The note was written ABOUT the transition, so it reads after
-        // it - and without the tie-break the order would depend on which of
-        // the two lists was concatenated first.
+        // Identical timestamps happen: by construction stamps are to the second, so
+        // a status change and a note added within the same second tie. The note is
+        // read as being ABOUT the transition, so it comes after it - and without the
+        // tie-break the order would depend on which list was concatenated first.
         let entries = [entry("2026-08-01T09:00:00", "offer", None)];
         let notes = [note("2026-08-01T09:00:00", "verbal, written to follow")];
         let refs: Vec<&StatusLogEntry> = entries.iter().collect();
@@ -437,7 +451,11 @@ mod tests {
             status: "offer".to_string(),
             ..Default::default()
         };
-        assert_eq!(item.offer_terms(), None, "an offer with no figures says nothing");
+        assert_eq!(
+            item.offer_terms(),
+            None,
+            "an offer with no figures says nothing"
+        );
         item.pay = "$120,000".to_string();
         assert_eq!(item.offer_terms().as_deref(), Some("$120,000"));
         item.offer_date = "2026-09-01".to_string();
@@ -451,10 +469,14 @@ mod tests {
 
     #[test]
     fn a_job_with_only_notes_still_produces_a_timeline() {
-        // Notes are not always tied to a status change. A person
-        // researching an employer before applying has a history worth keeping
-        // and no transition to hang it on.
-        let notes = [note("2026-08-01T09:00:00", "same recruiter as the last one")];
+        // Notes are not always tied to a status change - by construction, add_note
+        // writes job_note and needs no status. A person researching an employer
+        // before applying has a history worth keeping and no transition to hang it
+        // on.
+        let notes = [note(
+            "2026-08-01T09:00:00",
+            "same recruiter as the last one",
+        )];
         let note_refs: Vec<&Note> = notes.iter().collect();
         let items = timeline(&[], &note_refs);
         assert_eq!(items.len(), 1);

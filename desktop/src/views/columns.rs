@@ -295,10 +295,7 @@ pub fn settings_panel(
                     } else {
                         spec.heading
                     };
-                    let tick = ui.add_enabled(
-                        !spec.pinned,
-                        egui::Checkbox::new(&mut shown, label),
-                    );
+                    let tick = ui.add_enabled(!spec.pinned, egui::Checkbox::new(&mut shown, label));
                     if spec.pinned {
                         tick.on_hover_text(
                             "Always shown. Hiding this one would leave no way \
@@ -346,8 +343,12 @@ pub fn settings_panel(
 
     ui.add_space(8.0);
     ui.separator();
-    if crate::access::tag(ui.button("Reset to default"), egui::WidgetType::Button, "columns-reset")
-        .clicked()
+    if crate::access::tag(
+        ui.button("Reset to default"),
+        egui::WidgetType::Button,
+        "columns-reset",
+    )
+    .clicked()
     {
         *order = default_order();
         hidden.clear();
@@ -460,6 +461,9 @@ mod tests {
         // on a first run the saved list is empty, and completing it would
         // turn off the whole table.
         assert!(from_keys_lenient(&[]).is_empty());
-        assert_eq!(visible(&default_order(), &from_keys_lenient(&[])).len(), COLUMNS.len());
+        assert_eq!(
+            visible(&default_order(), &from_keys_lenient(&[])).len(),
+            COLUMNS.len()
+        );
     }
 }

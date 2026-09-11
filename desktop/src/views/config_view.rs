@@ -73,11 +73,7 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                 ui.label("Employment types you would take (none ticked = all):");
                 ui.horizontal_wrapped(|ui| {
                     for (key, label) in crate::config::EMPLOYMENT_KINDS {
-                        let mut on = app
-                            .config_draft
-                            .employment_types
-                            .iter()
-                            .any(|t| t == key);
+                        let mut on = app.config_draft.employment_types.iter().any(|t| t == key);
                         let name = format!("config-employment-{key}");
                         if crate::access::tick(ui, &mut on, label, &name).changed() {
                             if on {
@@ -118,18 +114,34 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                 );
                 ui.horizontal(|ui| {
                     ui.label("Currency:");
-                    crate::access::text_field(ui, &mut app.config_draft.currency, "config-currency");
+                    crate::access::text_field(
+                        ui,
+                        &mut app.config_draft.currency,
+                        "config-currency",
+                    );
                 });
                 ui.separator();
 
                 ui.label("Ways of working you would take:");
                 ui.horizontal_wrapped(|ui| {
-                    crate::access::tick(ui, &mut app.config_draft.work_remote, "Remote",
-                        "config-work-remote");
-                    crate::access::tick(ui, &mut app.config_draft.work_hybrid, "Hybrid",
-                        "config-work-hybrid");
-                    crate::access::tick(ui, &mut app.config_draft.work_onsite, "On-site",
-                        "config-work-onsite");
+                    crate::access::tick(
+                        ui,
+                        &mut app.config_draft.work_remote,
+                        "Remote",
+                        "config-work-remote",
+                    );
+                    crate::access::tick(
+                        ui,
+                        &mut app.config_draft.work_hybrid,
+                        "Hybrid",
+                        "config-work-hybrid",
+                    );
+                    crate::access::tick(
+                        ui,
+                        &mut app.config_draft.work_onsite,
+                        "On-site",
+                        "config-work-onsite",
+                    );
                 })
                 .response
                 .on_hover_text(
@@ -147,16 +159,17 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                     &mut app.config_draft.locations,
                 );
 
-                // BOTH OF THESE WERE ENGINE-ONLY. The screening code has acted
-                // on them all along and this page modelled neither, so the only
-                // way to change either was to edit config.json by hand - and
-                // us_only defaults ON, which means a filter was running that
-                // nothing on screen mentioned.
+                // BOTH OF THESE WERE ENGINE-ONLY. Verified in config.rs: `us_only`
+                // defaults to true, so a filter was already running before this page
+                // modelled either checkbox. Unverified history: this page is
+                // believed to have modelled neither before now, so the only way to
+                // change either was to edit config.json by hand.
                 //
-                // NAMED, so a check can assert they are on screen rather than
-                // only photograph the place they should be. These two were
-                // engine-only for long enough that nothing noticed; a picture
-                // proves what it caught, a name proves they are still there.
+                // NAMED, so a check can assert they are on screen rather than only
+                // photograph the place they should be. Unverified history: these two
+                // are believed to have been engine-only for long enough that nothing
+                // noticed; a picture proves what it caught, a name proves they are
+                // still there.
                 ui.add_space(6.0);
                 crate::access::tag(
                     ui.checkbox(
@@ -188,91 +201,108 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                      rather than adding postings from anywhere.",
                 );
             });
-            crate::access::tag(search.header_response,
-                egui::WidgetType::Button, "config-section-search");
+            crate::access::tag(
+                search.header_response,
+                egui::WidgetType::Button,
+                "config-section-search",
+            );
 
             // WHEN collection happens, not what it looks for. These sat
             // inside "Search" and nobody found them - the times were only
             // ever changed from the CLI.
             let when_this_search_runs = ui.collapsing("When this search runs", |ui| {
-            crate::access::tick(
-                ui,
-                &mut app.config_draft.refresh_daily,
-                "Refresh this search daily",
-                "config-refresh-daily",
-            )
-            .on_hover_text(
-                "Pressing Search is always deliberate. This keeps an existing search \
+                crate::access::tick(
+                    ui,
+                    &mut app.config_draft.refresh_daily,
+                    "Refresh this search daily",
+                    "config-refresh-daily",
+                )
+                .on_hover_text(
+                    "Pressing Search is always deliberate. This keeps an existing search \
                  current afterwards - twice on weekdays, once at weekends - so a list \
                  that is days stale does not cost you the roles worth applying to \
                  first. Closed for a few days? It catches up the moment you open it.",
-            );
-            ui.add_enabled_ui(app.config_draft.refresh_daily, |ui| {
-                ui.horizontal(|ui| {
-                    ui.label("Run at:");
-                    ui.add(
-                        egui::TextEdit::singleline(&mut app.config_draft.refresh_at)
-                            .desired_width(140.0)
-                            .hint_text("11:00, 16:30"),
-                    )
-                    .on_hover_text(
-                        "Times of day on a 24-hour clock, separated by commas. The \
+                );
+                ui.add_enabled_ui(app.config_draft.refresh_daily, |ui| {
+                    ui.horizontal(|ui| {
+                        ui.label("Run at:");
+                        ui.add(
+                            egui::TextEdit::singleline(&mut app.config_draft.refresh_at)
+                                .desired_width(140.0)
+                                .hint_text("11:00, 16:30"),
+                        )
+                        .on_hover_text(
+                            "Times of day on a 24-hour clock, separated by commas. The \
                          morning run catches the 8:00-10:30 batch once it has landed; \
                          the afternoon one catches roles approved during the day.",
-                    );
-                    ui.weak("24-hour clock, comma separated");
-                });
-                // The app has to be open for a scheduled run to happen, and
-                // a schedule somebody cannot predict is one they stop
-                // trusting - so say both rather than leaving it to be
-                // discovered.
-                ui.weak(
-                    "Runs when the app is open. If it was closed, it catches up the \
+                        );
+                        ui.weak("24-hour clock, comma separated");
+                    });
+                    // The app has to be open for a scheduled run to happen - verified
+                    // by construction (see app.rs): the schedule is consulted only from
+                    // inside the running app, never by a background service. Believed,
+                    // not measured, that a schedule somebody cannot predict is one they
+                    // stop trusting - so say both rather than leaving it to be
+                    // discovered.
+                    ui.weak(
+                        "Runs when the app is open. If it was closed, it catches up the \
                      next time you open it.",
-                );
-                crate::access::tick(
-                    ui,
-                    &mut app.config_draft.refresh_weekdays_only,
-                    "Skip weekends",
-                    "config-skip-weekends",
-                )
-                .on_hover_text(
-                    "Measured across 8,331 postings: 69% land Monday to Wednesday, \
+                    );
+                    crate::access::tick(
+                        ui,
+                        &mut app.config_draft.refresh_weekdays_only,
+                        "Skip weekends",
+                        "config-skip-weekends",
+                    )
+                    .on_hover_text(
+                        "Measured across 8,331 postings: 69% land Monday to Wednesday, \
                      Tuesday alone 27%, and the weekend 1.7% between them. The \
                      weekend run is one check rather than two for that reason - \
                      tick this to skip it entirely.",
-                );
-                // DISABLED WHEN WEEKENDS ARE SKIPPED. A time for a run that
-                // will not happen is a control that does nothing, which is
-                // the failure this whole field exists to correct.
-                ui.add_enabled_ui(!app.config_draft.refresh_weekdays_only, |ui| {
-                    ui.horizontal(|ui| {
-                        ui.label("Weekend run at:");
-                        ui.add(
-                            egui::TextEdit::singleline(
-                                &mut app.config_draft.refresh_weekend_at,
+                    );
+                    // DISABLED WHEN WEEKENDS ARE SKIPPED. A time for a run that
+                    // will not happen is a control that does nothing, which is
+                    // the failure this whole field exists to correct.
+                    ui.add_enabled_ui(!app.config_draft.refresh_weekdays_only, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label("Weekend run at:");
+                            ui.add(
+                                egui::TextEdit::singleline(
+                                    &mut app.config_draft.refresh_weekend_at,
+                                )
+                                .desired_width(140.0)
+                                .hint_text("11:30"),
                             )
-                            .desired_width(140.0)
-                            .hint_text("11:30"),
-                        )
-                        .on_hover_text(
-                            "Saturday and Sunday get one run rather than two, \
+                            .on_hover_text(
+                                "Saturday and Sunday get one run rather than two, \
                              later in the day - weekend postings are not staged \
                              to a business-hours release, so there is no morning \
                              batch to wait for.",
-                        );
+                            );
+                        });
                     });
                 });
             });
-            });
-            crate::access::tag(when_this_search_runs.header_response,
-                egui::WidgetType::Button, "config-section-when-this-search-runs");
+            crate::access::tag(
+                when_this_search_runs.header_response,
+                egui::WidgetType::Button,
+                "config-section-when-this-search-runs",
+            );
 
             let skills_vocabulary = ui.collapsing("Skills vocabulary", |ui| {
-                tag_editor(ui, content_width, "Skills", "skills", &mut app.config_draft.skills);
+                tag_editor(
+                    ui,
+                    content_width,
+                    "Skills",
+                    "skills",
+                    &mut app.config_draft.skills,
+                );
             });
-            crate::access::tag(skills_vocabulary.header_response,
-                egui::WidgetType::Button, "config-section-skills-vocabulary");
+            crate::access::tag(
+                skills_vocabulary.header_response,
+                egui::WidgetType::Button,
+                "config-section-skills-vocabulary",
+            );
 
             // No "Resume path" box here any more (decided 2026-08-05).
             // Once a resume is ATTACHED, the app reads its own copy and the
@@ -294,7 +324,12 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                                 .sources
                                 .entry((*name).to_string())
                                 .or_insert(true);
-                            crate::access::tick(ui, enabled, name, &format!("config-source-{name}"));
+                            crate::access::tick(
+                                ui,
+                                enabled,
+                                name,
+                                &format!("config-source-{name}"),
+                            );
                             count += 1;
                             if count % 3 == 0 {
                                 ui.end_row();
@@ -302,8 +337,11 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                         }
                     });
             });
-            crate::access::tag(sources.header_response,
-                egui::WidgetType::Button, "config-section-sources");
+            crate::access::tag(
+                sources.header_response,
+                egui::WidgetType::Button,
+                "config-section-sources",
+            );
 
             // Four controls used to sit here - max bytes, timeout, per-host
             // delay and a robots.txt tick box - and NONE of them did anything.
@@ -366,9 +404,9 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                     );
                 }
                 ui.label("USAJOBS (federal job postings) needs a free key.");
-                // The ToS scopes retrieved data to the registering entity and
-                // forbids sharing a key, so this must read as "register your
-                // own", not "obtain a key from somewhere".
+                // Believed, not measured: the ToS is understood to scope retrieved
+                // data to the registering entity and forbid sharing a key, so this
+                // reads as "register your own", not "obtain a key from somewhere".
                 ui.label(
                     "Register your own - USAJOBS ties the key to the person or \
                      organization that requested it, and keys may not be shared.",
@@ -394,10 +432,12 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                     );
                     crate::access::tag(key_box, egui::WidgetType::TextEdit, "config-usajobs-key");
                 });
-                // Say which of the two storage states this machine is in
-                // rather than implying a guarantee the platform may not
-                // provide. See secrets.rs for what DPAPI does and does not
-                // defend against.
+                // Say which of the two storage states this machine is in rather
+                // than implying a guarantee the platform may not provide.
+                // Verified by construction: the branch below reads
+                // `secrets::available()` and states exactly that machine's storage
+                // state, encrypted or plain text, never a promise about the other.
+                // See secrets.rs for what DPAPI does and does not defend against.
                 if crate::secrets::available() {
                     ui.label(
                         "Stored encrypted for your Windows account - the config \
@@ -410,8 +450,11 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                     );
                 }
             });
-            crate::access::tag(job_sources_that_need_a_key.header_response,
-                egui::WidgetType::Button, "config-section-job-sources-that-need-a-key");
+            crate::access::tag(
+                job_sources_that_need_a_key.header_response,
+                egui::WidgetType::Button,
+                "config-section-job-sources-that-need-a-key",
+            );
 
             let collectors = ui.collapsing("Collectors", |ui| {
                 ui.label(
@@ -490,8 +533,7 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                         // schedule, we_may_refetch, pushes_closures. Somebody
                         // who cannot see them here has no way to tell a save
                         // kept them.
-                        let mut kept: Vec<&str> =
-                            entry.rest.keys().map(String::as_str).collect();
+                        let mut kept: Vec<&str> = entry.rest.keys().map(String::as_str).collect();
                         kept.sort_unstable();
                         ui.label(format!(
                             "Also set in config.json, kept as it is: {}",
@@ -515,17 +557,22 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                     // collectors.DEFAULTS. Adding a row that arrived switched
                     // off would also mean the same entry behaved differently
                     // depending on whether it was typed here or into the file.
-                    app.config_draft.collectors.push(crate::config::CollectorEntry {
-                        enabled: true,
-                        ..Default::default()
-                    });
+                    app.config_draft
+                        .collectors
+                        .push(crate::config::CollectorEntry {
+                            enabled: true,
+                            ..Default::default()
+                        });
                 }
                 if app.config_draft.collectors.is_empty() {
                     ui.label("None configured.");
                 }
             });
-            crate::access::tag(collectors.header_response,
-                egui::WidgetType::Button, "config-section-collectors");
+            crate::access::tag(
+                collectors.header_response,
+                egui::WidgetType::Button,
+                "config-section-collectors",
+            );
 
             let agent_api_optional = ui.collapsing("Agent API (optional)", |ui| {
                 ui.horizontal(|ui| {
@@ -552,16 +599,25 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
                     );
                 });
             });
-            crate::access::tag(agent_api_optional.header_response,
-                egui::WidgetType::Button, "config-section-agent-api-optional");
+            crate::access::tag(
+                agent_api_optional.header_response,
+                egui::WidgetType::Button,
+                "config-section-agent-api-optional",
+            );
         });
 
     ui.separator();
     ui.horizontal(|ui| {
-        if crate::access::tag(ui.button("Save"), egui::WidgetType::Button, "config-save").clicked() {
+        if crate::access::tag(ui.button("Save"), egui::WidgetType::Button, "config-save").clicked()
+        {
             app.save_config();
         }
-        if crate::access::tag(ui.button("Reload"), egui::WidgetType::Button, "config-reload").clicked()
+        if crate::access::tag(
+            ui.button("Reload"),
+            egui::WidgetType::Button,
+            "config-reload",
+        )
+        .clicked()
         {
             app.reload_config();
         }
@@ -571,14 +627,18 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
     });
 }
 
-/// A list edited as tags: type a value, press Enter to add it, click the x
-/// on a chip to remove it. Both act on the DRAFT, so nothing is written
-/// until Save - an accidental removal is undone by leaving the view.
+/// A list edited as tags: type a value, press Enter to add it, click
+/// the x on a chip to remove it. Both act on the DRAFT, so nothing is
+/// written until Save - verified by construction: `config_draft` is
+/// reset from the saved config only by `reload_config` and by
+/// switching profiles, never by switching views, so an accidental
+/// removal survives navigating away and back and is undone only by
+/// Reload or by not pressing Save.
 ///
-/// This replaced a three-row text box holding one item per line. With 55
-/// title terms that meant scrolling a tiny window to change a single entry,
-/// with no way to see the list at a glance and nothing preventing a
-/// duplicate.
+/// This replaced a three-row text box holding one item per line. With
+/// 55 title terms that meant scrolling a tiny window to change a
+/// single entry, with no way to see the list at a glance and nothing
+/// preventing a duplicate.
 fn tag_editor(ui: &mut egui::Ui, width: f32, label: &str, id: &str, field: &mut TagField) {
     ui.label(label);
     chips(ui, width, field);
@@ -653,12 +713,14 @@ fn chips(ui: &mut egui::Ui, width: f32, field: &mut TagField) {
 
 /// One tag pill. Returns true when its x was clicked.
 ///
-/// Painted rather than composed from a Frame around a label and a button,
-/// because a Frame asks for the rest of the line and therefore always
-/// "fits" - so a row of them NEVER wrapped, no matter what width the layout
-/// was given, and a 55-term list ran off the right edge and was clipped.
-/// One allocate_exact_size is a single widget the wrapping layout can
-/// measure, which is what makes the row wrap at all.
+/// Painted rather than composed from a Frame around a label and a
+/// button. Unverified history: a Frame-based pill is believed to
+/// have always "fit" and never wrapped, however narrow the layout,
+/// clipping a 55-term list off the right edge.
+///
+/// Verified by construction here: `chip` returns from a single
+/// `allocate_exact_size` call, which is the one widget shape
+/// `wrapped_row`'s wrapping layout can measure and wrap.
 fn chip(ui: &mut egui::Ui, text: &str) -> bool {
     let font = egui::TextStyle::Button.resolve(ui.style());
     let visuals = ui.visuals().clone();
@@ -678,8 +740,11 @@ fn chip(ui: &mut egui::Ui, text: &str) -> bool {
     );
     let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click());
 
-    // Only the x removes. Clicking the pill itself does nothing, because a
-    // term that vanishes on a stray click is a search quietly changed.
+    // Only the x removes. Clicking the pill itself does nothing -
+    // verified by construction, `response.clicked() && over_cross`
+    // below only returns true when the pointer was over the x -
+    // because a term that vanishes on a stray click is a search
+    // quietly changed.
     let cross_pos = egui::pos2(
         rect.max.x - PAD_X - cross.size().x,
         rect.center().y - cross.size().y / 2.0,
@@ -710,9 +775,12 @@ fn chip(ui: &mut egui::Ui, text: &str) -> bool {
         ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
     }
 
-    // A painted pill is invisible to the accessibility tree, so a search term
-    // could be neither read nor removed without a mouse. The term itself is the
-    // name because it IS the identity of this chip - there is one per term.
+    // A painted pill is invisible to the accessibility tree without this
+    // - verified by construction: `allocate_exact_size` alone attaches no
+    // labeled widget info, so a search term could be neither read nor
+    // removed without a mouse until `access::tag` below supplies one,
+    // keyed to the term itself because it IS the identity of this chip -
+    // there is one per term.
     let response = crate::access::tag(
         response,
         egui::WidgetType::Button,
@@ -732,18 +800,23 @@ fn entry_box(ui: &mut egui::Ui, id: &str, field: &mut TagField, hint: &str) {
     if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
         field.commit();
         // Keep focus so a list can be typed straight through without
-        // reaching for the mouse between entries.
+        // reaching for the mouse between entries - by construction,
+        // `request_focus` is called right after `commit` below.
         response.request_focus();
     }
 }
 
-/// Offered after a Save that actually changed what the search looks for.
+/// Offered after a Save that actually changed what the search looks
+/// for - verified by construction: `save_config` sets
+/// `offer_run_after_save` only when the search or sources block
+/// differs from what was already saved.
 ///
-/// Collection is deliberate by design - the app never fetches because a
-/// setting was edited. But a person who just rewrote their title terms
-/// almost certainly wants to see the result, and making them find the
-/// Companies tab to act on the change they just made is a step with no
-/// purpose. So: an offer, with the consequence stated, and a way to decline.
+/// Collection is deliberate by design - the app never fetches
+/// because a setting was edited. Believed, not measured, that a
+/// person who just rewrote their title terms almost certainly wants
+/// to see the result, and that making them find the Companies tab
+/// to act on the change they just made is a step with no purpose.
+/// So: an offer, with the consequence stated, and a way to decline.
 pub fn show_run_prompt(app: &mut UnlatchedApp, ctx: &egui::Context) {
     if !app.offer_run_after_save {
         return;

@@ -1,17 +1,22 @@
 //! The strip that says whether the engine is working, from any screen.
 //!
-//! WHY IT IS NOT A LINE INSIDE A VIEW. A run belongs to the WINDOW, not to
-//! whatever is being looked at. The only place a run was previously visible
-//! was the log on the Companies page, so a collect started from the dashboard
-//! was, from anywhere else, indistinguishable from nothing happening at all.
+//! WHY IT IS NOT A LINE INSIDE A VIEW. A run belongs to the WINDOW, not
+//! to whatever is being looked at. Unverified history: the only place a
+//! run was previously visible is believed to have been the log on the
+//! Companies page, so a collect started from the dashboard was, from
+//! anywhere else, indistinguishable from nothing happening at all.
 //!
-//! IT SHOWS WHAT THE ENGINE LAST SAID, not a spinner. A spinner proves the UI
-//! thread is alive, which was never in doubt; the useful fact is which board
-//! is being read right now, and the engine prints that per company.
+//! A SPINNER ALONE WOULD NOT BE ENOUGH. It proves the UI thread is
+//! alive, which is never in doubt; the useful fact is which board is
+//! being read right now - verified 2026-09-10: cli.py prints
+//! "{company} [{ats}] reading..." per company during collect, and
+//! show() below renders the spinner and that line together, not the
+//! spinner alone.
 //!
-//! AND IT OUTLIVES THE RUN. An indicator that simply vanishes is not an
-//! answer - it looks identical whether the run finished, was killed, or the
-//! app lost track of it. The completion line stays until the next run starts.
+//! AND IT OUTLIVES THE RUN - by construction: app.last_run_result is
+//! only cleared by the Dismiss button below or replaced by the next
+//! run, so the completion line stays until then rather than vanishing
+//! on its own.
 
 use eframe::egui;
 
@@ -25,7 +30,9 @@ const FAILED: egui::Color32 = egui::Color32::from_rgb(220, 38, 38);
 const WORKING: egui::Color32 = egui::Color32::from_rgb(59, 130, 246);
 
 pub fn show(app: &mut UnlatchedApp, ctx: &egui::Context) {
-    let running = app.running_detail().map(|(l, d)| (l.to_string(), d.to_string()));
+    let running = app
+        .running_detail()
+        .map(|(l, d)| (l.to_string(), d.to_string()));
     let finished = app.last_run_result.clone();
     if running.is_none() && finished.is_none() {
         return;
@@ -36,11 +43,13 @@ pub fn show(app: &mut UnlatchedApp, ctx: &egui::Context) {
         ui.horizontal(|ui| {
             match &running {
                 Some((label, detail)) => {
-                    // A REPAINT IS REQUESTED WHILE A RUN IS LIVE. egui only
-                    // draws on input by default, so without this the strip
-                    // would freeze on whichever line happened to be current
-                    // when the mouse last moved - which is worse than no
-                    // indicator, because it reads as a stalled run.
+                    // A REPAINT IS REQUESTED WHILE A RUN IS LIVE - by
+                    // construction: request_repaint_after below is what makes
+                    // this redraw on a timer. By definition eframe otherwise
+                    // only repaints on input, so without this the strip would
+                    // freeze on whichever line happened to be current when the
+                    // mouse last moved - which is worse than no indicator,
+                    // because it reads as a stalled run.
                     ctx.request_repaint_after(std::time::Duration::from_millis(400));
                     ui.add(egui::Spinner::new().size(14.0));
                     ui.colored_label(WORKING, label);
@@ -71,21 +80,18 @@ pub fn show(app: &mut UnlatchedApp, ctx: &egui::Context) {
                         "engine-status",
                         &line,
                     );
-                    ui.with_layout(
-                        egui::Layout::right_to_left(egui::Align::Center),
-                        |ui| {
-                            if crate::access::tag(
-                                ui.small_button("Dismiss"),
-                                egui::WidgetType::Button,
-                                "engine-status-dismiss",
-                            )
-                            .on_hover_text("Hide this until the next run.")
-                            .clicked()
-                            {
-                                app.last_run_result = None;
-                            }
-                        },
-                    );
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if crate::access::tag(
+                            ui.small_button("Dismiss"),
+                            egui::WidgetType::Button,
+                            "engine-status-dismiss",
+                        )
+                        .on_hover_text("Hide this until the next run.")
+                        .clicked()
+                        {
+                            app.last_run_result = None;
+                        }
+                    });
                 }
             }
         });

@@ -1,15 +1,19 @@
 //! Add a job by link.
 //!
-//! Every other route into the list starts with a board the app can read.
-//! This one starts with a person who has already found the job themselves,
-//! is about to apply, and wants it tracked with everything else.
+//! Every other route into the list starts with something this app reads
+//! on its own, verified 2026-09-10 against views::collectors_menu's own
+//! "HANDOFFS ARE NOT BOARDS" note: a board it collects, or a handoff file
+//! another program wrote. This one starts with a person who has already
+//! found the job themselves, is about to apply, and wants it tracked
+//! with everything else.
 //!
-//! The link is kept whatever the site. Whether the app goes and READS that
-//! link is the engine's decision, not this form's - see the engine's
-//! manual.py, which refuses to fetch LinkedIn and the aggregators and fills
-//! in what it can from anywhere else. This form therefore says nothing about
-//! what will be fetched; it just asks for what a person would have to type
-//! if nothing could be.
+//! The link is kept whatever the site. Whether the app goes and READS
+//! that link is the engine's decision, not this form's - verified
+//! 2026-09-10: the engine's manual.py refuses linkedin.com
+//! (ATTENDED_ONLY_HOSTS) and the aggregators, fetching nothing for them,
+//! and fills in what it can from anywhere else. This form therefore says
+//! nothing about what will be fetched; it just asks for what a person
+//! would have to type if nothing could be.
 
 use eframe::egui;
 
@@ -58,10 +62,7 @@ pub fn show(app: &mut UnlatchedApp, ctx: &egui::Context) {
                     .inner_margin(egui::Margin::same(10.0))
                     .rounding(egui::Rounding::same(4.0))
                     .show(ui, |ui| {
-                        ui.label(
-                            egui::RichText::new("You will need to type the details")
-                                .strong(),
-                        );
+                        ui.label(egui::RichText::new("You will need to type the details").strong());
                         ui.add_space(4.0);
                         ui.label(
                             "The app is set not to open links you add, so it will \
@@ -70,15 +71,18 @@ pub fn show(app: &mut UnlatchedApp, ctx: &egui::Context) {
                              title are enough to track it.",
                         );
                         ui.add_space(6.0);
-                        if ui
-                            .button("Let the app read the page instead")
-                            .on_hover_text(
-                                "Turns on \"Read the page when I add a job by \
+                        if crate::access::tag(
+                            ui.button("Let the app read the page instead"),
+                            egui::WidgetType::Button,
+                            "add-job-enable-reading",
+                        )
+                        .on_hover_text(
+                            "Turns on \"Read the page when I add a job by \
                                  link\". It opens the link once, with you here, \
                                  and never during a collection. Changeable any \
                                  time on the Config tab.",
-                            )
-                            .clicked()
+                        )
+                        .clicked()
                         {
                             enable_reading = true;
                         }
@@ -128,8 +132,11 @@ pub fn show(app: &mut UnlatchedApp, ctx: &egui::Context) {
                     .desired_rows(6)
                     .hint_text("Paste the description here"),
             );
-            // Said plainly, because otherwise the Fit column is simply empty
-            // for this row and nobody can tell why.
+            // Said plainly, because otherwise the Fit column is simply empty for
+            // this row and nobody can tell why - verified 2026-09-10: screen.py's
+            // scoring reads the posting's description text (work_mode,
+            // remote_evidence, salary_is_credible all take it), so a job with none
+            // has nothing to score against.
             ui.weak(
                 "Fit and the missing-words list are measured against this text. \
                  Without it the job is still tracked, just not scored.",
@@ -149,8 +156,12 @@ pub fn show(app: &mut UnlatchedApp, ctx: &egui::Context) {
                 {
                     submit = true;
                 }
-                if crate::access::tag(ui.button("Cancel"), egui::WidgetType::Button, "add-job-cancel")
-                    .clicked()
+                if crate::access::tag(
+                    ui.button("Cancel"),
+                    egui::WidgetType::Button,
+                    "add-job-cancel",
+                )
+                .clicked()
                 {
                     close = true;
                 }
@@ -158,9 +169,12 @@ pub fn show(app: &mut UnlatchedApp, ctx: &egui::Context) {
         });
 
     if enable_reading {
-        // Written through the same save path the Config screen uses, so it
-        // lands in config.json and the engine sees it on the very next add -
-        // setting it only in memory would turn the button into a lie.
+        // Through config::save - by construction the same underlying write
+        // save_config() (the Config screen's own save) calls - so it lands in
+        // config.json and the engine sees it on the very next add. Not
+        // save_config() itself, deliberately: see save_config_now's own note in
+        // app.rs on why going through the Config screen's draft would be wrong
+        // here. Setting it only in memory would turn the button into a lie.
         app.config.fetch.read_added_links = true;
         app.config_draft.read_added_links = true;
         app.save_config_now();
@@ -176,9 +190,10 @@ pub fn show(app: &mut UnlatchedApp, ctx: &egui::Context) {
     }
 }
 
-/// Hands the job to the engine, which is where the decision about what may
-/// be fetched lives - and where screening lives, so a hand-added job is
-/// scored by exactly the same code as a collected one.
+/// Hands the job to the engine, which is where the decision about what
+/// may be fetched lives - and where screening lives, so a hand-added job
+/// is scored by exactly the same code as a collected one - verified
+/// 2026-09-10: manual.py's add() calls screen.screen_job directly.
 fn add(app: &mut UnlatchedApp) -> Result<(), String> {
     let draft = app.add_job_draft.clone();
     let mut args = vec!["add".to_string(), draft.url.trim().to_string()];
