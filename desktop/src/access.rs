@@ -164,19 +164,41 @@ mod tests {
             // Refresh button failed the sweep with "pipeline.rs:16".
             let mut wrappers: Vec<String> = Vec::new();
             for (i, line) in lines.iter().enumerate() {
-                let Some(rest) = line.strip_prefix("fn ") else { continue };
+                let Some(rest) = line.strip_prefix("fn ") else {
+                    continue;
+                };
                 if !line.contains("egui::Response") {
                     continue;
                 }
                 let to = (i + 6).min(lines.len());
-                if lines[i..to].join("
-").contains("access::tag") {
+                if lines[i..to].join("\n").contains("access::tag") {
                     if let Some(name) = rest.split('(').next() {
                         wrappers.push(format!("{name}("));
                     }
                 }
             }
             for (i, line) in lines.iter().enumerate() {
+                // A CALL SPLIT ACROSS TWO LINES IS STILL A CALL. `if ui` then
+                // `.button(` on the next line never contains `ui.button(`, and
+                // 20 controls written that way went unnamed while this passed
+                // (measured 2026-09-10). Such a line is read joined to the one
+                // above - only when that one ends in the bare identifier `ui`,
+                // so a `.on_hover_text(` under a one-line call is not joined and
+                // no control is reported twice.
+                let joined;
+                let line: &str = if i > 0
+                    && line.trim_start().starts_with('.')
+                    && lines[i - 1]
+                        .trim_end()
+                        .rsplit(|c: char| !c.is_alphanumeric() && c != '_')
+                        .next()
+                        == Some("ui")
+                {
+                    joined = format!("{}{}", lines[i - 1].trim_end(), line.trim_start());
+                    &joined
+                } else {
+                    line
+                };
                 if !widget.iter().any(|w| line.contains(w)) {
                     continue;
                 }
@@ -239,7 +261,10 @@ mod tests {
             .split("\n}")
             .next()
             .expect("text_field has no body");
-        assert!(body.contains("value.clone()"), "the value is not the contents");
+        assert!(
+            body.contains("value.clone()"),
+            "the value is not the contents"
+        );
     }
 
     #[test]

@@ -20,8 +20,10 @@
 
 use crate::status;
 
-/// Which module. The stable identity - `key()` is what the nav and the GUI
-/// harness address it by, so these names are load-bearing.
+/// Which module. The stable identity - verified 2026-09-10, `key()` names
+/// each card's accessible tag (module-{key}, what the GUI harness addresses)
+/// and keys its count in the dashboard's stats map, so these names are
+/// load-bearing. Navigation goes by the enum itself, not by this.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Module {
     /// Kept, still live on its board, not yet closed out. The pile a person is
@@ -47,8 +49,9 @@ pub enum Module {
     RequirementsNotAligned,
     /// Current status is Applied: sent, nothing heard back yet.
     AwaitingReply,
-    /// EVER applied, from the append-only log. Cumulative, and the reason this
-    /// and AwaitingReply are not the same number once anything progresses.
+    /// EVER applied, from the append-only log - by construction, its clause
+    /// reads job_status_log, not the current status. Cumulative, and the reason
+    /// this and AwaitingReply are not the same number once anything progresses.
     Applied,
     /// The employer pulled the posting.
     TakenDown,
@@ -60,8 +63,10 @@ pub enum Module {
     /// why it is a sentence rather than a card - see views::dashboard_view,
     /// "Deliberately a sentence, not a sixth card".
     ///
-    /// Its clause is the one `dashboard::load` counts the sentence with, so the
-    /// number in the sentence and the length of the list it opens cannot drift.
+    /// Its clause is the one `dashboard::load` counts the sentence with -
+    /// by construction, both go through count_module and list_module_jobs
+    /// with this where_clause - so the number in the sentence and the length
+    /// of the list it opens cannot drift.
     WithdrawnAfterApplying,
     /// One status, as its own list - No Offer and Declined Offer.
     Status(&'static str),
@@ -107,7 +112,9 @@ impl Module {
         }
     }
 
-    /// Stable identity for the nav and the harness. Never shown to a reader.
+    /// Stable identity for the harness and the dashboard's count map. Never
+    /// shown to a reader - verified 2026-09-10: every use is a map key, an
+    /// accessible tag name or a test message.
     pub fn key(self) -> String {
         match self {
             Module::OpenPositions => "open-positions".to_string(),
@@ -123,7 +130,7 @@ impl Module {
         }
     }
 
-    /// The card label, upper-cased by the card itself.
+    /// The card label, already in upper case.
     pub fn label(self) -> String {
         match self {
             Module::OpenPositions => "OPEN POSITIONS".to_string(),
@@ -139,8 +146,8 @@ impl Module {
         }
     }
 
-    /// The heading on the list it opens. Sentence case, because it is a title
-    /// rather than a label on a figure.
+    /// The heading on the list it opens, in sentence case - a title rather
+    /// than a label on a figure.
     pub fn heading(self) -> String {
         match self {
             Module::OpenPositions => "Open positions".to_string(),
@@ -151,8 +158,7 @@ impl Module {
             Module::AwaitingReply => "Awaiting a reply".to_string(),
             Module::Applied => "Everything you have applied to".to_string(),
             Module::TakenDown => "Taken down".to_string(),
-            Module::WithdrawnAfterApplying =>
-                "Taken down after you applied".to_string(),
+            Module::WithdrawnAfterApplying => "Taken down after you applied".to_string(),
             Module::Status(value) => status::label(value),
         }
     }
@@ -161,44 +167,43 @@ impl Module {
     /// answers "why is this number not the one I expected".
     pub fn caption(self) -> String {
         match self {
-            Module::OpenPositions =>
-                "Matches still live on their board that you have not closed out."
-                    .to_string(),
-            Module::NewSinceLastRun =>
+            Module::OpenPositions => {
+                "Matches still live on their board that you have not closed out.".to_string()
+            }
+            Module::NewSinceLastRun => {
                 "Arrived in the most recent collection - new to you, whatever \
                  the posting date says."
-                    .to_string(),
-            Module::PostedThisWeek =>
-                "Posted in the last 7 days, however long we have had them."
-                    .to_string(),
-            Module::BelowSalary =>
-                "The pay is under your salary floor but above the fallback \
+                    .to_string()
+            }
+            Module::PostedThisWeek => {
+                "Posted in the last 7 days, however long we have had them.".to_string()
+            }
+            Module::BelowSalary => "The pay is under your salary floor but above the fallback \
                  floor you set, so it is held back rather than dropped \
                  outright. Nothing else about it fell short."
-                    .to_string(),
-            Module::RequirementsNotAligned =>
+                .to_string(),
+            Module::RequirementsNotAligned => {
                 "Matched your search, then fell short on something other \
                  than the money: an employment type you did not ask for, a \
                  requirement your profile rules out, or a description too \
                  thin to judge. Jobs you added by hand land here too."
-                    .to_string(),
-            Module::AwaitingReply =>
-                "Applications with no reply recorded yet. Falls as each one \
+                    .to_string()
+            }
+            Module::AwaitingReply => "Applications with no reply recorded yet. Falls as each one \
                  moves on, which is why it is not the same as Applied."
-                    .to_string(),
-            Module::Applied =>
-                "Every job you ever recorded an application for, including the \
+                .to_string(),
+            Module::Applied => "Every job you ever recorded an application for, including the \
                  ones that have since ended. It can only go up."
-                    .to_string(),
-            Module::TakenDown =>
-                "The employer removed the posting. Whatever you recorded about \
+                .to_string(),
+            Module::TakenDown => "The employer removed the posting. Whatever you recorded about \
                  it is untouched."
-                    .to_string(),
-            Module::WithdrawnAfterApplying =>
+                .to_string(),
+            Module::WithdrawnAfterApplying => {
                 "You had an application in flight and the employer pulled the \
                  posting. Worth closing out: record the rejection if one came, \
                  or give up on the ones that stayed silent."
-                    .to_string(),
+                    .to_string()
+            }
             Module::Status(value) => match status::get(value) {
                 Some(s) => s.hint.to_string(),
                 None => String::new(),
@@ -209,9 +214,11 @@ impl Module {
     /// The colour on the card, the donut segment and the list heading.
     ///
     /// Status modules take the status palette, so a No Offer card, its donut
-    /// slice and the pill on the row are recognisably one thing. The rest take
-    /// a tone that says what KIND of pile it is rather than borrowing a status
-    /// colour that would imply a decision nobody made.
+    /// slice and its pill on a Pipeline row are recognisably one thing -
+    /// by construction, all three read status::colour (verified 2026-09-10
+    /// in dashboard_view and pipeline). The rest take a tone that says what
+    /// KIND of pile it is rather than borrowing a status colour that would
+    /// imply a decision nobody made.
     pub fn colour(self) -> [u8; 3] {
         match self {
             Module::OpenPositions => [34, 197, 94],
@@ -224,10 +231,9 @@ impl Module {
             Module::AwaitingReply => status::colour("applied"),
             Module::Applied => [99, 102, 241],
             Module::TakenDown => [120, 130, 150],
-            // THE DEFINITION, not a copy of one. This red was a private const
-            // in views::dashboard_view used by nothing but that sentence;
-            // it now reads this, so the sentence and the list it opens cannot
-            // end up different colours.
+            // THE DEFINITION, not a copy of one: dashboard_view colours the sentence
+            // with this - verified 2026-09-10, it calls this module's colour() - so
+            // the sentence and the list it opens cannot end up different colours.
             Module::WithdrawnAfterApplying => [239, 68, 68],
             Module::Status(value) => status::colour(value),
         }
@@ -252,13 +258,14 @@ impl Module {
                  AND jobs.key NOT IN (SELECT key FROM job_status WHERE status IN ({}))",
                 status::sql_list(&status::settled_values())
             ),
-            // Compared on the DATE part only. A collect runs for minutes and
-            // stamps each row as it lands, so an exact timestamp match would
-            // count the last row of the run and none of the others.
-            Module::NewSinceLastRun =>
-                "jobs.qualified = 1 AND jobs.fetched_at >= \
+            // Compared on the DATE part only. A collect runs for minutes and stamps
+            // each row as it lands - measured 2026-09-10: the 09-09 run took 17
+            // minutes and left 28 distinct fetched_at values - so an exact timestamp
+            // match would count the last batch of the run and none of the others.
+            // The cost, by construction: two collections on one day count together.
+            Module::NewSinceLastRun => "jobs.qualified = 1 AND jobs.fetched_at >= \
                  (SELECT substr(MAX(fetched_at), 1, 10) FROM jobs)"
-                    .to_string(),
+                .to_string(),
             // The threshold lives in dashboard.rs, which is also where the
             // triage row age reads it from - two definitions of "fresh" one
             // number apart is a difference nobody would ever notice.
@@ -266,8 +273,9 @@ impl Module {
                 "jobs.verdict = 'keep' AND jobs.posted_at >= date('now', '-{} day')",
                 crate::dashboard::FRESH_DAYS
             ),
-            Module::BelowSalary =>
-                "jobs.verdict = 'alt' AND jobs.alt_reason = 'salary'".to_string(),
+            Module::BelowSalary => {
+                "jobs.verdict = 'alt' AND jobs.alt_reason = 'salary'".to_string()
+            }
             // EVERY OTHER alt row, including the ones carrying no reason at
             // all: a job added by hand or imported is forced to `alt`
             // without being screened, and a profile that predates the column
@@ -276,19 +284,17 @@ impl Module {
             // land here instead of on no card at all. Tested over all four
             // stored values by
             // db::tests::every_alt_row_is_on_exactly_one_of_the_two_cards_that_split_them.
-            Module::RequirementsNotAligned =>
-                "jobs.verdict = 'alt' AND (jobs.alt_reason IS NULL \
+            Module::RequirementsNotAligned => "jobs.verdict = 'alt' AND (jobs.alt_reason IS NULL \
                  OR jobs.alt_reason <> 'salary')"
-                    .to_string(),
+                .to_string(),
             Module::AwaitingReply => "job_status.status = 'applied'".to_string(),
-            // THE LOG, not the current status. A job that has since been
-            // rejected was still applied to, and this is the number a person
-            // uses to answer "how many have I sent".
-            Module::Applied =>
-                "jobs.key IN (SELECT key FROM job_status_log WHERE status = 'applied')"
-                    .to_string(),
-            Module::TakenDown =>
-                "jobs.qualified = 1 AND jobs.delisted_at IS NOT NULL".to_string(),
+            // THE LOG, not the current status - by construction, this reads
+            // job_status_log. A job that has since been rejected was still applied to,
+            // and this is the number a person uses to answer "how many have I sent".
+            Module::Applied => {
+                "jobs.key IN (SELECT key FROM job_status_log WHERE status = 'applied')".to_string()
+            }
+            Module::TakenDown => "jobs.qualified = 1 AND jobs.delisted_at IS NOT NULL".to_string(),
             // IN FLIGHT, not "ever applied": a posting pulled after the person
             // was already turned down is just an old ad coming down, and
             // putting it in this list would bury the ones still worth chasing.
@@ -311,12 +317,10 @@ mod tests {
 
     #[test]
     fn every_module_has_a_distinct_key_and_label() {
-        // The key addresses the list from the nav and the harness; a collision
-        // would make one of them unreachable and the other ambiguous.
-        let keys: std::collections::HashSet<String> =
-            MODULES.iter().map(|m| m.key()).collect();
-        let labels: std::collections::HashSet<String> =
-            MODULES.iter().map(|m| m.label()).collect();
+        // By construction the key names the card's accessible tag and keys its
+        // count, so a collision would give two cards one count and one name.
+        let keys: std::collections::HashSet<String> = MODULES.iter().map(|m| m.key()).collect();
+        let labels: std::collections::HashSet<String> = MODULES.iter().map(|m| m.label()).collect();
         assert_eq!(keys.len(), MODULES.len());
         assert_eq!(labels.len(), MODULES.len());
     }
@@ -342,20 +346,24 @@ mod tests {
 
     #[test]
     fn open_positions_excludes_every_settled_status() {
-        // Hand-written IN lists here are how a new status silently kept
-        // counting as an open position. Built from status::settled_values, so
-        // adding one cannot be forgotten.
+        // Built from status::settled_values, by construction, so a status added
+        // to that list is excluded here without anyone remembering to - which a
+        // hand-written IN list could not promise.
         let clause = Module::OpenPositions.where_clause();
         for value in status::settled_values() {
-            assert!(clause.contains(value), "{value} is settled but not excluded");
+            assert!(
+                clause.contains(value),
+                "{value} is settled but not excluded"
+            );
         }
     }
 
     #[test]
     fn no_clause_is_empty() {
-        // An empty fragment would silently widen its list to every row in the
-        // database rather than failing, and the card above it would still show
-        // a plausible-looking number.
+        // An empty fragment makes the card's count and its list fail outright -
+        // measured 2026-09-10: both queries are built as "... AND ({clause})",
+        // and SQLite rejects "AND ()" as a syntax error. Caught here instead of
+        // on the dashboard.
         //
         // EVERY VARIANT, not just the ones on a card. WithdrawnAfterApplying
         // is deliberately absent from MODULES - it is reached by clicking the
@@ -377,9 +385,9 @@ mod tests {
         all
     }
 
-    /// The off-card module needs a key of its own too: the nav and the
-    /// harness address it exactly like the others, and a collision would
-    /// send one of them to the wrong list.
+    /// The off-card module needs a key of its own too: its sentence is tagged
+    /// module-{key} like the cards, so by construction a collision would give
+    /// two of them one accessible name.
     #[test]
     fn the_off_card_module_does_not_collide_with_a_card() {
         let keys: std::collections::HashSet<String> =

@@ -1,22 +1,25 @@
 //! One place that decides how the app looks.
 //!
 //! Before this, every screen used egui's defaults and set its own ad-hoc
-//! spacing, which is what made the app read as a toolkit demo rather than a
-//! product: one text size everywhere, no hierarchy, a 160px rail of bare
-//! labels with no hover state, and controls at whatever size the toolkit
-//! happened to pick.
+//! spacing - unverified history, kept because it explains the numbers below:
+//! one text size everywhere, no hierarchy, a 160px rail of bare labels with
+//! no hover state, and controls at whatever size the toolkit happened to
+//! pick.
 //!
-//! The numbers below are not invented. Current desktop practice puts a
+//! The numbers below track current desktop practice, believed not measured
+//! against the two sources named below rather than re-surveyed here: a
 //! navigation rail at 240-280px, navigation labels at 14-16px with 1.4-1.5
-//! line height, and asks for an obvious active AND hover state, icons that
-//! support labels rather than replace them, and a visible split between the
-//! work you do daily and the things you set up once.
+//! line height, an obvious active AND hover state, icons that support
+//! labels rather than replace them, and a visible split between the work
+//! you do daily and the things you set up once. RAIL_WIDTH and TEXT_NAV
+//! below sit inside those ranges by construction.
 //! Sources: navbar.gallery's 2026 sidebar survey and alfdesigngroup's sidebar
 //! UX guide, both recorded on an earlier change.
 //!
-//! NO ICON FONT. The bundled font has no glyph coverage for icon sets, and a
-//! missing glyph renders as a tofu box. Where an icon would go, this draws a
-//! shape with the painter, which cannot fail that way.
+//! NO ICON FONT - believed, not measured, that the bundled font lacks glyph
+//! coverage for icon sets. A missing glyph rendering as a tofu box is by
+//! definition how font fallback works; drawing the shape with the painter
+//! avoids depending on any glyph existing at all.
 
 use eframe::egui;
 
@@ -32,9 +35,13 @@ pub const TEXT_BODY: f32 = 14.0;
 pub const TEXT_NAV: f32 = 14.5;
 pub const TEXT_LABEL: f32 = 10.5;
 
-/// Accent, used for the active navigation item and primary emphasis. Mid-tone
-/// so one value carries on both a near-white and a near-black background -
-/// the same constraint the status palette follows.
+/// Accent, used for the active navigation item and primary emphasis - by
+/// construction: nav_row below paints the accent bar in ACCENT when
+/// active, and views across the app (attachments, agent, resumes_view,
+/// triage) colour their own emphasis text with the same constant.
+/// Mid-tone so one value carries on both a near-white and a near-black
+/// background - verified 2026-09-10: status.rs uses the identical
+/// "near-white panel and a near-black one" language for its own palette.
 pub const ACCENT: egui::Color32 = egui::Color32::from_rgb(59, 130, 246);
 
 /// The band behind a row that is TICKED for a bulk action.
@@ -76,7 +83,9 @@ pub fn apply(ctx: &egui::Context, dark: bool) {
     visuals.menu_rounding = rounding;
 
     // A selection colour of our own rather than the toolkit's default blue,
-    // so selection, the active nav item and primary emphasis are one colour.
+    // so selection, the active nav item and primary emphasis are one colour -
+    // by construction: visuals.selection.bg_fill below and nav_row's accent
+    // bar both derive from the same ACCENT constant.
     visuals.selection.bg_fill = ACCENT.gamma_multiply(if dark { 0.55 } else { 0.30 });
     visuals.selection.stroke = egui::Stroke::new(1.0, ACCENT);
 
@@ -94,11 +103,23 @@ pub fn apply(ctx: &egui::Context, dark: bool) {
 
     let mut style = (*ctx.style()).clone();
     style.text_styles = [
-        (egui::TextStyle::Heading, egui::FontId::proportional(TEXT_TITLE)),
+        (
+            egui::TextStyle::Heading,
+            egui::FontId::proportional(TEXT_TITLE),
+        ),
         (egui::TextStyle::Body, egui::FontId::proportional(TEXT_BODY)),
-        (egui::TextStyle::Button, egui::FontId::proportional(TEXT_BODY)),
-        (egui::TextStyle::Small, egui::FontId::proportional(TEXT_LABEL)),
-        (egui::TextStyle::Monospace, egui::FontId::monospace(TEXT_BODY - 1.0)),
+        (
+            egui::TextStyle::Button,
+            egui::FontId::proportional(TEXT_BODY),
+        ),
+        (
+            egui::TextStyle::Small,
+            egui::FontId::proportional(TEXT_LABEL),
+        ),
+        (
+            egui::TextStyle::Monospace,
+            egui::FontId::monospace(TEXT_BODY - 1.0),
+        ),
     ]
     .into();
 
@@ -116,9 +137,10 @@ pub fn apply(ctx: &egui::Context, dark: bool) {
 /// A navigation row: full-width hit area, hover fill, and an accent bar down
 /// the left edge when active.
 ///
-/// egui's `selectable_label` sizes itself to its text, so the rail was a
-/// column of differently-sized boxes with no hover feedback at all - a control
-/// that does not respond to the pointer reads as decoration, not a button.
+/// egui's `selectable_label` sizes itself to its text - by definition, since
+/// it is a text widget. That the rail was once a column of differently-sized
+/// boxes with no hover feedback is unverified history; painting a fixed-size
+/// rect with allocate_exact_size below is what replaced it.
 pub fn nav_row(ui: &mut egui::Ui, label: &str, active: bool) -> egui::Response {
     let height = 30.0;
     let (rect, response) = ui.allocate_exact_size(
@@ -130,9 +152,12 @@ pub fn nav_row(ui: &mut egui::Ui, label: &str, active: bool) -> egui::Response {
         ui.painter()
             .rect_filled(rect, 5.0, ui.visuals().selection.bg_fill);
         // The accent bar. Reads as "you are here" even for someone who cannot
-        // separate the fill from the background.
+        // separate the fill from the background - believed, not measured.
         ui.painter().rect_filled(
-            egui::Rect::from_min_size(rect.min + egui::vec2(0.0, 4.0), egui::vec2(3.0, height - 8.0)),
+            egui::Rect::from_min_size(
+                rect.min + egui::vec2(0.0, 4.0),
+                egui::vec2(3.0, height - 8.0),
+            ),
             1.5,
             ACCENT,
         );
@@ -154,9 +179,11 @@ pub fn nav_row(ui: &mut egui::Ui, label: &str, active: bool) -> egui::Response {
         text_colour,
     );
     // The whole rail is painted, so without this every navigation entry is
-    // absent from the accessibility tree - the controls a person uses most
-    // would be the ones the app never announced. The value carries which
-    // screen is current, which the accent bar conveys to sighted users only.
+    // absent from the accessibility tree - verified by construction: this row
+    // is built with allocate_exact_size + painter(), the exact pattern
+    // access.rs's own module doc names as invisible to the tree without a
+    // tag call. The value carries which screen is current, which the accent
+    // bar above conveys to sighted users only.
     let response = crate::access::tag_with_value(
         response,
         egui::WidgetType::SelectableLabel,

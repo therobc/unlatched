@@ -41,9 +41,8 @@ pub const POSTING: &str = "posting";
 /// the app never stores cannot be double-clicked out of a folder six months
 /// later by somebody who has forgotten where it came from.
 pub const REFUSED_SUFFIXES: [&str; 23] = [
-    "exe", "com", "bat", "cmd", "msi", "msp", "scr", "pif", "cpl", "hta",
-    "js", "jse", "vbs", "vbe", "wsf", "wsh", "ps1", "psm1", "reg", "lnk",
-    "inf", "sct", "jar",
+    "exe", "com", "bat", "cmd", "msi", "msp", "scr", "pif", "cpl", "hta", "js", "jse", "vbs",
+    "vbe", "wsf", "wsh", "ps1", "psm1", "reg", "lnk", "inf", "sct", "jar",
 ];
 
 pub const IMAGE_SUFFIXES: [&str; 6] = ["png", "jpg", "jpeg", "gif", "bmp", "webp"];
@@ -102,9 +101,7 @@ impl Kind {
     /// read would be a promise the person's own machine may not keep either.
     pub fn hover(self) -> Option<&'static str> {
         match self {
-            Kind::Image | Kind::Text | Kind::Pdf | Kind::Office => {
-                Some("Download to view")
-            }
+            Kind::Image | Kind::Text | Kind::Pdf | Kind::Office => Some("Download to view"),
             Kind::Other => Some("Unsupported file type, download to view"),
             // A link is the one thing that IS opened here, by the browser,
             // through the same http(s)-only guard as every other outbound link.
@@ -195,8 +192,7 @@ pub fn safe_display_name(name: &str) -> String {
 /// is already open, and `randomblob` is the same source the database uses for
 /// its own ids.
 pub fn generated_name(conn: &Connection, original: &str) -> SqlResult<String> {
-    let token: String =
-        conn.query_row("SELECT lower(hex(randomblob(8)))", [], |r| r.get(0))?;
+    let token: String = conn.query_row("SELECT lower(hex(randomblob(8)))", [], |r| r.get(0))?;
     let suffix: String = suffix_of(original)
         .chars()
         .filter(|c| c.is_ascii_alphanumeric())
@@ -338,7 +334,15 @@ pub fn add_bytes(
         "INSERT INTO attachment (key, trust, kind, stored_name, display_name, url,
                                  bytes, added_at)
          VALUES (?1, ?2, ?3, ?4, ?5, NULL, ?6, ?7)",
-        params![key, trust, kind.as_str(), stored, shown, data.len() as i64, at],
+        params![
+            key,
+            trust,
+            kind.as_str(),
+            stored,
+            shown,
+            data.len() as i64,
+            at
+        ],
     )
     .map_err(|e| e.to_string())?;
     Ok(Attachment {
@@ -488,8 +492,7 @@ mod tests {
             .split(',')
             .filter_map(|piece| {
                 let cleaned = piece.trim().trim_matches('"').trim_start_matches('.');
-                (!cleaned.is_empty() && !cleaned.starts_with('#'))
-                    .then(|| cleaned.to_string())
+                (!cleaned.is_empty() && !cleaned.starts_with('#')).then(|| cleaned.to_string())
             })
             .collect()
     }
@@ -548,7 +551,10 @@ mod tests {
             Kind::Other.hover(),
             Some("Unsupported file type, download to view")
         );
-        assert!(Kind::Link.hover().is_none(), "a link is opened by the browser");
+        assert!(
+            Kind::Link.hover().is_none(),
+            "a link is opened by the browser"
+        );
     }
 
     /// A kind that survives a round trip through the database is a kind the

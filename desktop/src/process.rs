@@ -21,11 +21,11 @@ const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// How often the waiter asks whether the child has exited.
 ///
-/// A blocking `wait()` would need `&mut Child` for its whole duration, so
-/// nothing else could ever reach the child to stop it - which is how the engine
-/// came to outlive the window that started it. Polling holds the lock for
-/// microseconds instead. 100ms matches the repaint the UI already schedules
-/// while a process runs, so this adds no perceptible latency to "it finished".
+/// By definition a blocking `wait()` holds `&mut Child` until the child
+/// exits, so nothing else could reach the child to stop it. Polling holds
+/// the lock for microseconds instead. 100ms matches the repaint the UI
+/// schedules while a process runs (verified 2026-09-10 in app.rs), so this
+/// adds no perceptible latency to "it finished".
 const WAIT_POLL: Duration = Duration::from_millis(100);
 
 /// How long the waiter gives the pipe readers to finish after the child has
@@ -53,11 +53,11 @@ const WAIT_POLL: Duration = Duration::from_millis(100);
 const DRAIN_GRACE: Duration = Duration::from_millis(1_000);
 
 pub struct RunningProcess {
-    /// Shared so the waiter can poll it and `kill` can reach it. Before this,
-    /// the child was MOVED into the waiting thread and no handle survived, so
-    /// closing the app left a collect running with no window, still writing to
-    /// the database - and a newly opened app, seeing no running process of its
-    /// own, would start a second engine against the same file.
+    /// Shared so the waiter can poll it and `kill` can reach it. A child MOVED
+    /// into the waiting thread leaves no handle behind, so closing the app
+    /// would leave a collect running with no window, still writing to the
+    /// database. Believed, not measured, that this happened before it was
+    /// shared.
     child: Arc<Mutex<Child>>,
     receiver: Receiver<String>,
     pub finished: bool,
@@ -69,10 +69,10 @@ impl RunningProcess {
         let mut cmd = Command::new(program);
         cmd.args(args);
         // No console window. The engine is a frozen console executable, so
-        // without this every collect, screen and discover flashes a black
-        // window over whatever the person is doing - the single loudest
-        // "this is a script, not an app" tell there is. Output still reaches
-        // the UI: it comes through the pipes below, not a terminal.
+        // without this every collect, screen and discover would flash a black
+        // window over whatever the person is doing - verified 2026-09-10, its
+        // build spec sets console=True. Output still reaches the UI: it comes
+        // through the pipes below, not a terminal.
         #[cfg(windows)]
         cmd.creation_flags(CREATE_NO_WINDOW);
         cmd.stdin(Stdio::null());
@@ -134,18 +134,18 @@ impl RunningProcess {
             loop {
                 let status = match waiter.lock() {
                     Ok(mut guard) => guard.try_wait(),
-                    // The mutex is poisoned only if a holder panicked. Nothing
-                    // useful is left to wait on, so stop rather than spin.
+                    // By definition a std Mutex is poisoned only if a holder panicked.
+                    // Nothing useful is left to wait on, so stop rather than spin.
                     Err(_) => break,
                 };
                 match status {
                     Ok(Some(exit)) => {
                         let code = exit.code().unwrap_or(-1);
-                        // EVERY LINE FIRST, THEN THE MARKER. The UI drops the
-                        // process on the frame it sees the marker, so anything
-                        // a reader had not sent yet would never be shown - and
-                        // the engine's last line is the one that says what
-                        // happened.
+                        // LINES FIRST, THEN THE MARKER. The UI drops the process on the frame
+                        // it sees the marker - by construction, app.rs clears running_process
+                        // there - so anything a reader had not sent yet would never be shown,
+                        // and the engine's last line is the one that says what happened. The
+                        // wait is bounded by DRAIN_GRACE rather than a plain join.
                         let deadline = std::time::Instant::now() + DRAIN_GRACE;
                         while readers.load(Ordering::SeqCst) > 0
                             && std::time::Instant::now() < deadline
@@ -176,9 +176,10 @@ impl RunningProcess {
     pub fn kill(&mut self) {
         if let Ok(mut child) = self.child.lock() {
             let _ = child.kill();
-            // Reaped so the process does not linger as a zombie on unix. The
-            // result is ignored: it has already exited in the common case, and
-            // there is nothing to do about a failure at this point anyway.
+            // Reaped: by definition an exited child nobody waits on lingers as a
+            // zombie on unix. The result is ignored: it has already exited in the
+            // common case, and there is nothing to do about a failure at this point
+            // anyway.
             let _ = child.wait();
         }
     }
@@ -187,14 +188,15 @@ impl RunningProcess {
 impl Drop for RunningProcess {
     /// The engine does not outlive the window that started it.
     ///
-    /// Without this the child was orphaned on close: a collect kept running
-    /// with no UI anywhere, still writing to the database, and a newly opened
-    /// app had no knowledge of it. That second app, seeing no running process
-    /// of its own, would start ANOTHER engine against the same file.
+    /// Without this the child would be orphaned on close: by definition,
+    /// dropping a std `Child` neither kills nor waits for it. A collect would
+    /// keep running with no UI anywhere, still writing to the database, and a
+    /// newly opened app would know nothing of it.
     ///
-    /// The engine also takes a cross-process lock now, so a second one is
-    /// refused rather than corrupting anything - but refusing to collect is a
-    /// poor substitute for not leaking the first process.
+    /// The engine also takes a cross-process lock (verified 2026-09-10: cli.py
+    /// collects under runlock.collect_lock), so a second one is refused rather
+    /// than corrupting anything - but refusing to collect is a poor substitute
+    /// for not leaking the first process.
     fn drop(&mut self) {
         self.kill();
     }
@@ -204,8 +206,9 @@ impl RunningProcess {
     /// Drains everything currently buffered in the channel. Call once per
     /// frame; returns the plain log lines received since the last poll.
     ///
-    /// The done-marker is only sent after the readers have drained, so every
-    /// line the child printed is already ahead of it in this channel.
+    /// By construction the done-marker is sent once the readers have drained
+    /// or DRAIN_GRACE has passed, whichever comes first, so every line the
+    /// child printed is ahead of it unless a reader outlived that second.
     pub fn poll(&mut self) -> Vec<String> {
         let mut lines = Vec::new();
         while let Ok(line) = self.receiver.try_recv() {
@@ -257,8 +260,8 @@ mod tests {
     }
 
     /// The exit code comes back for a child that fails, and the reason it
-    /// printed comes with it - which is exactly what app::report_add_job
-    /// reads back to explain a failed add.
+    /// printed comes with it - which is what app::report_add_job reads back
+    /// to explain a failed add (verified 2026-09-10).
     #[test]
     fn a_failing_child_reports_its_code_and_its_reason() {
         let (_, code, seen) = run_to_completion(&[
@@ -278,18 +281,19 @@ mod tests {
             "import sys; print('bad thing', file=sys.stderr)".to_string(),
         ]);
         assert!(
-            seen.iter().any(|l| l.starts_with("[stderr] ") && l.contains("bad thing")),
+            seen.iter()
+                .any(|l| l.starts_with("[stderr] ") && l.contains("bad thing")),
             "{seen:?}"
         );
     }
 
     /// Drives a child the way the UI does: poll each frame, then one final
     /// drain on the frame `finished` appears - and nothing after it, because
-    /// that is the frame the UI drops the process on.
+    /// by construction that is the frame the UI drops the process on.
     ///
-    /// Python is the helper because the engine IS Python and the gates run
-    /// pytest before they reach here, so a machine that can run this suite
-    /// has it.
+    /// Python is the helper because the engine IS Python and the project's
+    /// gates run pytest before this suite (verified 2026-09-10), so a machine
+    /// that can run this suite has it.
     fn run_to_completion(args: &[String]) -> (bool, Option<i32>, Vec<String>) {
         let mut proc = RunningProcess::spawn("python", args).expect("spawn python");
         let mut seen: Vec<String> = Vec::new();

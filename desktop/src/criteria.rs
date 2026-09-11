@@ -266,8 +266,10 @@ mod tests {
     /// than counting rows it drew.
     #[test]
     fn a_file_that_changes_nothing_reports_nothing() {
-        let report = parse(r#"{"changed": [], "applied": false, "mode": "replace",
-                              "preview": []}"#);
+        let report = parse(
+            r#"{"changed": [], "applied": false, "mode": "replace",
+                              "preview": []}"#,
+        );
         assert!(report.is_empty());
         assert!(report.preview.is_empty());
     }

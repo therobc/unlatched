@@ -1,11 +1,11 @@
-// Data directory resolution.
-//
-// Precedence, checked in order:
+// Data directory resolution - by construction, verified 2026-09-10:
+// resolve_data_dir/resolve_platform_default_home below check, in order:
 //   1. UNLATCHED_HOME environment variable, if set.
 //   2. %APPDATA%/Unlatched on Windows.
 //   3. ~/.config/unlatched everywhere else.
-// The directory is created on first use so callers never have to check for
-// its existence before opening files inside it.
+// data_dir() runs the result through ensure_exists, which creates the
+// directory on first use so callers never have to check for its existence
+// before opening files inside it.
 
 use std::env;
 use std::fs;
@@ -25,11 +25,12 @@ fn resolve_data_dir() -> PathBuf {
 }
 
 // The profile registry (profiles.json) always lives here, never under
-// whatever UNLATCHED_HOME happens to be at the moment: it is the one
-// address every launch can find regardless of which profile is active, so
-// switching profiles never makes the list of profiles itself unreachable,
-// and a launch scoped to an isolated UNLATCHED_HOME (a test harness, a
-// scripted run) never reads or writes the real registry.
+// whatever UNLATCHED_HOME happens to be at the moment. Verified 2026-09-10:
+// profiles.rs builds its path from platform_default_home(), not data_dir(),
+// so it is the one address every launch can find regardless of which
+// profile is active. Switching profiles never makes the list of profiles
+// itself unreachable, and a launch scoped to an isolated UNLATCHED_HOME
+// (a test harness, a scripted run) never reads or writes the real registry.
 pub fn platform_default_home() -> PathBuf {
     ensure_exists(resolve_platform_default_home())
 }
@@ -60,6 +61,8 @@ fn resolve_platform_default_home() -> PathBuf {
     }
 
     // Last resort so the app still runs somewhere rather than panicking.
+    // By construction this returns a relative path instead of unwrapping
+    // an absent environment variable.
     PathBuf::from(".").join("unlatched-data")
 }
 
@@ -71,9 +74,7 @@ fn resolve_platform_default_home() -> PathBuf {
 /// "Downloads". The caller falls back to asking where to put it, which is
 /// slower but never lies about the destination.
 pub fn downloads_dir() -> Option<PathBuf> {
-    let base = env::var("USERPROFILE")
-        .or_else(|_| env::var("HOME"))
-        .ok()?;
+    let base = env::var("USERPROFILE").or_else(|_| env::var("HOME")).ok()?;
     let dir = PathBuf::from(base).join("Downloads");
     dir.is_dir().then_some(dir)
 }
@@ -81,28 +82,30 @@ pub fn downloads_dir() -> Option<PathBuf> {
 /// The person's Documents folder, or None if it cannot be found.
 ///
 /// None for the same reason downloads_dir returns it: somebody who has
-/// relocated Documents would otherwise be told a file went somewhere it did
-/// not. The caller falls back to the profile folder, which always exists
-/// because the app just read a database out of it.
+/// relocated Documents would otherwise be told a file went somewhere it
+/// did not. The caller falls back to the profile folder. Verified 2026-09-10:
+/// app.rs's save-dialog call sites use
+/// `.unwrap_or_else(|| self.active_home.clone())`, and active_home always
+/// exists because the app just read a database out of it.
 ///
 /// UNTESTED, like downloads_dir beside it, and for a reason worth writing
 /// down rather than leaving as an omission: the only branch reads an
 /// environment variable that is global to the process, so a test would have to
 /// mutate USERPROFILE and would race anything else running.
 pub fn documents_dir() -> Option<PathBuf> {
-    let base = env::var("USERPROFILE")
-        .or_else(|_| env::var("HOME"))
-        .ok()?;
+    let base = env::var("USERPROFILE").or_else(|_| env::var("HOME")).ok()?;
     let dir = PathBuf::from(base).join("Documents");
     dir.is_dir().then_some(dir)
 }
 
 /// A path inside `dir` for `name` that does not already exist, by adding
-/// " (2)", " (3)" and so on before the extension - the convention every
-/// browser uses, so it needs no explanation.
+/// " (2)", " (3)" and so on before the extension - a convention believed,
+/// not measured, to be the one every browser uses.
 ///
-/// Never overwrites. Downloading a resume is a recovery action, and the file
-/// most likely to share the name is the copy the person is trying to recover.
+/// Never overwrites - verified by the tests below: the loop only returns
+/// a candidate once `!candidate.exists()`. Downloading a resume is a
+/// recovery action, and the file most likely to share the name is the
+/// copy the person is trying to recover.
 pub fn non_clobbering_path(dir: &Path, name: &str) -> PathBuf {
     let candidate = dir.join(name);
     if !candidate.exists() {
@@ -129,9 +132,12 @@ pub fn config_path(home: &Path) -> PathBuf {
     home.join("config.json")
 }
 
-// Desktop-only settings (child process invocation, window state, and other
-// things that are not part of the shared config.json contract) live in
-// their own file so the two front ends never fight over the same document.
+// Desktop-only settings (child process invocation, window state, and
+// other things that are not part of the shared config.json contract)
+// live in their own file so the two front ends never fight over the same
+// document - verified 2026-09-10: config.rs's own header names
+// config.json "shared with the command-line side of the app", and
+// settings.rs keeps desktop-only fields out of it.
 pub fn desktop_settings_path(home: &Path) -> PathBuf {
     home.join("desktop_settings.json")
 }

@@ -1,15 +1,15 @@
 // Where a link opens.
 //
-// SHIPS AS THE DEVICE DEFAULT. A job link is a web page, and the browser a
-// person already chose for web pages is the right answer until they say
-// otherwise - an app that decides for them is wrong on every machine but the
-// one it was written on. So the default here is "hand it to the OS", exactly
-// as before, and a chosen browser is a preference stored per profile.
+// SHIPS AS THE DEVICE DEFAULT - by construction: CHOSEN starts empty and
+// open() below falls through to ctx.open_url (the OS handler) whenever it
+// is. A chosen browser is a preference stored per profile - verified
+// 2026-09-10: use_browser is fed from self.settings.browser, and
+// DesktopSettings lives in the profile's own settings file (see
+// settings.rs).
 //
-// WHY A PREFERENCE IS WORTH HAVING AT ALL: job hunting is a session with its
-// own logins, and the browser holding those is often not the one that opens
-// email. Being able to send postings to that browser and only that browser is
-// the whole point.
+// WHY A PREFERENCE IS WORTH HAVING AT ALL is believed, not measured: that
+// job hunting is a session with its own logins, and the browser holding
+// those is often not the one that opens email.
 
 use crate::fmt;
 use std::path::{Path, PathBuf};
@@ -20,9 +20,10 @@ use std::sync::RwLock;
 /// PUBLISHED, NOT PASSED. See `use_browser`.
 static CHOSEN: RwLock<String> = RwLock::new(String::new());
 
-/// Publish the active profile's choice. Called once a frame from the same
-/// place the theme is applied, so switching profile or changing the setting
-/// takes effect on the next click without anything being reloaded.
+/// Publish the active profile's choice - verified 2026-09-10: app.rs's
+/// update() calls this every frame, immediately after the theme::apply
+/// block, so switching profile or changing the setting takes effect on
+/// the next click without anything being reloaded.
 pub fn use_browser(chosen: &str) {
     if let Ok(mut slot) = CHOSEN.write() {
         slot.clear();
@@ -36,12 +37,14 @@ fn chosen() -> String {
 
 /// Browsers this machine has, by the paths they install to.
 ///
-/// A LIST OF CANDIDATES, NOT A REGISTRY READ. The Windows registry knows the
-/// real answer (Clients\StartMenuInternet), but reading it costs a dependency
-/// on a published, cross-platform binary to save a person one trip through a
-/// file picker. Anything this list misses is still reachable by choosing the
-/// executable, which is why the picker is not a fallback but the other half of
-/// the feature.
+/// A LIST OF CANDIDATES, NOT A REGISTRY READ - a deliberate trade
+/// believed, not measured: the Windows registry knows the real answer
+/// (Clients\StartMenuInternet), but reading it was judged not worth a
+/// new dependency just to save one trip through a file picker. Anything
+/// this list misses is still reachable by choosing the executable -
+/// verified 2026-09-10: profiles_view.rs's "Choose..." button opens
+/// rfd::FileDialog, so the picker is not a fallback but the other half
+/// of the feature.
 #[cfg(windows)]
 fn candidates() -> Vec<(&'static str, PathBuf)> {
     let mut out = Vec::new();
@@ -93,9 +96,12 @@ pub fn installed() -> Vec<(String, String)> {
         .collect()
 }
 
-/// The name to show for a chosen executable: the display name if this is one
-/// we know, otherwise the file name. Never the whole path - it is long enough
-/// to push everything else off the row.
+/// The name to show for a chosen executable: the display name if this is
+/// one we know, otherwise the file name - by construction: file_stem()
+/// strips the directory and extension. If a hand-edited setting has no
+/// file name component at all (file_stem returns None), this falls back
+/// to the raw string, whole path included - worth knowing rather than
+/// promising it never happens.
 pub fn label(chosen: &str) -> String {
     if chosen.is_empty() {
         return "System default".to_string();
@@ -114,13 +120,16 @@ pub fn label(chosen: &str) -> String {
 /// Open a URL, in the chosen browser if there is one and it still exists.
 ///
 /// FALLS BACK RATHER THAN FAILING. A browser can be uninstalled or moved
-/// between the day it was chosen and the day a link is clicked, and the person
-/// clicking wants the posting, not a report about their settings.
+/// between the day it was chosen and the day a link is clicked, and the
+/// person clicking wants the posting, not a report about their settings.
 ///
-/// The URL is re-checked here even though every caller checks it, because this
-/// is the function that hands a string to a process: `fmt::safe_link` is what
-/// guarantees it starts with http(s):// and therefore cannot be read by the
-/// browser as an option rather than an address.
+/// The URL is re-checked here even though every current caller already
+/// checks it - verified 2026-09-10: every call site in triage.rs,
+/// companies.rs, attachments.rs and config_view.rs passes the result of
+/// its own fmt::safe_link call - because this is the function that hands
+/// a string to a process: `fmt::safe_link` is what guarantees it starts
+/// with http(s):// and therefore cannot be read by the browser as an
+/// option rather than an address.
 pub fn open(ctx: &egui::Context, url: &str) {
     let Some(safe) = fmt::safe_link(url) else {
         return;
@@ -128,7 +137,10 @@ pub fn open(ctx: &egui::Context, url: &str) {
     let chosen = chosen();
     if !chosen.is_empty()
         && Path::new(&chosen).is_file()
-        && std::process::Command::new(&chosen).arg(safe).spawn().is_ok()
+        && std::process::Command::new(&chosen)
+            .arg(safe)
+            .spawn()
+            .is_ok()
     {
         return;
     }
@@ -161,6 +173,9 @@ mod tests {
         // The case this exists for: a portable build, or one installed
         // somewhere the candidate list does not look. It still has to read as
         // something in a settings row.
-        assert_eq!(label("D:/portable/some-browser/qutebrowser.exe"), "qutebrowser");
+        assert_eq!(
+            label("D:/portable/some-browser/qutebrowser.exe"),
+            "qutebrowser"
+        );
     }
 }

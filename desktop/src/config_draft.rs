@@ -8,8 +8,7 @@
 
 use crate::config::{
     AgentApiConfig, CollectorEntry, Config, CredentialsConfig, FetchConfig, SearchConfig,
-    UsajobsCredentials,
-    KNOWN_SOURCES,
+    UsajobsCredentials, KNOWN_SOURCES,
 };
 use std::collections::BTreeMap;
 
@@ -27,7 +26,10 @@ pub struct TagField {
 
 impl TagField {
     fn from(items: &[String]) -> Self {
-        TagField { items: items.to_vec(), input: String::new() }
+        TagField {
+            items: items.to_vec(),
+            input: String::new(),
+        }
     }
 
     /// Commits whatever is in the box. Trimmed, and silently ignored when it
@@ -506,7 +508,10 @@ mod collector_tests {
             });
         }
         let errors = draft.to_config().unwrap_err();
-        assert!(errors.iter().any(|e| e.contains("more than once")), "{errors:?}");
+        assert!(
+            errors.iter().any(|e| e.contains("more than once")),
+            "{errors:?}"
+        );
     }
 
     /// The id is stored normalised, because that is the form the engine writes
@@ -566,7 +571,10 @@ mod tag_field_tests {
         };
         assert!(f.commit());
         assert_eq!(f.items, vec!["Help Desk Technician".to_string()]);
-        assert!(f.input.is_empty(), "the box clears so the next one can be typed");
+        assert!(
+            f.input.is_empty(),
+            "the box clears so the next one can be typed"
+        );
     }
 
     #[test]
@@ -627,7 +635,10 @@ mod refresh_time_tests {
         // schedule until a week has passed with nothing collected.
         for bad in ["25:00", "10:75", "-1:00"] {
             let err = parse_times(bad).unwrap_err();
-            assert!(err.contains(bad), "the message must name what was rejected: {err}");
+            assert!(
+                err.contains(bad),
+                "the message must name what was rejected: {err}"
+            );
             assert!(err.contains("24-hour"), "and say what the format is: {err}");
         }
     }
@@ -753,7 +764,9 @@ mod refresh_time_tests {
         draft.refresh_at = String::new();
         let errors = draft.to_config().unwrap_err();
         assert!(
-            errors.iter().any(|e| e.contains("untick the daily refresh")),
+            errors
+                .iter()
+                .any(|e| e.contains("untick the daily refresh")),
             "{errors:?}"
         );
 

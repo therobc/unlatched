@@ -2,21 +2,23 @@
 //!
 //! This is the Rust half of a contract the Python engine owns
 //! (`unlatched/keystore.py`) - both front ends read and write the SAME
-//! config.json, so if only one of them protected the API key, the other's
-//! next save would quietly write it back in the clear.
+//! config.json, so if only one of them protected the API key, the
+//! other's next save would quietly write it back in the clear.
 //!
-//! The storage format is a tagged string in the same field the plaintext
-//! used, so the config schema is unchanged:
+//! The storage format is a tagged string in the same field the
+//! plaintext used, so the config schema is unchanged:
 //!
 //! ```text
 //! dpapi:<base64 blob>     protected by the current user's DPAPI
 //! <anything else>         legacy plaintext, upgraded on the next save
 //! ```
 //!
-//! The honest limit, same as the Python side documents: DPAPI binds the blob
-//! to the logged-in user, so another account or another machine cannot unwrap
-//! it - but code already running as that user can call DPAPI exactly like we
-//! do. Without a passphrase prompt on every run, nothing can prevent that.
+//! The honest limit, verified 2026-09-10 against
+//! unlatched/keystore.py's own docstring: DPAPI binds the blob to
+//! the logged-in user, so another account or another machine cannot
+//! unwrap it - but code already running as that user can call DPAPI
+//! exactly like this file does. Without a passphrase prompt on
+//! every run, nothing can prevent that.
 
 const PREFIX: &str = "dpapi:";
 
@@ -58,8 +60,9 @@ mod win {
         pub fn LocalFree(mem: *mut c_void) -> *mut c_void;
     }
 
-    /// One crypt32 call. `None` on any failure, which callers treat as "this
-    /// machine cannot protect secrets" rather than as a hard error.
+    /// One crypt32 call. `None` on any failure - by construction,
+    /// `protect` and `unprotect` below both match it to a fallback value
+    /// rather than an error.
     pub fn dpapi(data: &[u8], encrypt: bool) -> Option<Vec<u8>> {
         let mut input = data.to_vec();
         let source = DataBlob {
@@ -101,8 +104,11 @@ mod win {
         if ok == 0 || out.pb_data.is_null() {
             return None;
         }
-        // SAFETY: the API guarantees pb_data is valid for cb_data bytes.
-        let bytes = unsafe { std::slice::from_raw_parts(out.pb_data, out.cb_data as usize) }.to_vec();
+        // SAFETY: by definition of the CryptProtectData/CryptUnprotectData
+        // contract, the API allocates pb_data itself and guarantees it is
+        // valid for cb_data bytes when the call succeeds.
+        let bytes =
+            unsafe { std::slice::from_raw_parts(out.pb_data, out.cb_data as usize) }.to_vec();
         unsafe { LocalFree(out.pb_data as *mut c_void) };
         Some(bytes)
     }
@@ -117,8 +123,9 @@ mod win {
     }
 }
 
-// Minimal base64, so this shares no dependency with the Python side beyond
-// the wire format itself.
+// Minimal base64 - by construction, `b64_encode`/`b64_decode` below
+// are hand-rolled, so this shares no dependency with the Python
+// side beyond the wire format itself.
 const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 fn b64_encode(data: &[u8]) -> String {
@@ -169,15 +176,18 @@ pub fn is_protected(stored: &str) -> bool {
     stored.starts_with(PREFIX)
 }
 
-/// Whether this machine can protect secrets at rest, so the Config panel can
-/// tell the user which of the two states they are actually in.
+/// Whether this machine can protect secrets at rest. Verified by construction:
+/// config_view.rs calls this directly to tell the
+/// user which of the two states they are actually in.
 pub fn available() -> bool {
     win::dpapi(b"probe", true).is_some()
 }
 
-/// Plain secret -> what belongs in config.json. Falls back to the value
-/// unchanged where DPAPI is unavailable: a secret that cannot be read back
-/// would be worse than one stored plainly.
+/// Plain secret -> what belongs in config.json. Falls back to the
+/// value unchanged where DPAPI is unavailable - by construction,
+/// the `None` arm below returns `value` untouched - because a
+/// secret that cannot be read back would be worse than one stored
+/// plainly.
 pub fn protect(value: &str) -> String {
     if value.is_empty() || is_protected(value) {
         return value.to_string();
@@ -241,15 +251,20 @@ mod tests {
         assert_eq!(unprotect("dpapi:QUJDREVG"), "");
     }
 
-    /// THE TAG IS A CONTRACT, and this file's own header says the engine owns
-    /// it. Both halves read and write the same config.json, so a prefix that
-    /// drifted on one side would make the other read a protected key as legacy
-    /// plaintext and hand it to a live API verbatim - or write a tag the other
-    /// cannot recognise, locking somebody out of their own credential with
-    /// nothing on screen to explain it.
+    /// THE TAG IS A CONTRACT, and this file's own header says the
+    /// engine owns it. Verified by construction: `unprotect` below
+    /// returns `stored` untouched whenever `is_protected` is false, so
+    /// a prefix that drifted on one side would make the other read a
+    /// protected key as legacy plaintext and hand it to a live API
+    /// verbatim - or write a tag the other cannot recognise, locking
+    /// somebody out of their own credential with nothing on screen to
+    /// explain it.
     ///
-    /// Read out of the Python source rather than copied into the assertion: a
-    /// hand-copied expected value drifts exactly like the thing it checks.
+    /// Read out of the Python source rather than copied into the
+    /// assertion - verified by construction, the test below reads
+    /// keystore.py itself with `std::fs::read_to_string` rather than
+    /// hard-coding an expected value: a hand-copied expected value
+    /// drifts exactly like the thing it checks.
     #[test]
     fn both_halves_agree_on_the_tag() {
         let py = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -267,13 +282,20 @@ mod tests {
             .unwrap()
             .trim()
             .trim_matches('"');
-        assert_eq!(theirs, PREFIX, "the two halves tag protected secrets differently");
+        assert_eq!(
+            theirs, PREFIX,
+            "the two halves tag protected secrets differently"
+        );
     }
 
-    /// And the base64 is the ordinary alphabet with ordinary padding, which
-    /// is what makes a blob written by one half readable by the other. This
-    /// file carries its own encoder to avoid a dependency, so nothing else
-    /// would notice it drifting from the standard one.
+    /// And the base64 is the ordinary alphabet with ordinary padding,
+    /// which is what makes a blob written by one half readable by the
+    /// other - verified by construction, `B64` above is exactly the
+    /// RFC 4648 standard alphabet (`+` and `/`, not the URL-safe `-`
+    /// and `_`), matching Python's `base64.b64encode` default. This
+    /// file carries its own encoder to avoid a dependency; believed,
+    /// not measured, that nothing else would notice it drifting from
+    /// the standard one.
     #[test]
     fn the_encoding_is_standard_base64() {
         // Known vectors from RFC 4648, covering both pad lengths.
@@ -297,4 +319,3 @@ mod tests {
         assert_eq!(unprotect(&stored), "KEY123");
     }
 }
-

@@ -224,10 +224,7 @@ fn ensure_columns(conn: &Connection, table: &str, columns: &[(&str, &str)]) -> S
     }
     for (name, decl) in columns.iter() {
         if !existing.contains(*name) {
-            conn.execute(
-                &format!("ALTER TABLE {table} ADD COLUMN {name} {decl}"),
-                [],
-            )?;
+            conn.execute(&format!("ALTER TABLE {table} ADD COLUMN {name} {decl}"), [])?;
         }
     }
     Ok(())
@@ -577,11 +574,9 @@ pub struct TriageRow {
 /// This is the other half of that: the row a person actually opened, and only
 /// that row, pays for its own text.
 pub fn description_for(conn: &Connection, key: &str) -> SqlResult<Option<String>> {
-    conn.query_row(
-        "SELECT description FROM jobs WHERE key = ?1",
-        [key],
-        |r| r.get::<_, Option<String>>(0),
-    )
+    conn.query_row("SELECT description FROM jobs WHERE key = ?1", [key], |r| {
+        r.get::<_, Option<String>>(0)
+    })
 }
 
 /// Folds "one opening, listed once per city" down to a single row.
@@ -644,7 +639,8 @@ pub fn collapse_locations(rows: Vec<TriageRow>) -> Vec<TriageRow> {
 /// duplicated once and the two copies immediately disagreed - the row mapper
 /// below indexes by position by construction, so a column added to one query
 /// and not the other reads the wrong field silently rather than failing.
-const SELECT_TRIAGE_COLUMNS: &str = "SELECT jobs.key, jobs.company_id, jobs.title, jobs.location, jobs.remote,
+const SELECT_TRIAGE_COLUMNS: &str =
+    "SELECT jobs.key, jobs.company_id, jobs.title, jobs.location, jobs.remote,
                        jobs.remote_evidence, jobs.salary_min, jobs.salary_max, jobs.currency,
                        jobs.hourly_rate,
                        jobs.url, jobs.posted_at, jobs.fetched_at,
@@ -878,8 +874,9 @@ pub fn search_jobs(conn: &Connection, terms: &[String]) -> SqlResult<Vec<TriageR
 ///
 /// A CONSTANT so the index can be checked against it. The two lists were
 /// the same field names written in two places, which is how a field ends
-/// up searchable through one path and not the other -
-/// `the_index_covers_exactly_what_the_scan_reads` reads this string.
+/// up searchable through one path and not the other. Verified 2026-09-10:
+/// `the_index_covers_exactly_what_the_scan_reads` reads this string twice -
+/// for each field in its list, and for how many fields the scan reads.
 const LIKE_SEARCH_GROUP: &str =
     "(jobs.title LIKE ?1 OR companies.name LIKE ?1 OR jobs.location LIKE ?1 \
                   OR jobs.description LIKE ?1 OR jobs.requirements_summary LIKE ?1 \
@@ -1027,9 +1024,11 @@ fn fts_triggers() -> String {
 /// 3.0 MB index. That is why it is version-guarded rather than run on open.
 fn build_fts(conn: &Connection) -> bool {
     let stored: Option<String> = conn
-        .query_row("SELECT value FROM meta WHERE key = 'fts_version'", [], |r| {
-            r.get(0)
-        })
+        .query_row(
+            "SELECT value FROM meta WHERE key = 'fts_version'",
+            [],
+            |r| r.get(0),
+        )
         .optional()
         .unwrap_or(None);
     if stored.and_then(|s| s.parse::<i64>().ok()).unwrap_or(0) >= FTS_VERSION {
@@ -1262,7 +1261,9 @@ pub fn collector_taken_in(
     for id in ids {
         let key = format!("ingest_taken:{id}");
         let when: Option<String> = conn
-            .query_row("SELECT value FROM meta WHERE key = ?1", [&key], |r| r.get(0))
+            .query_row("SELECT value FROM meta WHERE key = ?1", [&key], |r| {
+                r.get(0)
+            })
             .optional()?;
         out.push((id.clone(), when));
     }
@@ -1439,7 +1440,15 @@ pub fn set_status_with(
         "INSERT INTO job_status_log \
           (key, status, note, at, pay, offer_date, set_by)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![key, status, note, now, terms.pay, terms.offer_date, SET_BY_PERSON],
+        params![
+            key,
+            status,
+            note,
+            now,
+            terms.pay,
+            terms.offer_date,
+            SET_BY_PERSON
+        ],
     )?;
     Ok(())
 }
@@ -1590,7 +1599,13 @@ pub fn mark_taken_down(conn: &Connection, keys: &[String]) -> SqlResult<usize> {
         // Empty is the whole of the target: a row nobody ever judged. Anything
         // they did record, at any stage, is theirs and stays.
         if held.is_empty() {
-            set_status_with(conn, key, crate::status::CLOSED, None, &OfferTerms::default())?;
+            set_status_with(
+                conn,
+                key,
+                crate::status::CLOSED,
+                None,
+                &OfferTerms::default(),
+            )?;
         }
         touched += 1;
     }
@@ -1604,7 +1619,9 @@ fn write_retired(conn: &Connection, keys: &[String], at: Option<String>) -> SqlR
     // Built from the COUNT of keys, never from their contents -
     // by construction the values go through params, so a key cannot reach the
     // statement text.
-    let marks = std::iter::repeat_n("?", keys.len()).collect::<Vec<_>>().join(",");
+    let marks = std::iter::repeat_n("?", keys.len())
+        .collect::<Vec<_>>()
+        .join(",");
     let sql = format!("UPDATE jobs SET retired_at = ?1 WHERE key IN ({marks})");
     let mut values: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(keys.len() + 1);
     values.push(&at);
@@ -1696,7 +1713,9 @@ pub fn applied_among(conn: &Connection, keys: &[String]) -> SqlResult<usize> {
     if keys.is_empty() {
         return Ok(0);
     }
-    let marks = std::iter::repeat_n("?", keys.len()).collect::<Vec<_>>().join(",");
+    let marks = std::iter::repeat_n("?", keys.len())
+        .collect::<Vec<_>>()
+        .join(",");
     // Every status that PROVES an application was made, which is what the
     // warning is about - including the ones that end it. By construction a
     // rejection implies an application, so removing a job you were turned down
@@ -2075,7 +2094,8 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(SCHEMA_SQL).unwrap();
         // Through migrate, for the reason on one_job_database: a fixture that
-        // picks its own columns is testing a database no install has.
+        // picks its own columns is testing a database no install has - observed
+        // when ten tests broke that way on the set_by column.
         migrate(&conn).unwrap();
         conn.execute(
             "INSERT INTO jobs (key, title, qualified, score) VALUES
@@ -2084,8 +2104,7 @@ mod tests {
             [],
         )
         .unwrap();
-        set_status_with(&conn, "gh:applied", "applied", None, &OfferTerms::default())
-            .unwrap();
+        set_status_with(&conn, "gh:applied", "applied", None, &OfferTerms::default()).unwrap();
         conn
     }
 
@@ -2104,12 +2123,17 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(status, "applied", "an application survives the advert closing");
+        assert_eq!(
+            status, "applied",
+            "an application survives the advert closing"
+        );
 
         let delisted: Option<String> = conn
-            .query_row("SELECT delisted_at FROM jobs WHERE key = 'gh:applied'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT delisted_at FROM jobs WHERE key = 'gh:applied'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert!(delisted.is_some(), "and the closure is recorded beside it");
 
@@ -2178,8 +2202,14 @@ mod tests {
     #[test]
     fn taken_down_does_not_overwrite_a_rejection_the_person_recorded() {
         let conn = touched_and_untouched();
-        set_status_with(&conn, "gh:untouched", "no_offer", None, &OfferTerms::default())
-            .unwrap();
+        set_status_with(
+            &conn,
+            "gh:untouched",
+            "no_offer",
+            None,
+            &OfferTerms::default(),
+        )
+        .unwrap();
 
         mark_taken_down(&conn, &["gh:untouched".to_string()]).unwrap();
 
@@ -2273,7 +2303,10 @@ mod tests {
             statuses,
             vec![
                 ("gh:applied".to_string(), "applied".to_string()),
-                ("gh:untouched".to_string(), crate::status::CLOSED.to_string()),
+                (
+                    "gh:untouched".to_string(),
+                    crate::status::CLOSED.to_string()
+                ),
             ],
             "one call, two outcomes, decided by what the person had already done"
         );
@@ -2342,10 +2375,11 @@ mod tests {
     /// The same three postings, with the index built.
     ///
     /// SEPARATE FROM searchable_database ON PURPOSE. That one runs SCHEMA_SQL
-    /// without migrate, so it has no index - which is exactly the shape of an
-    /// install whose upgrade has not run yet, and it is what keeps the
-    /// fallback under test. Every search test above therefore exercises the
-    /// scan; the ones below exercise the index against the same rows.
+    /// without migrate, so it has no index - verified 2026-09-10: jobs_fts
+    /// appears nowhere in SCHEMA_SQL, only in build_fts. That is exactly the
+    /// shape of an install whose upgrade has not run yet, and it is what keeps
+    /// the fallback under test. Every search test above therefore exercises
+    /// the scan; the ones below exercise the index against the same rows.
     fn indexed_database() -> Connection {
         let conn = searchable_database();
         migrate(&conn).unwrap();
@@ -2358,9 +2392,10 @@ mod tests {
     }
 
     /// THE TWO PATHS HAVE TO AGREE. Which one runs depends on whether the
-    /// upgrade has built the index, and a person cannot tell - so a term that
-    /// finds a posting through one and not the other is the app answering the
-    /// same question two ways.
+    /// upgrade has built the index - by construction, search_jobs tries the
+    /// index and falls back to the scan when that query fails - and nothing on
+    /// screen says which answered, so a term found through one and not the
+    /// other is the app answering the same question two ways.
     #[test]
     fn the_index_and_the_scan_answer_the_same_searches() {
         let scanned = searchable_database();
@@ -2392,7 +2427,8 @@ mod tests {
     /// THE BEHAVIOUR CHANGE, asserted rather than left to be discovered. FTS
     /// matches from the start of a word, so a substring inside one no longer
     /// matches. Written down here because it is the one way the index answers
-    /// differently from the scan it replaced.
+    /// differently from the scan it replaced. This test asserts it, and a
+    /// positive control that breaks the index path verified it can fail.
     #[test]
     fn a_substring_inside_a_word_no_longer_matches() {
         let conn = indexed_database();
@@ -2402,7 +2438,8 @@ mod tests {
 
     /// A NEW POSTING IS FINDABLE WITHOUT REBUILDING ANYTHING. The engine
     /// writes rows this app never sees, so an index maintained in app code
-    /// would miss every one of them until something rebuilt it.
+    /// would miss every one of them until something rebuilt it - which is why,
+    /// by construction, it is kept by SQLite triggers that fire for every writer.
     #[test]
     fn a_job_written_by_anything_at_all_is_indexed() {
         let conn = indexed_database();
@@ -2452,25 +2489,35 @@ mod tests {
     }
 
     /// RENAMING AN EMPLOYER TOUCHES EVERY JOB IT HAS. The company name is
-    /// copied into each indexed row, so a rename that only updated one would
+    /// copied into each indexed row - by construction, FTS_SOURCES fills the
+    /// company column from companies.name, and jobs_fts_company_au re-indexes
+    /// every job with that company_id - so a rename that only updated one would
     /// leave the rest findable under a name that no longer exists.
     #[test]
     fn renaming_an_employer_updates_all_of_its_postings() {
         let conn = indexed_database();
-        conn.execute("UPDATE companies SET name = 'Zenith Robotics' WHERE id = 1", [])
-            .unwrap();
+        conn.execute(
+            "UPDATE companies SET name = 'Zenith Robotics' WHERE id = 1",
+            [],
+        )
+        .unwrap();
         assert!(keys(&search_jobs(&conn, &["acme".to_string()]).unwrap()).is_empty());
         let renamed = keys(&search_jobs(&conn, &["zenith".to_string()]).unwrap());
         assert_eq!(renamed.len(), 2, "both of that employer's postings moved");
     }
 
-    /// A DELETED POSTING LEAVES THE INDEX. Otherwise search returns a row the
-    /// row mapper cannot load, and the list comes back short with no error.
+    /// A DELETED POSTING LEAVES THE INDEX. Measured 2026-09-10: SQLite reuses
+    /// the highest rowid after a delete, so an index row left behind would
+    /// attach the deleted posting's words to whichever job next took its rowid,
+    /// and search would return that job for text it never contained. (Not a
+    /// short list: the index path is an inner join, so an orphan row with no
+    /// job behind it is simply never returned.)
     #[test]
     fn a_deleted_posting_leaves_the_index() {
         let conn = indexed_database();
         let before = fts_rows(&conn);
-        conn.execute("DELETE FROM jobs WHERE key = 'gh:2'", []).unwrap();
+        conn.execute("DELETE FROM jobs WHERE key = 'gh:2'", [])
+            .unwrap();
         assert_eq!(fts_rows(&conn), before - 1);
         assert_eq!(
             keys(&search_jobs(&conn, &["tickets".to_string()]).unwrap()),
@@ -2485,7 +2532,11 @@ mod tests {
         let conn = indexed_database();
         conn.execute("DELETE FROM jobs_fts", []).unwrap();
         migrate(&conn).unwrap();
-        assert_eq!(fts_rows(&conn), 0, "migrate rebuilt an index it had already built");
+        assert_eq!(
+            fts_rows(&conn),
+            0,
+            "migrate rebuilt an index it had already built"
+        );
     }
 
     /// THE INDEX COVERS EXACTLY WHAT THE SCAN READS. Two lists that drifted
@@ -2513,8 +2564,10 @@ mod tests {
             "jobs.screen_reasons",
             "jobs.missing_skills",
         ];
-        // Read off the scan's OR group rather than retyped, so the two
-        // cannot drift without this failing.
+        // Retyped above, and then held against the scan's own OR group in both
+        // directions - every field listed must be in it, and the number of fields
+        // it scans must equal the index's - so by construction the two cannot
+        // drift without this failing.
         for field in &scanned {
             assert!(
                 LIKE_SEARCH_GROUP.contains(&format!("{field} LIKE")),
@@ -2529,9 +2582,10 @@ mod tests {
         );
     }
 
-    /// WHAT SOMEBODY TYPES IS NEVER FTS SYNTAX. A bare OR, a NEAR, an
-    /// unbalanced quote - each is either a syntax error or, worse, a query
-    /// that quietly means something else.
+    /// WHAT SOMEBODY TYPES IS NEVER FTS SYNTAX. Measured 2026-09-10 against a
+    /// real FTS5 table, unescaped: a bare OR, a NOT and an unbalanced quote are
+    /// syntax errors, and "a OR b" or "a NEAR b" run as operators - a query
+    /// that quietly means something other than what was typed.
     #[test]
     fn typed_text_cannot_become_a_query_operator() {
         assert_eq!(fts_query(&["OR".to_string()]), "\"OR\"*");
@@ -2546,7 +2600,10 @@ mod tests {
     /// harmless keystroke into a search that fails.
     #[test]
     fn an_empty_term_is_dropped_rather_than_sent() {
-        assert_eq!(fts_query(&["".to_string(), "python".to_string()]), "\"python\"*");
+        assert_eq!(
+            fts_query(&["".to_string(), "python".to_string()]),
+            "\"python\"*"
+        );
         assert_eq!(fts_query(&["\"".to_string()]), "");
     }
 
@@ -2555,7 +2612,10 @@ mod tests {
     /// separately, engineer.
     #[test]
     fn a_phrase_is_not_turned_into_a_prefix() {
-        assert_eq!(fts_query(&["data engineer".to_string()]), "\"data engineer\"");
+        assert_eq!(
+            fts_query(&["data engineer".to_string()]),
+            "\"data engineer\""
+        );
     }
 
     /// A bare stamp gains the zone it was verified to already be in - see
@@ -2571,9 +2631,11 @@ mod tests {
         .unwrap();
         migrate(&conn).unwrap();
         let updated: String = conn
-            .query_row("SELECT updated FROM job_status WHERE key = 'gh:1'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT updated FROM job_status WHERE key = 'gh:1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(updated, "2026-09-04T22:46:41+00:00");
     }
@@ -2594,9 +2656,11 @@ mod tests {
         .unwrap();
         migrate(&conn).unwrap();
         let updated: String = conn
-            .query_row("SELECT updated FROM job_status WHERE key = 'gh:1'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT updated FROM job_status WHERE key = 'gh:1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert!(
             updated.starts_with("2026-09-04T22:46:41"),
@@ -2617,9 +2681,11 @@ mod tests {
         .unwrap();
         migrate(&conn).unwrap();
         let updated: String = conn
-            .query_row("SELECT updated FROM job_status WHERE key = 'gh:2'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT updated FROM job_status WHERE key = 'gh:2'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(updated, "2026-09-04T18:25:07+00:00");
     }
@@ -2642,9 +2708,11 @@ mod tests {
         migrate(&conn).unwrap();
         migrate(&conn).unwrap();
         let updated: String = conn
-            .query_row("SELECT updated FROM job_status WHERE key = 'gh:1'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT updated FROM job_status WHERE key = 'gh:1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(updated, "2026-09-04T22:46:41+00:00");
     }
@@ -2678,9 +2746,11 @@ mod tests {
         .unwrap();
         migrate(&conn).unwrap();
         let at: String = conn
-            .query_row("SELECT at FROM job_status_log WHERE key = 'gh:1'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT at FROM job_status_log WHERE key = 'gh:1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(at, "2026-09-04T22:46:41+00:00");
     }
@@ -2719,11 +2789,7 @@ mod tests {
     #[test]
     fn every_term_must_match_and_they_may_be_in_different_fields() {
         let conn = searchable_database();
-        let rows = search_jobs(
-            &conn,
-            &["python".to_string(), "dayton".to_string()],
-        )
-        .unwrap();
+        let rows = search_jobs(&conn, &["python".to_string(), "dayton".to_string()]).unwrap();
         assert_eq!(
             keys(&rows),
             vec!["gh:1"],
@@ -2787,13 +2853,24 @@ mod tests {
         // Neither is in All jobs any more - that is the precondition, and
         // asserting it is what stops this test passing for the wrong reason.
         let all = keys(&list_all_jobs(&conn).unwrap());
-        assert!(!all.contains(&"gh:2".to_string()), "removed row precondition");
+        assert!(
+            !all.contains(&"gh:2".to_string()),
+            "removed row precondition"
+        );
 
         let removed = search_jobs(&conn, &["analyst".to_string()]).unwrap();
-        assert_eq!(keys(&removed), vec!["gh:2"], "a removed posting is findable");
+        assert_eq!(
+            keys(&removed),
+            vec!["gh:2"],
+            "a removed posting is findable"
+        );
 
         let taken_down = search_jobs(&conn, &["warehouse".to_string()]).unwrap();
-        assert_eq!(keys(&taken_down), vec!["gh:3"], "a taken-down posting is findable");
+        assert_eq!(
+            keys(&taken_down),
+            vec!["gh:3"],
+            "a taken-down posting is findable"
+        );
     }
 
     /// An apostrophe is the character that breaks an interpolated query, and
@@ -2861,10 +2938,10 @@ mod tests {
     ///
     /// THROUGH migrate, not through a hand-picked column list. This ran
     /// SCHEMA_SQL plus ADDED_JOB_COLUMNS, which is a shape no install has had
-    /// since the first release - so adding set_by to job_status_log broke ten
-    /// tests that were passing against a database missing a column every real
-    /// profile carries. migrate is the one entry point for exactly this
-    /// reason; see its own note.
+    /// since the first release - observed when adding set_by to job_status_log
+    /// broke ten tests that were passing against a database missing a column
+    /// every real profile carries. migrate is the one entry point for exactly
+    /// this reason; see its own note.
     fn one_job_database() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         conn.execute_batch(SCHEMA_SQL).unwrap();
@@ -2974,11 +3051,9 @@ mod tests {
         migrate(&conn).unwrap();
 
         let reason = |key: &str| -> Option<String> {
-            conn.query_row(
-                "SELECT alt_reason FROM jobs WHERE key = ?1",
-                [key],
-                |r| r.get(0),
-            )
+            conn.query_row("SELECT alt_reason FROM jobs WHERE key = ?1", [key], |r| {
+                r.get(0)
+            })
             .unwrap()
         };
         assert_eq!(reason("gh:pay").as_deref(), Some("salary"));
@@ -2987,7 +3062,8 @@ mod tests {
         // ONCE, guarded by the stored version rather than by the column - so
         // by construction a second open cannot undo a re-screen that has since
         // decided the row is held back on something else.
-        conn.execute("UPDATE jobs SET alt_reason = 'requirements'", []).unwrap();
+        conn.execute("UPDATE jobs SET alt_reason = 'requirements'", [])
+            .unwrap();
         migrate(&conn).unwrap();
         assert_eq!(reason("gh:pay").as_deref(), Some("requirements"));
     }
@@ -3080,7 +3156,11 @@ mod tests {
         // instead of "is requirements".
         assert_eq!(
             rest,
-            vec!["gh:hand".to_string(), "gh:old".to_string(), "gh:req".to_string()]
+            vec![
+                "gh:hand".to_string(),
+                "gh:old".to_string(),
+                "gh:req".to_string()
+            ]
         );
 
         // Said as a count as well, because the two assertions above would
@@ -3196,8 +3276,10 @@ mod tests {
             }
         }
 
-        let ours: Vec<String> =
-            ADDED_JOB_COLUMNS.iter().map(|(n, _)| (*n).to_string()).collect();
+        let ours: Vec<String> = ADDED_JOB_COLUMNS
+            .iter()
+            .map(|(n, _)| (*n).to_string())
+            .collect();
         assert!(
             !theirs.is_empty(),
             "read no column names from the engine list - a parse bug, not a schema change"
@@ -3298,7 +3380,11 @@ mod tests {
         assert_eq!(transitions, 1, "two notes must not add status history");
 
         let notes = list_notes(&conn).unwrap();
-        assert_eq!(notes.len(), 2, "both notes are kept - neither replaces the other");
+        assert_eq!(
+            notes.len(),
+            2,
+            "both notes are kept - neither replaces the other"
+        );
         assert_eq!(notes[0].note, "left a voicemail");
         assert_eq!(notes[1].note, "they called back");
         assert_eq!(
@@ -3354,9 +3440,11 @@ mod tests {
 
         assert_eq!(standing_note(&conn, "gh:1"), None);
         let current: String = conn
-            .query_row("SELECT status FROM job_status WHERE key = 'gh:1'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT status FROM job_status WHERE key = 'gh:1'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(current, "no_offer");
         let history: Vec<String> = conn
@@ -3390,7 +3478,10 @@ mod tests {
             .collect();
 
         assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0], ("applied".into(), Some("recruiter is Dana".into())));
+        assert_eq!(
+            rows[0],
+            ("applied".into(), Some("recruiter is Dana".into()))
+        );
         assert_eq!(
             rows[1],
             ("interviewed".into(), None),
@@ -3470,14 +3561,14 @@ mod tests {
         assert_eq!(seed_companies_from(&dst, &src_path).unwrap(), 1);
 
         let (name, ats, reference): (String, String, String) = dst
-            .query_row(
-                "SELECT name, ats, ats_ref FROM companies",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-            )
+            .query_row("SELECT name, ats, ats_ref FROM companies", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
             .unwrap();
-        assert_eq!((name.as_str(), ats.as_str(), reference.as_str()),
-                   ("Ridgeline Health", "greenhouse", "ridgeline"));
+        assert_eq!(
+            (name.as_str(), ats.as_str(), reference.as_str()),
+            ("Ridgeline Health", "greenhouse", "ridgeline")
+        );
     }
 
     /// The Companies table reads provenance from this query and nowhere else
@@ -3496,8 +3587,7 @@ mod tests {
         .unwrap();
 
         let listed = list_companies(&conn).unwrap();
-        let origins: Vec<Option<&str>> =
-            listed.iter().map(|c| c.origin.as_deref()).collect();
+        let origins: Vec<Option<&str>> = listed.iter().map(|c| c.origin.as_deref()).collect();
         assert_eq!(origins, vec![Some("seeded"), Some("discovered"), None]);
     }
 
@@ -3604,11 +3694,17 @@ mod tests {
         let (_dst_path, dst) = database_at("nopipeline", "second-search");
         seed_companies_from(&dst, &src_path).unwrap();
 
-        let jobs: i64 = dst.query_row("SELECT COUNT(*) FROM jobs", [], |r| r.get(0)).unwrap();
+        let jobs: i64 = dst
+            .query_row("SELECT COUNT(*) FROM jobs", [], |r| r.get(0))
+            .unwrap();
         let statuses: i64 = dst
             .query_row("SELECT COUNT(*) FROM job_status", [], |r| r.get(0))
             .unwrap();
-        assert_eq!((jobs, statuses), (0, 0), "a new search starts with no postings and no pipeline");
+        assert_eq!(
+            (jobs, statuses),
+            (0, 0),
+            "a new search starts with no postings and no pipeline"
+        );
     }
 
     #[test]
@@ -3634,7 +3730,10 @@ mod tests {
         let status: String = dst
             .query_row("SELECT probe_status FROM companies", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(status, "ok", "re-seeding must not undo work done in this search");
+        assert_eq!(
+            status, "ok",
+            "re-seeding must not undo work done in this search"
+        );
     }
 
     #[test]
@@ -3685,7 +3784,12 @@ mod tests {
     fn one_opening_listed_per_city_becomes_one_row() {
         // Measured: 75 of 290 rows in a real profile were this shape.
         let rows = vec![
-            triage_row("Acme", "Implementation Consultant", "San Francisco, CA", "gh:1"),
+            triage_row(
+                "Acme",
+                "Implementation Consultant",
+                "San Francisco, CA",
+                "gh:1",
+            ),
             triage_row("Acme", "Implementation Consultant", "Seattle, WA", "gh:2"),
             triage_row("Acme", "Implementation Consultant", "New York, NY", "gh:3"),
         ];
@@ -3743,7 +3847,8 @@ mod tests {
         let conn = old_database();
         conn.execute_batch(SCHEMA_SQL).unwrap();
         ensure_columns(&conn, "jobs", &ADDED_JOB_COLUMNS).unwrap();
-        ensure_columns(&conn, "jobs", &ADDED_JOB_COLUMNS).expect("a second migration must not error");
+        ensure_columns(&conn, "jobs", &ADDED_JOB_COLUMNS)
+            .expect("a second migration must not error");
     }
 }
 
@@ -3840,5 +3945,9 @@ pub fn manual_link_state(conn: &Connection, min_hours: f64) -> Result<ManualLink
         )
         .map_err(|e| e.to_string())?;
 
-    Ok(ManualLinkState { total, due, stale_since_collect: stale > 0 })
+    Ok(ManualLinkState {
+        total,
+        due,
+        stale_since_collect: stale > 0,
+    })
 }

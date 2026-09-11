@@ -204,7 +204,11 @@ pub fn collectors_line(pending: &[(String, String, bool)]) -> (String, bool) {
         [(name, age, false)] => format!("{name}: nothing yet today, last {age}"),
         many => {
             let names: Vec<&str> = many.iter().map(|(n, _, _)| n.as_str()).collect();
-            let verb = if late { "have not delivered today" } else { "nothing yet today" };
+            let verb = if late {
+                "have not delivered today"
+            } else {
+                "nothing yet today"
+            };
             format!("{} collectors {verb}: {}", many.len(), names.join(", "))
         }
     };
@@ -280,8 +284,7 @@ mod collector_file_tests {
 
     #[test]
     fn a_file_from_today_is_quiet() {
-        let (text, attention) =
-            collector_file_line("imported", true, Some(3.0), Some(3.2), None);
+        let (text, attention) = collector_file_line("imported", true, Some(3.0), Some(3.2), None);
         assert!(text.contains("3h old"), "{text}");
         assert!(!attention, "a file written this morning is not news");
     }
@@ -307,7 +310,12 @@ mod collector_file_tests {
         // "in 2h 41m" makes a person do arithmetic against a collector that
         // finishes at 12:30.
         let (text, _) = collector_file_line(
-            "imported", true, Some(3.0), Some(3.2), Some("14:00".to_string()));
+            "imported",
+            true,
+            Some(3.0),
+            Some(3.2),
+            Some("14:00".to_string()),
+        );
         assert!(text.contains("next look 14:00"), "{text}");
     }
 
@@ -315,8 +323,7 @@ mod collector_file_tests {
     fn a_file_newer_than_the_rows_is_waiting_to_be_taken_in() {
         // The collection has finished and this app has not read it - the
         // question "did the work complete" reduces to exactly this.
-        let (text, attention) =
-            collector_file_line("imported", true, Some(0.2), Some(23.0), None);
+        let (text, attention) = collector_file_line("imported", true, Some(0.2), Some(23.0), None);
         assert!(text.contains("not taken in yet"), "{text}");
         assert!(attention);
     }
@@ -348,8 +355,7 @@ mod collector_file_tests {
     fn matching_ages_are_not_reported_as_waiting() {
         // The two clocks are not expected to agree exactly. Tested below: a
         // 0.4h gap (3.0 vs 3.4) does not read as waiting.
-        let (text, _) =
-            collector_file_line("imported", true, Some(3.0), Some(3.4), None);
+        let (text, _) = collector_file_line("imported", true, Some(3.0), Some(3.4), None);
         assert!(!text.contains("not taken in"), "{text}");
     }
 
@@ -406,7 +412,10 @@ mod collected_line_tests {
         ];
         let (line, late) = collectors_line(&pending);
         assert!(line.starts_with("2 collectors"), "{line}");
-        assert!(line.contains("imported") && line.contains("partner"), "{line}");
+        assert!(
+            line.contains("imported") && line.contains("partner"),
+            "{line}"
+        );
         // One overdue among several colours the whole clause.
         assert!(late);
     }
@@ -421,7 +430,10 @@ mod collected_line_tests {
         // A stamp that cannot be read is not evidence of a delivery.
         // Tested below: None maps to Collected::NotYet.
         assert_eq!(collected_state(None, now), Collected::NotYet);
-        assert_eq!(collected_state(Some("last Tuesday"), now), Collected::NotYet);
+        assert_eq!(
+            collected_state(Some("last Tuesday"), now),
+            Collected::NotYet
+        );
     }
 }
 
@@ -594,7 +606,10 @@ pub fn days_since_posted(raw: &str) -> Option<i64> {
         return None;
     }
     if stamp.chars().all(|c| c.is_ascii_digit()) && stamp.len() >= 12 {
-        return stamp.parse::<i64>().ok().map(crate::date::days_since_epoch_ms);
+        return stamp
+            .parse::<i64>()
+            .ok()
+            .map(crate::date::days_since_epoch_ms);
     }
     crate::date::days_since(stamp)
 }
@@ -607,8 +622,7 @@ pub fn days_since_posted(raw: &str) -> Option<i64> {
 /// varies off the edge. The full date is on the hover.
 pub fn short_date(raw: &str, offset_secs: i64) -> String {
     const MONTHS: [&str; 12] = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
     ];
     if raw.len() < 10 {
         return String::new();
@@ -715,9 +729,18 @@ mod link_host_tests {
 
     #[test]
     fn names_somewhere_a_person_could_actually_go() {
-        assert_eq!(link_host("https://jobs.lever.co/softdocs/5eaba021"), "jobs.lever.co");
-        assert_eq!(link_host("https://www.example.com/jobs/view/1"), "example.com");
-        assert_eq!(link_host("https://boards.greenhouse.io/brex?x=1"), "boards.greenhouse.io");
+        assert_eq!(
+            link_host("https://jobs.lever.co/softdocs/5eaba021"),
+            "jobs.lever.co"
+        );
+        assert_eq!(
+            link_host("https://www.example.com/jobs/view/1"),
+            "example.com"
+        );
+        assert_eq!(
+            link_host("https://boards.greenhouse.io/brex?x=1"),
+            "boards.greenhouse.io"
+        );
     }
 
     #[test]
@@ -736,7 +759,10 @@ mod link_host_tests {
 
     #[test]
     fn a_port_is_not_part_of_the_host() {
-        assert_eq!(link_host("http://careers.example.com:8443/jobs/1"), "careers.example.com");
+        assert_eq!(
+            link_host("http://careers.example.com:8443/jobs/1"),
+            "careers.example.com"
+        );
         assert_eq!(link_host("http://[::1]:8080/jobs/1"), "[::1]");
     }
 
@@ -760,7 +786,9 @@ mod link_host_tests {
     fn a_real_posting_link_still_works() {
         let url = "https://jobs.lever.co/softdocs/5eaba021";
         assert_eq!(safe_link(url), Some(url));
-        assert_eq!(safe_link("  https://boards.greenhouse.io/brex  "),
-                   Some("https://boards.greenhouse.io/brex"));
+        assert_eq!(
+            safe_link("  https://boards.greenhouse.io/brex  "),
+            Some("https://boards.greenhouse.io/brex")
+        );
     }
 }

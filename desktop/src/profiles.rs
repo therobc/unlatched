@@ -228,7 +228,9 @@ pub fn home_for(reg: &Registry, person: &str, search: &str) -> PathBuf {
 /// path computation with no filesystem write - the field stays
 /// editable, and an existing setup is never moved.
 pub fn suggested_home(person: &str, search: &str) -> PathBuf {
-    default_people_root().join(sanitise(person)).join(sanitise(search))
+    default_people_root()
+        .join(sanitise(person))
+        .join(sanitise(search))
 }
 
 /// Strip what a folder name cannot contain, so a person's name can be
@@ -504,7 +506,10 @@ mod tests {
         let mut reg = Registry::default();
         let mut searches = BTreeMap::new();
         searches.insert("HR Generalist".to_string(), "D:/people/dana/hr".to_string());
-        searches.insert("Administrative".to_string(), "D:/people/dana/admin".to_string());
+        searches.insert(
+            "Administrative".to_string(),
+            "D:/people/dana/admin".to_string(),
+        );
         reg.people.insert(
             "Dana Whitfield".to_string(),
             Person {
@@ -527,8 +532,12 @@ mod tests {
         // one person, one resume.
         let mut reg = Registry::default();
         let entry = reg.people.entry("Maya Ellison".to_string()).or_default();
-        entry.searches.insert("Remote".to_string(), "D:/m/remote".to_string());
-        entry.searches.insert("Local".to_string(), "D:/m/local".to_string());
+        entry
+            .searches
+            .insert("Remote".to_string(), "D:/m/remote".to_string());
+        entry
+            .searches
+            .insert("Local".to_string(), "D:/m/local".to_string());
 
         assert_eq!(searches_for(&reg, "Maya Ellison"), ["Local", "Remote"]);
         assert_eq!(people(&reg), ["Maya Ellison"]);
@@ -639,7 +648,9 @@ mod tests {
         // by the assertion directly below (problems.len() == 3) - the point
         // is that they are reported at all rather than skipped in silence.
         assert_eq!(problems.len(), 3);
-        assert!(problems.iter().all(|p| p.detail.contains("folder is missing")));
+        assert!(problems
+            .iter()
+            .all(|p| p.detail.contains("folder is missing")));
         assert!(problems.iter().any(|p| p.person == "Dana Whitfield"));
     }
 
@@ -652,9 +663,10 @@ mod tests {
 
         let mut reg = Registry::default();
         let entry = reg.people.entry("Ray Kessler".to_string()).or_default();
-        entry
-            .searches
-            .insert(DEFAULT_SEARCH.to_string(), dir.to_string_lossy().into_owned());
+        entry.searches.insert(
+            DEFAULT_SEARCH.to_string(),
+            dir.to_string_lossy().into_owned(),
+        );
 
         assert_eq!(preflight(&reg), Vec::new());
         let _ = fs::remove_dir_all(&dir);
@@ -671,9 +683,10 @@ mod tests {
 
         let mut reg = Registry::default();
         let entry = reg.people.entry("Ray Kessler".to_string()).or_default();
-        entry
-            .searches
-            .insert(DEFAULT_SEARCH.to_string(), dir.to_string_lossy().into_owned());
+        entry.searches.insert(
+            DEFAULT_SEARCH.to_string(),
+            dir.to_string_lossy().into_owned(),
+        );
 
         let problems = preflight(&reg);
         assert_eq!(problems.len(), 1);

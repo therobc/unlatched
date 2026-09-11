@@ -21,9 +21,16 @@ use std::sync::OnceLock;
 
 const RAW: &str = include_str!("../data/us_places.txt");
 
-/// Lowercased, comma-free forms of every place, paired with what to insert.
-/// Built once on first use: 31,000 short strings, a few milliseconds, and
-/// nothing at all for somebody who never opens Config.
+/// Lowercased, comma-free forms of every place, paired with what to
+/// insert.
+///
+/// Built once on first use - by construction, `OnceLock::get_or_init`
+/// below runs the closure at most once per process. Measured
+/// 2026-09-10: the bundled list is 31,773 lines, matching "31,000
+/// short strings"; believed, not measured, that it costs a few
+/// milliseconds. Nothing at all for somebody who never opens Config -
+/// by construction, nothing calls `index` or `suggest` outside the
+/// location editor.
 fn index() -> &'static Vec<(String, &'static str)> {
     static INDEX: OnceLock<Vec<(String, &'static str)>> = OnceLock::new();
     INDEX.get_or_init(|| {
@@ -57,11 +64,17 @@ fn city_and_state(line: &str) -> Option<String> {
     if parts.len() < 3 {
         return None;
     }
-    Some(normalise(&format!("{} {}", parts[0], parts[parts.len() - 1])))
+    Some(normalise(&format!(
+        "{} {}",
+        parts[0],
+        parts[parts.len() - 1]
+    )))
 }
 
-/// Comparison form: lowercase, and commas dropped so "powell oh" finds
-/// "Powell, OH". People type the comma about half the time.
+/// Comparison form: lowercase, and commas dropped - by construction,
+/// so "powell oh" and "powell, oh" normalise to the same key and
+/// both find "Powell, OH". Believed, not measured, that people type
+/// the comma about half the time.
 fn normalise(text: &str) -> String {
     text.chars()
         .filter(|c| *c != ',')
@@ -79,14 +92,15 @@ pub fn suggest(typed: &str, limit: usize) -> Vec<&'static str> {
         return Vec::new();
     }
 
-    // FILE ORDER IS THE RANKING - the list is written largest place first,
-    // so "springf" leads with Springfield, MO rather than Springfield, IL, and
-    // nothing here has to carry size data to know that. See
-    // data/build_us_places.py.
+    // FILE ORDER IS THE RANKING - measured 2026-09-10: in the bundled
+    // file, "Springfield, MO" (line 217) precedes "Springfield, IL"
+    // (line 352), so "springf" leads with MO, and nothing here has to
+    // carry size data to know that. See data/build_us_places.py.
     //
-    // DEDUPED, because a place with a middle segment has two keys and a
-    // query like "lynchburg" matches both of them. Every other row has one
-    // key and cannot collide, so this changes nothing for them.
+    // DEDUPED - by construction, `!starts.contains(original)` and
+    // `!contains.contains(original)` below stop a place with two keys
+    // (like "lynchburg") from being pushed twice. Every other row has
+    // one key and cannot collide, so this changes nothing for them.
     let mut starts: Vec<&'static str> = Vec::new();
     let mut contains: Vec<&'static str> = Vec::new();
     for (key, original) in index() {
@@ -97,18 +111,17 @@ pub fn suggest(typed: &str, limit: usize) -> Vec<&'static str> {
             if starts.len() >= limit {
                 break;
             }
-        } else if contains.len() < limit
-            && key.contains(&query)
-            && !contains.contains(original)
-        {
+        } else if contains.len() < limit && key.contains(&query) && !contains.contains(original) {
             contains.push(original);
         }
     }
 
-    // A name typed in the middle ("ridge") is a worse match than one typed
-    // from the start, so those fill the remaining room and never displace.
-    // The second pass catches a place that reached starts by one key and
-    // contains by the other.
+    // A name typed in the middle ("ridge") is a worse match than one
+    // typed from the start, so those fill the remaining room and never
+    // displace - by construction, `starts.into_iter().chain(contains)`
+    // below puts every `starts` hit first. The second pass's
+    // `!out.contains` catches a place that reached `starts` by one key
+    // and `contains` by the other.
     let mut out: Vec<&'static str> = Vec::new();
     for candidate in starts.into_iter().chain(contains) {
         if !out.contains(&candidate) {
@@ -168,13 +181,18 @@ mod tests {
     #[test]
     fn every_line_carries_a_state() {
         // A place without its state is exactly the ambiguity location.py
-        // refuses to resolve - Clinton, IA must never satisfy Clinton, MS.
+        // refuses to resolve - verified 2026-09-10: location.py's own
+        // docstring says a place name without its state is not enough,
+        // since city names repeat across states - Clinton, IA must never
+        // satisfy Clinton, MS.
         //
-        // EVERY LINE, not the first two thousand. This took a `.take(2000)`,
-        // which checks the largest places - the ones least likely to be
-        // malformed - and said nothing about the other 29,000, where a
-        // regenerated file would actually go wrong. The whole pass is a
-        // string compare over 31,000 short lines and costs nothing.
+        // EVERY LINE, not the first two thousand. Unverified history: this
+        // is believed to have once taken a `.take(2000)`, which checks the
+        // largest places - the ones least likely to be malformed - and said
+        // nothing about the rest, where a regenerated file would actually
+        // go wrong. Measured 2026-09-10: the whole pass is a string compare
+        // over 31,773 short lines; believed, not measured, that it costs
+        // nothing.
         let mut checked = 0;
         for (_, line) in index().iter() {
             let (_, state) = line.rsplit_once(", ").unwrap_or_else(|| {
@@ -186,38 +204,50 @@ mod tests {
             );
             checked += 1;
         }
-        assert!(checked > 30_000, "the bundled list shrank to {checked} entries");
-    }
-
-    #[test]
-    fn a_name_with_an_administrative_middle_is_reachable_by_city_and_state() {
-        // Lynchburg is a consolidated city-county and Islamorada's legal name
-        // includes "Village of Islands", so both index as three words. Typing
-        // city and state - the way every other place in the file is written -
-        // found neither of them, while typing the city alone worked.
-        assert!(suggest("lynchburg tn", 8).contains(&"Lynchburg, Moore, TN"));
-        assert!(suggest("lynchburg, tn", 8).contains(&"Lynchburg, Moore, TN"));
         assert!(
-            suggest("islamorada fl", 8).contains(&"Islamorada, Village of Islands, FL")
+            checked > 30_000,
+            "the bundled list shrank to {checked} entries"
         );
     }
 
     #[test]
+    fn a_name_with_an_administrative_middle_is_reachable_by_city_and_state() {
+        // Believed, not measured: Lynchburg is understood to be a
+        // consolidated city-county and Islamorada's legal name is understood
+        // to include "Village of Islands" - verified 2026-09-10 in the
+        // bundled file, both index as three comma-separated parts
+        // ("Lynchburg, Moore, TN" and "Islamorada, Village of Islands, FL").
+        // Typing city and state - the way every other place in the file is
+        // written - would find neither of them without `city_and_state`
+        // below, while typing the city alone still works.
+        assert!(suggest("lynchburg tn", 8).contains(&"Lynchburg, Moore, TN"));
+        assert!(suggest("lynchburg, tn", 8).contains(&"Lynchburg, Moore, TN"));
+        assert!(suggest("islamorada fl", 8).contains(&"Islamorada, Village of Islands, FL"));
+    }
+
+    #[test]
     fn the_full_census_name_is_still_what_gets_inserted() {
-        // The second index entry is a way IN, not a rename. What the app puts
-        // in the box has to stay the government's own spelling, because that
-        // is the entire reason the list is bundled.
+        // The second index entry is a way IN, not a rename. Verified by construction:
+        // `suggest` returns `original` (the untouched file
+        // line) for every key, so what the app puts in the box always
+        // stays the government's own spelling, which is the entire reason
+        // the list is bundled.
         let hits = suggest("lynchburg tn", 8);
         assert_eq!(hits, vec!["Lynchburg, Moore, TN"]);
     }
 
     #[test]
     fn a_place_with_two_keys_is_only_offered_once() {
-        // "lynchburg" matches BOTH of its keys - "lynchburg moore tn" and the
-        // added "lynchburg tn" - so without deduping it would be suggested
-        // twice, which reads as two different towns with the same name.
+        // "lynchburg" matches BOTH of its keys - "lynchburg moore tn" and
+        // the added "lynchburg tn" - by construction,
+        // `!starts.contains(original)` above stops it being suggested
+        // twice, which would read as two different towns with the same
+        // name.
         let hits = suggest("lynchburg", 8);
-        let times = hits.iter().filter(|h| **h == "Lynchburg, Moore, TN").count();
+        let times = hits
+            .iter()
+            .filter(|h| **h == "Lynchburg, Moore, TN")
+            .count();
         assert_eq!(times, 1, "offered {times} times: {hits:?}");
     }
 

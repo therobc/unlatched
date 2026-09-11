@@ -193,13 +193,14 @@ impl DashboardStats {
 ///
 /// A collector that delivers an EMPTY file is still indistinguishable from one
 /// that never ran, and that much is fair: from here they are the same event.
-fn source_rows(
-    conn: &Connection,
-    sql: &str,
-) -> SqlResult<Vec<(String, i64, Option<String>)>> {
+fn source_rows(conn: &Connection, sql: &str) -> SqlResult<Vec<(String, i64, Option<String>)>> {
     let mut stmt = conn.prepare(sql)?;
     let rows = stmt.query_map([], |r| {
-        Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, Option<String>>(2)?))
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, i64>(1)?,
+            r.get::<_, Option<String>>(2)?,
+        ))
     })?;
     rows.collect()
 }
@@ -213,9 +214,7 @@ fn count(conn: &Connection, sql: &str) -> SqlResult<i64> {
 /// duplicates keeps this cheap on a long history. By construction: see the
 /// SELECT DISTINCT below.
 fn reached(conn: &Connection) -> SqlResult<Reached> {
-    let mut stmt = conn.prepare(
-        "SELECT DISTINCT key, COALESCE(status, '') FROM job_status_log",
-    )?;
+    let mut stmt = conn.prepare("SELECT DISTINCT key, COALESCE(status, '') FROM job_status_log")?;
     let rows: Vec<(String, String)> = stmt
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
         .collect::<SqlResult<_>>()?;
@@ -398,7 +397,10 @@ mod tests {
                 status.value
             );
         }
-        assert!(!names.contains(&"closed"), "the auto-closure must be dropped");
+        assert!(
+            !names.contains(&"closed"),
+            "the auto-closure must be dropped"
+        );
         assert_eq!(
             rows.len(),
             crate::status::FLOW.len(),
@@ -440,7 +442,10 @@ mod tests {
         .unwrap();
 
         let names: Vec<&str> = rows.iter().map(|(s, _)| s.as_str()).collect();
-        assert!(!names.contains(&"closed"), "untouched closures must not count");
+        assert!(
+            !names.contains(&"closed"),
+            "untouched closures must not count"
+        );
         assert!(names.contains(&"applied"), "an application still counts");
         assert!(names.contains(&"pass"), "a decision to pass still counts");
 
@@ -499,7 +504,10 @@ mod tests {
         .unwrap();
         let stats = load(&conn, &[]).unwrap();
         // Two keeps; one was taken down, and the alt row was passed on.
-        assert_eq!(module_count(&stats, crate::modules::Module::OpenPositions), 1);
+        assert_eq!(
+            module_count(&stats, crate::modules::Module::OpenPositions),
+            1
+        );
     }
 
     #[test]
@@ -524,7 +532,10 @@ mod tests {
     fn posted_this_week_means_recently_posted_not_recently_collected() {
         let stats = load(&seeded(), &[]).unwrap();
         // Two keeps, but the 30-day-old one was not posted this week.
-        assert_eq!(module_count(&stats, crate::modules::Module::PostedThisWeek), 1);
+        assert_eq!(
+            module_count(&stats, crate::modules::Module::PostedThisWeek),
+            1
+        );
     }
 
     #[test]
@@ -540,7 +551,8 @@ mod tests {
         // have no verdict, and the dashboard announced "nothing collected yet"
         // directly above a count of what it had just collected.
         let conn = seeded();
-        conn.execute_batch("UPDATE jobs SET verdict = NULL").unwrap();
+        conn.execute_batch("UPDATE jobs SET verdict = NULL")
+            .unwrap();
         let stats = load(&conn, &[]).unwrap();
         assert_eq!(stats.keeps, 0);
         assert!(!stats.nothing_collected());
@@ -635,7 +647,11 @@ mod tests {
         // `r == Reached::default()`.
         let r = fold(&[("a", "pass"), ("b", "closed"), ("c", "")]);
         assert_eq!(r, Reached::default());
-        assert_eq!(r.response_rate(), None, "a rate out of zero is not a number");
+        assert_eq!(
+            r.response_rate(),
+            None,
+            "a rate out of zero is not a number"
+        );
     }
 
     #[test]

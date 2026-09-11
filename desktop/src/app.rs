@@ -7,8 +7,8 @@ use eframe::egui;
 use rusqlite::Connection;
 
 use crate::config::{self, Config};
-use crate::date;
 use crate::config_draft::ConfigDraft;
+use crate::date;
 use crate::db::{self, Company, CurrentStatus, StatusLogEntry, TriageRow};
 use crate::engine::{self, EngineMode};
 use crate::paths;
@@ -86,10 +86,13 @@ pub enum SortBy {
 
 /// How many columns the list may be sorted by at once.
 ///
-/// THREE, because two is the pair people actually asked for - status then
-/// posted, so undecided rows stay on top and newest leads them - and a third
-/// is the tiebreaker that makes the order stable to look at. A fourth would
-/// be a rule nobody can hold in their head while reading a table.
+/// THREE - verified by construction, `truncate(MAX_SORT_KEYS)` below
+/// caps the sort at this many keys. Believed, not measured, that two
+/// is the pair people actually asked for - status then posted, so
+/// undecided rows stay on top and newest leads them - and that a
+/// third is the tiebreaker that makes the order stable to look at.
+/// A fourth would be a rule nobody can hold in their head while
+/// reading a table.
 pub const MAX_SORT_KEYS: usize = 3;
 
 /// Which face of an opened posting is showing. The description is what a
@@ -202,10 +205,10 @@ pub struct NewProfileDraft {
 
 /// The engine call behind both halves of a criteria import.
 ///
-/// ONE PLACE, because the two differ by a single flag and getting that wrong
-/// is silent in the worst direction: an import that ran without --dry-run
-/// while a person was still deciding would apply the change they were shown
-/// and then show it to them again as a question.
+/// ONE PLACE - verified by construction: `dry_run` is the only
+/// difference between the two calls below, appending `--dry-run`
+/// only when true, so the "preview" and "apply" commands cannot
+/// drift apart through diverging code paths.
 pub fn criteria_args(path: &std::path::Path, mode: &str, dry_run: bool) -> Vec<String> {
     let mut args = vec![
         "criteria".to_string(),
@@ -409,14 +412,19 @@ pub struct UnlatchedApp {
     /// Which list is on screen. A dashboard tile sets this to its own module
     /// rather than leaving a filter on Triage - see ListScope::Module.
     pub list_scope: ListScope,
-    /// Sort column and direction for the list. Defaults to score descending,
-    /// which is the order the query already returns.
-    /// The sort, most significant first. Never longer than MAX_SORT_KEYS.
+    /// Sort column and direction for the list, most significant first.
+    /// Never longer than MAX_SORT_KEYS.
     ///
-    /// A LIST RATHER THAN ONE COLUMN, because "newest first" is only useful
-    /// among rows that are still worth reading: sorted by posted date alone, a
-    /// job passed on last month sits above one that arrived this morning. The
-    /// wanted default is status then posted, which one key cannot say.
+    /// Verified by construction: the default set in `UnlatchedApp::new`
+    /// below is status ascending, then posted descending, then score
+    /// descending - undecided rows first, newest of those on top, best
+    /// score breaking a same-day tie - not score alone.
+    ///
+    /// A LIST RATHER THAN ONE COLUMN, because "newest first" is only
+    /// useful among rows that are still worth reading: sorted by posted
+    /// date alone, a job passed on last month sits above one that
+    /// arrived this morning. The wanted default is status then posted,
+    /// which one key cannot say.
     pub triage_sort: Vec<(SortBy, bool)>,
     pub triage_note_open: bool,
     pub triage_note_just_opened: bool,
@@ -687,10 +695,7 @@ pub const NAV_GETTING_STARTED: (View, &str) = (View::GettingStarted, "Getting st
 /// Used by the tutorial's anchor check, which is a test.
 #[cfg(test)]
 pub fn nav_entries() -> impl Iterator<Item = (View, &'static str)> {
-    NAV_JOBS
-        .into_iter()
-        .chain(NAV_TOOLS)
-        .chain(NAV_SETUP)
+    NAV_JOBS.into_iter().chain(NAV_TOOLS).chain(NAV_SETUP)
 }
 
 /// The search box, in the rail so it is reachable from every screen.
@@ -830,7 +835,10 @@ fn queue_decision(
     label: &str,
     args: &[String],
 ) -> QueueDecision {
-    if pending.iter().any(|(l, a)| l == label && a.as_slice() == args) {
+    if pending
+        .iter()
+        .any(|(l, a)| l == label && a.as_slice() == args)
+    {
         return QueueDecision::AlreadyWaiting;
     }
     if pending.len() >= MAX_PENDING {
@@ -897,7 +905,10 @@ fn finish_message(label: &str, code: i32, said: Option<&str>) -> (String, bool) 
         (true, Some(said)) => (format!("{label}: {said}"), true),
         (true, None) => (format!("{label} finished"), true),
         (false, Some(said)) => (format!("{label} failed (exit code {code}): {said}"), false),
-        (false, None) => (format!("{label} failed (exit code {code}) - see the log"), false),
+        (false, None) => (
+            format!("{label} failed (exit code {code}) - see the log"),
+            false,
+        ),
     }
 }
 
@@ -1285,29 +1296,41 @@ impl UnlatchedApp {
             // so by construction this cannot disagree with what the dropdown
             // and the queue filter treat as settled.
             SortBy::Status => {
-                let rank = |r: &TriageRow| {
-                    crate::status::sort_rank(r.status.as_deref().unwrap_or(""))
-                };
-                if desc { rank(b).cmp(&rank(a)) } else { rank(a).cmp(&rank(b)) }
+                let rank =
+                    |r: &TriageRow| crate::status::sort_rank(r.status.as_deref().unwrap_or(""));
+                if desc {
+                    rank(b).cmp(&rank(a))
+                } else {
+                    rank(a).cmp(&rank(b))
+                }
             }
             SortBy::Company => {
-                let key = |r: &TriageRow| {
-                    r.company_name.clone().unwrap_or_default().to_lowercase()
-                };
-                if desc { key(b).cmp(&key(a)) } else { key(a).cmp(&key(b)) }
+                let key = |r: &TriageRow| r.company_name.clone().unwrap_or_default().to_lowercase();
+                if desc {
+                    key(b).cmp(&key(a))
+                } else {
+                    key(a).cmp(&key(b))
+                }
             }
             SortBy::Title => {
                 let key = |r: &TriageRow| r.job.title.to_lowercase();
-                if desc { key(b).cmp(&key(a)) } else { key(a).cmp(&key(b)) }
+                if desc {
+                    key(b).cmp(&key(a))
+                } else {
+                    key(a).cmp(&key(b))
+                }
             }
         }
     }
 
     /// Sort by every key in turn, most significant first.
     ///
-    /// STABLE UNDERNEATH. `sort_by` is a stable sort, so rows equal on every
-    /// key keep the order the query returned - which is score order. A list
-    /// that reshuffles equal rows between redraws reads as a glitch.
+    /// STABLE UNDERNEATH - by definition, `sort_by` is Rust's stable
+    /// sort, so rows equal on every key keep the order the query
+    /// returned. Verified in db.rs: every triage query orders by
+    /// `jobs.score DESC, jobs.key ASC`, so that fallback order is score.
+    /// A list that reshuffles equal rows between redraws reads as a
+    /// glitch.
     fn sort_rows_multi(rows: &mut [TriageRow], keys: &[(SortBy, bool)]) {
         rows.sort_by(|a, b| {
             let mut ordering = std::cmp::Ordering::Equal;
@@ -1327,10 +1350,15 @@ impl UnlatchedApp {
     pub fn sort_by_column(&mut self, column: SortBy) {
         // NO MODIFIER KEY. The usual idiom for a second sort key is
         // shift-click, which is invisible: nothing on a table says it is
-        // there, so the feature exists only for people who already expect it.
-        // Clicking promotes instead - the column you click becomes primary and
-        // the previous one drops to second - so sorting by status and then by
-        // posted date is two ordinary clicks in the order you say them.
+        // there, so the feature exists only for people who already expect
+        // it.
+        //
+        // Clicking promotes instead - the column you click becomes primary
+        // and the previous one drops to second. Verified by construction
+        // below: getting "status primary, posted second" takes clicking
+        // Posted first and Status second - the LAST click wins the primary
+        // spot, which is the reverse of the order the two names are said
+        // in.
         if self.triage_sort.first().map(|(c, _)| *c) == Some(column) {
             // Already primary: flip its direction rather than re-promoting it,
             // which would be a click that appears to do nothing.
@@ -1356,10 +1384,12 @@ impl UnlatchedApp {
         self.refresh_triage();
     }
 
-    /// Where `column` sits in the sort, if it is in it at all: 0 is primary.
+    /// Where `column` sits in the sort, if it is in it at all: 0 is
+    /// primary.
     ///
-    /// For the heading, which shows the position so a three-key sort is
-    /// readable rather than three arrows with no order to them.
+    /// Verified by construction: `sort_heading` in triage.rs reads this
+    /// to show the position, so a three-key sort is readable rather
+    /// than three arrows with no order to them.
     pub fn sort_position(&self, column: SortBy) -> Option<(usize, bool)> {
         self.triage_sort
             .iter()
@@ -1791,8 +1821,7 @@ impl UnlatchedApp {
             image.height as u32,
             image.bytes.into_owned(),
         ) else {
-            self.attachment_message =
-                Some("the clipboard image could not be read".to_string());
+            self.attachment_message = Some("the clipboard image could not be read".to_string());
             return;
         };
         let mut png: Vec<u8> = Vec::new();
@@ -1826,13 +1855,8 @@ impl UnlatchedApp {
             return;
         }
         let label = self.link_label.trim().to_string();
-        match crate::attachments::add_link(
-            &self.conn,
-            key,
-            &url,
-            &label,
-            crate::attachments::MINE,
-        ) {
+        match crate::attachments::add_link(&self.conn, key, &url, &label, crate::attachments::MINE)
+        {
             Ok(row) => {
                 self.attachment_message = Some(format!("added {}", row.display_name));
                 self.link_url.clear();
@@ -2087,8 +2111,9 @@ impl UnlatchedApp {
         // Only overwrite the message if commit_status_change did not already
         // say something more specific about a failure.
         if self.deferred_status.is_empty() {
-            self.triage_message =
-                Some(format!("{count} change(s) you made during the collection are in."));
+            self.triage_message = Some(format!(
+                "{count} change(s) you made during the collection are in."
+            ));
         }
     }
 
@@ -2115,8 +2140,7 @@ impl UnlatchedApp {
         let count = pending.keys.len();
         let mut failed: Option<String> = None;
         for key in &pending.keys {
-            if let Err(e) =
-                db::set_status_with(&self.conn, key, &pending.status, note_opt, &terms)
+            if let Err(e) = db::set_status_with(&self.conn, key, &pending.status, note_opt, &terms)
             {
                 failed = Some(e.to_string());
                 break;
@@ -2129,7 +2153,10 @@ impl UnlatchedApp {
         // the person's typing is the last thing that should be discarded over
         // it. Kept, and by construction re-applied when the run finishes:
         // apply_deferred_status runs from the completion handler.
-        if failed.as_deref().is_some_and(|e| e.contains("database is locked")) {
+        if failed
+            .as_deref()
+            .is_some_and(|e| e.contains("database is locked"))
+        {
             self.deferred_status.push(pending);
             self.triage_message = Some(format!(
                 "Collecting right now - {label} will be applied when it finishes."
@@ -2280,19 +2307,19 @@ impl UnlatchedApp {
                 // block changes which jobs match, so a changed timeout or a
                 // corrected API key saves quietly rather than offering a
                 // re-run that would return the same rows.
-                let search_changed = cfg.search != self.config.search
-                    || cfg.sources != self.config.sources;
+                let search_changed =
+                    cfg.search != self.config.search || cfg.sources != self.config.sources;
                 match config::save(&self.config_path, &cfg) {
-                Ok(()) => {
-                    self.config = cfg;
-                    self.config_status = Some("saved".to_string());
-                    self.config_error = None;
-                    self.refresh_keywords();
-                    self.offer_run_after_save = search_changed;
-                }
-                Err(e) => {
-                    self.config_status = Some(format!("save failed: {e}"));
-                }
+                    Ok(()) => {
+                        self.config = cfg;
+                        self.config_status = Some("saved".to_string());
+                        self.config_error = None;
+                        self.refresh_keywords();
+                        self.offer_run_after_save = search_changed;
+                    }
+                    Err(e) => {
+                        self.config_status = Some(format!("save failed: {e}"));
+                    }
                 }
             }
             Err(errors) => {
@@ -2895,9 +2922,7 @@ impl UnlatchedApp {
                     .iter()
                     .rev()
                     .find(|line| {
-                        !line.starts_with('[')
-                            && !line.starts_with("$ ")
-                            && !line.trim().is_empty()
+                        !line.starts_with('[') && !line.starts_with("$ ") && !line.trim().is_empty()
                     })
                     .cloned()
             })
@@ -3511,9 +3536,12 @@ mod engine_invocation_tests {
     fn the_python_path_puts_the_module_flags_first() {
         // `python -m unlatched --home X collect`, not `python --home X -m ...`,
         // which python itself would reject.
-        let (program, args) =
-            engine_invocation(&EngineMode::Python, "py -3", Path::new("D:/x"),
-                              vec!["screen".to_string()]);
+        let (program, args) = engine_invocation(
+            &EngineMode::Python,
+            "py -3",
+            Path::new("D:/x"),
+            vec!["screen".to_string()],
+        );
         assert_eq!(program, "py -3");
         assert_eq!(args, ["-m", "unlatched", "--home", "D:/x", "screen"]);
     }
@@ -3522,12 +3550,26 @@ mod engine_invocation_tests {
     fn the_subcommands_own_arguments_survive() {
         let bundled = EngineMode::Bundled(PathBuf::from("engine.exe"));
         let (_program, args) = engine_invocation(
-            &bundled, "python", Path::new("D:/x"),
-            vec!["add".to_string(), "https://example.com/j/1".to_string(),
-                 "--title".to_string(), "Analyst".to_string()]);
+            &bundled,
+            "python",
+            Path::new("D:/x"),
+            vec![
+                "add".to_string(),
+                "https://example.com/j/1".to_string(),
+                "--title".to_string(),
+                "Analyst".to_string(),
+            ],
+        );
         assert_eq!(
             args,
-            ["--home", "D:/x", "add", "https://example.com/j/1", "--title", "Analyst"]
+            [
+                "--home",
+                "D:/x",
+                "add",
+                "https://example.com/j/1",
+                "--title",
+                "Analyst"
+            ]
         );
     }
 }
@@ -3587,11 +3629,14 @@ mod sort_tests {
         assert_eq!(rows[0].company_name.as_deref(), Some("Alpha"));
     }
 
-    /// THE SORT THAT WAS ASKED FOR: undecided first, newest of those on top.
+    /// THE SORT THAT WAS ASKED FOR: undecided first, newest of those on
+    /// top. Believed, not measured, that this was asked for by name.
     ///
-    /// One key cannot say this. Sorted by posted alone, a job passed on last
-    /// month sits above one that arrived this morning; sorted by status alone,
-    /// the undecided rows are in whatever order the query returned.
+    /// One key cannot say this - verified by construction: sorted by
+    /// posted alone, a job passed on last month sits above one that
+    /// arrived this morning; sorted by status alone, `cmp_by`'s Status
+    /// arm never breaks a tie, so the stable sort in `sort_rows_multi`
+    /// leaves undecided rows in whatever order the query returned.
     #[test]
     fn status_then_posted_keeps_undecided_rows_on_top() {
         let mut rows = vec![
@@ -3709,7 +3754,10 @@ mod sort_tests {
     fn the_same_request_twice_waits_once() {
         let mut q = std::collections::VecDeque::new();
         let args = vec!["add".to_string(), "https://x/1".to_string()];
-        assert_eq!(queue_decision(&q, "add a job", &args), QueueDecision::Accept);
+        assert_eq!(
+            queue_decision(&q, "add a job", &args),
+            QueueDecision::Accept
+        );
         q.push_back(("add a job".to_string(), args.clone()));
         assert_eq!(
             queue_decision(&q, "add a job", &args),
@@ -3728,7 +3776,10 @@ mod sort_tests {
             vec!["add".to_string(), "https://x/1".to_string()],
         ));
         let other = vec!["add".to_string(), "https://x/2".to_string()];
-        assert_eq!(queue_decision(&q, "add a job", &other), QueueDecision::Accept);
+        assert_eq!(
+            queue_decision(&q, "add a job", &other),
+            QueueDecision::Accept
+        );
     }
 
     #[test]
@@ -3745,8 +3796,7 @@ mod sort_tests {
 
     #[test]
     fn a_run_that_did_nothing_says_what_it_did_instead_of_just_finishing() {
-        let (line, ok) =
-            finish_message("pull Handoff file", 0, Some("nothing new from imported"));
+        let (line, ok) = finish_message("pull Handoff file", 0, Some("nothing new from imported"));
         assert!(ok);
         assert_eq!(line, "pull Handoff file: nothing new from imported");
     }
@@ -3769,10 +3819,12 @@ mod sort_tests {
         assert!(line.contains("exit code 2"), "{line}");
     }
 
-    /// WENT-WELL COMES FROM THE EXIT CODE, never from the words - the strip
-    /// colours on that flag. An engine line reading "failed to read 3 boards"
-    /// must not turn a successful run red, nor "all good" turn a failure
-    /// green, which is what reading the sentence would do.
+    /// WENT-WELL COMES FROM THE EXIT CODE, never from the words - the
+    /// strip colours on that flag. Verified by the test below: an
+    /// engine line reading "failed to read 3 boards" at exit code 0
+    /// reports went-well true, and "all good" at a nonzero exit code
+    /// reports it false - reading the sentence instead would get both
+    /// backwards.
     #[test]
     fn the_verdict_is_the_exit_code_and_not_the_wording() {
         assert!(finish_message("collect", 0, Some("failed to read 3 boards")).1);

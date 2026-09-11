@@ -69,7 +69,15 @@ pub fn now_iso() -> String {
     let off = offset.abs();
     format!(
         "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}{}{:02}:{:02}",
-        y, m, d, h, mi, s, sign, off / 3600, (off % 3600) / 60
+        y,
+        m,
+        d,
+        h,
+        mi,
+        s,
+        sign,
+        off / 3600,
+        (off % 3600) / 60
     )
 }
 
@@ -259,8 +267,14 @@ mod tests {
         // 2000 is divisible by 400 and 1900 is not, so by definition of the
         // Gregorian rule the first has a February 29th and the second does not.
         assert_eq!(civil_from_days(days_from_civil(2000, 2, 29)), (2000, 2, 29));
-        assert_eq!(days_from_civil(1900, 3, 1) - days_from_civil(1900, 2, 28), 1);
-        assert_eq!(days_from_civil(2000, 3, 1) - days_from_civil(2000, 2, 28), 2);
+        assert_eq!(
+            days_from_civil(1900, 3, 1) - days_from_civil(1900, 2, 28),
+            1
+        );
+        assert_eq!(
+            days_from_civil(2000, 3, 1) - days_from_civil(2000, 2, 28),
+            2
+        );
     }
 
     /// Every day across a span that covers leap years, century boundaries and
@@ -321,7 +335,10 @@ mod tests {
     #[test]
     fn a_fractional_second_does_not_swallow_the_offset() {
         let plain = seconds_since("2026-01-01T12:00:00+00:00").expect("plain");
-        assert_eq!(seconds_since("2026-01-01T12:00:00.123456+00:00"), Some(plain));
+        assert_eq!(
+            seconds_since("2026-01-01T12:00:00.123456+00:00"),
+            Some(plain)
+        );
         assert_eq!(seconds_since("2026-01-01T08:00:00.5-04:00"), Some(plain));
     }
 
@@ -354,11 +371,11 @@ mod tests {
         let _clock = CLOCK.lock().unwrap_or_else(|e| e.into_inner());
         for (secs, suffix) in [
             (0, "+00:00"),
-            (-4 * 3600, "-04:00"),   // Eastern, summer
-            (-5 * 3600, "-05:00"),   // Eastern in winter, Central in summer
-            (-6 * 3600, "-06:00"),   // Central, winter
-            (-7 * 3600, "-07:00"),   // Mountain
-            (-8 * 3600, "-08:00"),   // Pacific, winter
+            (-4 * 3600, "-04:00"), // Eastern, summer
+            (-5 * 3600, "-05:00"), // Eastern in winter, Central in summer
+            (-6 * 3600, "-06:00"), // Central, winter
+            (-7 * 3600, "-07:00"), // Mountain
+            (-8 * 3600, "-08:00"), // Pacific, winter
             (5 * 3600 + 1800, "+05:30"),
             (9 * 3600, "+09:00"),
         ] {
@@ -414,7 +431,10 @@ mod tests {
         let _clock = CLOCK.lock().unwrap_or_else(|e| e.into_inner());
         let now = now_iso();
         assert_eq!(now.len(), 25, "{now}");
-        assert!(now.ends_with("+00:00"), "a stamp with no zone reads as local: {now}");
+        assert!(
+            now.ends_with("+00:00"),
+            "a stamp with no zone reads as local: {now}"
+        );
         assert_eq!(&now[4..5], "-");
         assert_eq!(&now[10..11], "T");
         assert_eq!(&now[13..14], ":");

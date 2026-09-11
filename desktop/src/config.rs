@@ -154,7 +154,9 @@ pub struct FetchConfig {
 
 impl Default for FetchConfig {
     fn default() -> Self {
-        Self { read_added_links: true }
+        Self {
+            read_added_links: true,
+        }
     }
 }
 
@@ -210,7 +212,7 @@ impl Default for RefreshConfig {
             // when the other two moved to 11:00 on 2026-08-12, so a profile
             // with no "at" key showed one time and was collected at another.
             // test_refresh_anchor_defaults_agree_across_all_three_copies now
-    // compares all three.
+            // compares all three.
             at: vec!["11:00".to_string(), "16:30".to_string()],
             // Weekends get ONE run rather than none. The 1.7%-of-postings
             // weekend figure argues against polling, not against a single
@@ -457,8 +459,8 @@ pub fn save(path: &Path, cfg: &Config) -> Result<(), String> {
     // by construction, since the caller's value is never touched.
     let mut on_disk = cfg.clone();
     on_disk.protect_secrets();
-    let typed = serde_json::to_value(&on_disk)
-        .map_err(|e| format!("could not encode config: {e}"))?;
+    let typed =
+        serde_json::to_value(&on_disk).map_err(|e| format!("could not encode config: {e}"))?;
 
     // Merged over whatever is on disk rather than replacing it. config.json
     // is shared with the engine, which understands keys this front end does
@@ -523,14 +525,19 @@ mod tests {
         assert_eq!(normalise_collector_id("board-2_x").unwrap(), "board-2_x");
 
         for bad in [
-            "", "   ", "_leading", "-leading", "has space", "has:colon", "has/slash",
+            "",
+            "   ",
+            "_leading",
+            "-leading",
+            "has space",
+            "has:colon",
+            "has/slash",
         ] {
             assert!(normalise_collector_id(bad).is_err(), "{bad:?} was accepted");
         }
         assert!(normalise_collector_id(&"a".repeat(33)).is_err());
         assert!(normalise_collector_id(&"a".repeat(32)).is_ok());
     }
-
 
     /// SAVING FROM THIS SCREEN MUST NOT EAT THE ENGINE'S FIELDS.
     ///
@@ -640,7 +647,10 @@ mod tests {
         );
         assert_eq!(written["search"]["us_only"], serde_json::json!(true));
         assert_eq!(written["search"]["travel_ok"], serde_json::json!(true));
-        assert_eq!(written["profile"]["education"], serde_json::json!("bachelors"));
+        assert_eq!(
+            written["profile"]["education"],
+            serde_json::json!("bachelors")
+        );
         assert_eq!(written["profile"]["clearance_ok"], serde_json::json!(false));
         // And still writes what it does model.
         assert_eq!(written["search"]["terms"], serde_json::json!(["analyst"]));
@@ -648,10 +658,16 @@ mod tests {
 
     #[test]
     fn a_modelled_list_is_replaced_not_appended() {
-        let written = round_trip("list-replaced", r#"{"search": {"terms": ["analyst", "support"]}}"#);
+        let written = round_trip(
+            "list-replaced",
+            r#"{"search": {"terms": ["analyst", "support"]}}"#,
+        );
         // Loaded then written back unchanged - the point is that it is not
         // ["analyst", "support", "analyst", "support"].
-        assert_eq!(written["search"]["terms"], serde_json::json!(["analyst", "support"]));
+        assert_eq!(
+            written["search"]["terms"],
+            serde_json::json!(["analyst", "support"])
+        );
     }
 
     #[test]

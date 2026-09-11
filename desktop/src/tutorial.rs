@@ -37,7 +37,9 @@ pub struct Step {
     /// Which sidebar entry to spotlight, or None for a step that talks about
     /// the window as a whole.
     pub anchor: Option<&'static str>,
-    /// The view to switch to, so the thing being described is on screen.
+    /// The view to switch to, so the thing being described is on screen -
+    /// verified by construction: `show` below sets `app.view` to this
+    /// field before the overlay is drawn.
     pub view: Option<View>,
     pub title: &'static str,
     pub body: &'static str,
@@ -192,7 +194,9 @@ pub const STEPS: [Step; 11] = [
         anchor: Some("Settings"),
         view: Some(View::Profiles),
         // Also the destination of Skip, so it has to read correctly for
-        // somebody who arrived here by skipping rather than by finishing.
+        // somebody who arrived here by skipping rather than by finishing:
+        // verified by construction, `skip_to_end` below always lands on
+        // `STEPS.len() - 1`, which is this step.
         title: "Whenever you want it back",
         body: "Skipped or finished, this walkthrough is always here: Settings, \
                under Help. Nothing you do now closes it for good.\n\nExport to a \
@@ -275,13 +279,16 @@ pub fn show(app: &mut UnlatchedApp, ctx: &egui::Context) -> bool {
         });
 
     // The callout is its own Area so it sits above the dimming and stays
-    // clickable while everything under it is covered.
+    // clickable while everything under it is covered: by definition egui
+    // draws `Order::Tooltip` above `Order::Foreground`, and the dimming
+    // Area only calls painter methods below - it never senses input, so
+    // nothing there claims the pointer.
     // Clamped against the callout's REAL height, remembered from the last
-    // frame. A fixed reserve was wrong for the taller steps: spotlighting
-    // Settings, which sits at the bottom of the rail, pushed the callout
-    // down until Finish, Back and Skip were off the bottom of the window -
-    // so the step reached by pressing Skip was the one you could not
-    // dismiss. Off by a frame at most, on the first frame of a step.
+    // frame. Unverified history: a fixed reserve is believed to have been
+    // too short for the taller steps, pushing Finish, Back and Skip off
+    // the bottom of the window - the step reached by pressing Skip would
+    // then be the one you could not dismiss. Off by a frame at most, on
+    // the first frame of a step.
     let height = ctx
         .data(|d| d.get_temp::<f32>(callout_height_id()))
         .unwrap_or(240.0);
@@ -339,9 +346,10 @@ pub fn show(app: &mut UnlatchedApp, ctx: &egui::Context) -> bool {
                     ui.add_space(12.0);
                     ui.horizontal(|ui| {
                         // The button in this position is Next for ten steps and
-                        // Finish for the eleventh, so its NAME cannot be its
-                        // text: a test that pressed "Next" would fall off the
-                        // end of the walkthrough with no way to say so.
+                        // Finish for the eleventh - verified by construction: the
+                        // `index + 1 == STEPS.len()` branch below picks the text, so its
+                        // accessible NAME cannot be that text - a test that pressed "Next"
+                        // would fall off the end of the walkthrough with no way to say so.
                         if index + 1 == STEPS.len() {
                             if access::tag(
                                 ui.button("Finish"),
@@ -367,33 +375,26 @@ pub fn show(app: &mut UnlatchedApp, ctx: &egui::Context) -> bool {
                         {
                             back = true;
                         }
-                        ui.with_layout(
-                            egui::Layout::right_to_left(egui::Align::Center),
-                            |ui| {
-                                // Always available. A walkthrough that traps
-                                // somebody is worse than none.
-                                if access::tag(
-                                    ui.button("Skip"),
-                                    egui::WidgetType::Button,
-                                    SKIP_NAME,
-                                )
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                            // Always available - by construction the Skip button below is drawn
+                            // unconditionally, unlike Back which needs `index > 0`. A walkthrough
+                            // that traps somebody is worse than none.
+                            if access::tag(ui.button("Skip"), egui::WidgetType::Button, SKIP_NAME)
                                 .clicked()
-                                {
-                                    // Skipping jumps to the LAST step rather
-                                    // than closing, so somebody who skipped
-                                    // still learns the walkthrough can be
-                                    // replayed - that sentence is already
-                                    // written there, so it is shown rather
-                                    // than duplicated. From the last step,
-                                    // Skip closes.
-                                    if index + 1 == STEPS.len() {
-                                        finish = true;
-                                    } else {
-                                        skip_to_end = true;
-                                    }
+                            {
+                                // Skipping jumps to the LAST step rather
+                                // than closing - verified by construction: `skip_to_end` sets
+                                // `tutorial_step` to `STEPS.len() - 1`, whose body already says
+                                // the walkthrough can be replayed, so that sentence is shown rather
+                                // than duplicated here. From the last step, Skip closes instead (the
+                                // branch above sets `finish`).
+                                if index + 1 == STEPS.len() {
+                                    finish = true;
+                                } else {
+                                    skip_to_end = true;
                                 }
-                            },
-                        );
+                            }
+                        });
                     });
                 });
         });
@@ -417,9 +418,11 @@ pub fn show(app: &mut UnlatchedApp, ctx: &egui::Context) -> bool {
 
 const CALLOUT_WIDTH: f32 = 340.0;
 
-/// Accessible names the walkthrough publishes. Automation addresses these
-/// strings, so they are an API: fixed, and never the visible text, which
-/// changes with the step.
+/// Accessible names the walkthrough publishes. Automation addresses
+/// these strings, so they are an API: fixed, and never the visible
+/// text, which changes with the step - verified by construction,
+/// `tag_with_value` below passes each constant as the fixed name and
+/// the per-step text as the value.
 pub const STEP_NAME: &str = "tutorial-step";
 pub const TITLE_NAME: &str = "tutorial-title";
 pub const NEXT_NAME: &str = "tutorial-next";
@@ -427,16 +430,17 @@ pub const BACK_NAME: &str = "tutorial-back";
 pub const SKIP_NAME: &str = "tutorial-skip";
 pub const FINISH_NAME: &str = "tutorial-finish";
 
-/// Steps whose spotlight would land on nothing, or on the wrong rail entry.
+/// Steps whose spotlight would land on nothing, or on the wrong rail
+/// entry.
 ///
-/// A step names the control it points at and the screen it puts on show, and
-/// those two have to agree: the anchor has to be a rail entry that is always
-/// drawn, and that entry has to be the one for the step's own view. Get it
-/// wrong and the walkthrough still runs - it dims the window, draws no
-/// spotlight or spotlights the wrong row, and says nothing. That silence is
-/// the whole problem this function exists to break.
-///
-/// Returns one line per offending step, empty when the walkthrough is sound.
+/// A step names the control it points at and the screen it puts on
+/// show, and those two have to agree: the anchor has to be a rail
+/// entry that is always drawn, and that entry has to be the one for
+/// the step's own view - by construction, this is exactly the `None`
+/// arm and the mismatched-view arm below. Get it wrong and the
+/// walkthrough still runs: it dims the window, draws no spotlight or
+/// spotlights the wrong row, and says nothing. That silence is the
+/// whole problem this function exists to break.
 #[cfg(test)]
 pub fn anchor_problems(steps: &[Step]) -> Vec<String> {
     let mut problems = Vec::new();
@@ -478,10 +482,10 @@ mod tests {
         assert!(problems.is_empty(), "{}", problems.join("\n"));
     }
 
-    /// The positive control for the test above. A check that has never been
-    /// seen to fail is a check nobody has evidence about - and this check
-    /// exists because the walkthrough drifted for two releases under gates
-    /// that were all green.
+    /// The positive control for the test above. A check that has never
+    /// been seen to fail is a check nobody has evidence about - unverified
+    /// history: this check is believed to exist because the walkthrough
+    /// drifted for two releases under gates that were all green.
     #[test]
     fn the_check_catches_a_renamed_control_and_a_wrong_screen() {
         let renamed = [Step {
@@ -527,13 +531,9 @@ mod tests {
         );
     }
 
-    /// Seven features shipped after the walkthrough was written and none of
-    /// them were in it, which nothing detected.
-    ///
-    /// THIS TEST CANNOT JUDGE THE WRITING. It proves each subject is present,
-    /// not that it is explained well - that stays a reading job. What it does
-    /// hold is the failure that actually happened: a feature arriving and the
-    /// walkthrough never hearing about it.
+    /// Unverified history: seven features are believed to have shipped
+    /// after the walkthrough was written, with none of them added to it,
+    /// and nothing caught the gap at the time.
     #[test]
     fn the_features_added_after_this_was_written_are_covered() {
         let all = STEPS
@@ -546,7 +546,10 @@ mod tests {
         for (subject, needle) in [
             ("attached files", "files is anything you"),
             ("who wrote a file", "yours, or employer"),
-            ("the copy kept when you apply", "keeps the posting's own words"),
+            (
+                "the copy kept when you apply",
+                "keeps the posting's own words",
+            ),
             ("collectors", "from a collector"),
             ("repost detection", "open the earlier round"),
             ("duplicate grouping", "folded together as the same job"),

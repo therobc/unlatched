@@ -1,22 +1,20 @@
 //! Which held resume the app should read, mirroring the engine's
 //! `unlatched/resumes.py`.
 //!
-//! WHY THIS IS A MODULE AND NOT A LINE IN THE VIEW. The Keywords screen read
-//! `config.resume_path` and nothing else - the LAST fallback in the engine's
-//! order, kept only so a profile made before attaching existed keeps working.
-//! Nothing writes that key when a resume is attached, and attaching is what
-//! the app tells people to do: the Resumes tab, the walkthrough's own step,
-//! and the button on the dashboard all lead there. So the ordinary setup path
-//! left `resume_path` empty, Keywords read no resume text at all, and every
-//! tracked skill was reported as demanded-and-not-evidenced with COVERED
-//! permanently empty - on the screen the walkthrough describes as "which of
-//! them your resume already shows".
+//! WHY THIS IS A MODULE AND NOT A LINE IN THE VIEW. Attaching is how the app
+//! asks for a resume, and attaching never writes `config.resume_path` -
+//! verified 2026-09-10: the engine only reads that key, and the desktop
+//! writes it only from the settings form or the new-profile dialog. A
+//! screen that read `resume_path` alone would find no resume on the
+//! ordinary path and report every tracked skill as demanded-and-not-
+//! evidenced, with COVERED permanently empty. Believed, not measured, that
+//! the Keywords screen once did exactly that.
 //!
-//! The list on the Resumes tab had its own third copy of the rule, close but
-//! not identical: it ignored `resume_pinned`, so a pinned resume was read by
-//! screening while the marker said "in use" over a different file. That is
-//! the failure resumes.py's own docstring names as worse than offering no
-//! choice at all.
+//! The list on the Resumes tab had its own copy of the rule that ignored
+//! `resume_pinned` - unverified history - so a pinned resume would be read
+//! by screening while the marker said "in use" over a different file. That
+//! is the failure resumes.py's own docstring names as worse than offering
+//! no choice at all.
 //!
 //! One order, in one place, and a test that holds it against the engine's.
 
@@ -36,11 +34,12 @@ pub fn dir(home: &Path) -> PathBuf {
 /// Every attached copy, newest first.
 ///
 /// SORTED ON THE STAMP, not the whole name, which is what the engine does
-/// (`resumes.versions`). Attaching writes `role-YYYYMMDDTHHMMSS-slug`, so the
-/// stamp sorts correctly as text - but a reverse sort on the FULL name orders
-/// by role first and only then by date, because "original" happens to sort
-/// after "optimized". That gives the right answer here for the wrong reason,
-/// and would stop giving it the day a role is renamed.
+/// (verified 2026-09-10: `resumes.versions` sorts on its stamp field).
+/// Attaching writes `role-YYYYMMDDTHHMMSS-slug`, so the stamp sorts correctly
+/// as text - but a reverse sort on the FULL name orders by role first, and
+/// "original" sorts after "optimized" as text, by definition. That gives the
+/// right answer here for the wrong reason, and would stop giving it the day a
+/// role is renamed.
 pub fn versions(home: &Path) -> Vec<(String, String)> {
     let mut files: Vec<(String, String)> = match std::fs::read_dir(dir(home)) {
         Ok(entries) => entries
@@ -68,14 +67,15 @@ fn stamp_of(name: &str) -> &str {
 /// The file name screening reads, or None when nothing is attached.
 ///
 /// A PINNED COPY WINS, then the newest optimized, then the newest original -
-/// `unlatched/resumes.py::active_path`, less its `resume_path` fallback,
-/// which is not a held copy and so is not one of these.
+/// verified 2026-09-10 against `unlatched/resumes.py::active_path`, less its
+/// `resume_path` fallback, which is not a held copy and so is not one of these.
 ///
 /// A pin naming a file that is no longer attached is IGNORED rather than
 /// obeyed: removing the pinned copy falls back to the automatic rule instead
 /// of leaving the profile with no resume. Checking membership of `versions`
-/// rather than trusting the string also means a pin cannot name a file
-/// outside the folder - the path traversal the engine's copy was carrying.
+/// rather than trusting the string also means, by construction, a pin cannot
+/// name a file outside the folder - the traversal the engine's docstring
+/// records as verified.
 pub fn active_name(home: &Path, cfg: &Config) -> Option<String> {
     let files = versions(home);
     let pinned = cfg.resume_pinned.trim();
@@ -107,9 +107,11 @@ mod tests {
     use super::*;
     use std::fs;
 
-    /// Its own folder per test: they run in parallel, and the tidy-up at the
-    /// end of one would otherwise delete a folder another is still reading.
-    /// Same pattern as config.rs, rather than a new crate dependency for it.
+    /// Its own folder per test: cargo runs tests in parallel threads by
+    /// default, and the tidy-up at the end of one would otherwise delete a
+    /// folder another is still reading. The same per-test folder naming as
+    /// config.rs's round_trip (verified 2026-09-10), rather than a new crate
+    /// dependency for it.
     struct Home(PathBuf);
 
     impl Drop for Home {
@@ -166,9 +168,10 @@ mod tests {
     }
 
     /// An ORIGINAL attached after the optimized one does not take over: the
-    /// role decides first and the date only breaks ties within it. Sorting on
-    /// the whole file name gets this right by accident, because "original"
-    /// sorts after "optimized"; sorting on the stamp gets it right on purpose.
+    /// role decides first and the date only breaks ties within it.
+    /// "original" sorts after "optimized" as text, by definition, so sorting
+    /// on the whole file name gets this right by accident; sorting on the
+    /// stamp gets it right on purpose.
     #[test]
     fn a_newer_original_does_not_displace_the_optimized_copy() {
         let home = home_with(
@@ -185,9 +188,9 @@ mod tests {
     }
 
     /// The disagreement this module exists to end: the pin decides, and the
-    /// list has to say so. It did not - the "in use" marker was drawn from
-    /// the automatic rule alone, so screening read the pinned file while the
-    /// screen pointed at a different one.
+    /// list has to say so. Verified 2026-09-10: resumes_view draws its "in use"
+    /// marker from active_name, which honours the pin. Unverified history: the
+    /// marker was once drawn from the automatic rule alone.
     #[test]
     fn a_pin_beats_the_automatic_rule() {
         let home = home_with(
@@ -228,16 +231,19 @@ mod tests {
         }
     }
 
-    /// THE DEFECT THIS MODULE WAS WRITTEN FOR. Attaching is the documented
-    /// way to give the app a resume and it never sets `resume_path`, so a
-    /// lookup through that key alone finds nothing on the ordinary path -
-    /// which is what the Keywords screen did, reporting every tracked skill
-    /// as a gap for anybody who set the app up the way it tells them to.
+    /// THE DEFECT THIS MODULE WAS WRITTEN FOR. Attaching never sets
+    /// `resume_path` (verified 2026-09-10: nothing on the attach path writes
+    /// it), so a lookup through that key alone finds nothing on the ordinary
+    /// path - and would report every tracked skill as a gap for anybody who
+    /// set the app up the way it asks them to.
     #[test]
     fn an_attached_resume_is_found_without_resume_path_being_set() {
         let home = home_with("attached-only", &["original-20260801T090000-cv.txt"]);
         let cfg = Config::default();
-        assert!(cfg.resume_path.is_none(), "the ordinary setup leaves it unset");
+        assert!(
+            cfg.resume_path.is_none(),
+            "the ordinary setup leaves it unset"
+        );
         let path = active_path(home.path(), &cfg).expect("the attached copy");
         assert_eq!(fs::read_to_string(path).unwrap(), "resume text");
     }
@@ -253,7 +259,10 @@ mod tests {
             resume_path: Some(loose.to_string_lossy().into_owned()),
             ..Config::default()
         };
-        assert_eq!(active_path(home.path(), &cfg).as_deref(), Some(loose.as_path()));
+        assert_eq!(
+            active_path(home.path(), &cfg).as_deref(),
+            Some(loose.as_path())
+        );
     }
 
     #[test]
@@ -266,9 +275,10 @@ mod tests {
     /// legacy key - in that order?
     ///
     /// Takes the text so the check itself can be shown failing; see the test
-    /// below it. Reads the CODE only: the docstring explains the order in
-    /// prose and names every step out of sequence, so measuring that would be
-    /// checking the comment against itself.
+    /// below it. Reads the CODE only. Measured 2026-09-10: across the whole
+    /// body the docstring names `resume_path` before the code first names
+    /// `OPTIMIZED`, so a check over the prose would read the steps out of
+    /// order; in the code alone they come pin, optimized, legacy.
     fn resolves_in_our_order(function_text: &str) -> bool {
         let Some(code) = function_text
             .split_once("\"\"\"")
@@ -282,17 +292,16 @@ mod tests {
             code.find("OPTIMIZED"),
             code.find("resume_path"),
         ) {
-            (Some(pin), Some(optimized), Some(legacy)) => {
-                pin < optimized && optimized < legacy
-            }
+            (Some(pin), Some(optimized), Some(legacy)) => pin < optimized && optimized < legacy,
             _ => panic!("a step is missing from the engine's active_path"),
         }
     }
 
     /// The two halves have to agree on the order, and the engine is where it
-    /// is decided. A reordering there that nobody mirrored here would mean
-    /// this screen reports coverage against one document while screening
-    /// scores against another - and nothing would say so.
+    /// is decided. By construction this reads the engine's own source, so a
+    /// reordering there that nobody mirrored here fails this test instead of
+    /// leaving this screen reporting coverage against one document while
+    /// screening scores against another.
     #[test]
     fn the_engine_resolves_them_in_the_same_order() {
         let py = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -315,9 +324,9 @@ mod tests {
     }
 
     /// The positive control. A check that has never been seen to fail is a
-    /// check nobody has evidence about - and the first version of the test
-    /// above passed against a body whose steps were in the WRONG order,
-    /// because it was reading the docstring's prose rather than the code.
+    /// check nobody has evidence about. Unverified history: the first version
+    /// of the test above passed against a body whose steps were in the WRONG
+    /// order, because it read the docstring's prose rather than the code.
     #[test]
     fn the_order_check_catches_a_reordered_engine() {
         // Written as concatenated lines rather than one wrapped literal: a

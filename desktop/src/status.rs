@@ -321,9 +321,7 @@ pub fn label(value: &str) -> String {
     }
     let mut chars = value.chars();
     match chars.next() {
-        Some(first) => {
-            first.to_uppercase().collect::<String>() + &chars.as_str().replace('_', " ")
-        }
+        Some(first) => first.to_uppercase().collect::<String>() + &chars.as_str().replace('_', " "),
         None => String::new(),
     }
 }
@@ -527,8 +525,12 @@ mod sort_rank_tests {
         for status in FLOW {
             let rank = sort_rank(status.value);
             assert!(rank == 1 || rank == 2, "{} ranked {rank}", status.value);
-            assert_eq!(rank == 2, status.settled, "{} rank disagrees with settled",
-                       status.value);
+            assert_eq!(
+                rank == 2,
+                status.settled,
+                "{} rank disagrees with settled",
+                status.value
+            );
         }
     }
 }
@@ -548,7 +550,10 @@ mod tests {
     #[test]
     fn the_applied_constant_names_a_status_that_exists() {
         let found = FLOW.iter().find(|s| s.value == APPLIED);
-        assert!(found.is_some(), "APPLIED is {APPLIED:?}, which is not in FLOW");
+        assert!(
+            found.is_some(),
+            "APPLIED is {APPLIED:?}, which is not in FLOW"
+        );
         assert_eq!(found.unwrap().rung, Some(0), "and it is the first rung");
     }
 
@@ -638,8 +643,8 @@ mod tests {
         // NO OFFER NEEDS AN INTERVIEW. It is the interviewed pipeline's
         // outcome; the applied pipeline's are Rejection Email and No Response,
         // and offering all three unconditionally is what made them one status.
-        let no_offer = blocked_reason("no_offer", &fresh)
-            .expect("must be blocked without an interview");
+        let no_offer =
+            blocked_reason("no_offer", &fresh).expect("must be blocked without an interview");
         assert!(
             no_offer.contains("Interviewed"),
             "the reason must name what is missing, got: {no_offer}"
@@ -680,7 +685,11 @@ mod tests {
     fn passing_on_a_job_never_enters_the_funnel() {
         assert_eq!(rung("pass"), None);
         assert!(!is_response("pass"));
-        assert_eq!(rung("closed"), None, "the retired value proves nothing either");
+        assert_eq!(
+            rung("closed"),
+            None,
+            "the retired value proves nothing either"
+        );
     }
 
     #[test]

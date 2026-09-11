@@ -14,28 +14,32 @@ pub struct DesktopSettings {
     // unlatched <verb>" arguments are appended by the caller.
     pub python_invocation: String,
 
-    /// "light" or "dark". Stored as a word rather than a bool so a third
-    /// theme never has to break the file format, and so someone reading
-    /// desktop_settings.json can tell what it means.
+    /// "light" or "dark". Stored as a word rather than a bool: by construction
+    /// a `String` field takes a third theme's name without changing the file
+    /// format, and someone reading desktop_settings.json can tell what it means.
     pub theme: String,
 
     /// Whether the first-run walkthrough has been seen or skipped.
     pub tutorial_seen: bool,
 
     /// The job list's columns, left to right, by their on-disk keys. Empty
-    /// means the default order.
+    /// means the default order - verified by construction: `columns::from_keys`
+    /// appends every column in its default place when the saved order does
+    /// not name it, so an empty list produces the same order as a fresh build.
     ///
     /// Here rather than in config.json because it is a preference about this
     /// window, not about the search: the engine has no use for it, and
     /// config.json is a file a person is invited to hand-edit. Being in the
-    /// per-home settings file also makes it per PROFILE, which is what was
-    /// asked for - somebody watching two searches wants different columns for
-    /// a trades search than for an office one.
+    /// per-home settings file also makes it per profile - believed, not
+    /// measured, that somebody watching two searches wants different columns
+    /// for a trades search than for an office one.
     pub column_order: Vec<String>,
 
     /// Columns the person has turned off. Separate from `column_order` so
-    /// hiding a column and later showing it again puts it back where it was,
-    /// rather than at the end.
+    /// hiding a column and later showing it again puts it back where it was:
+    /// verified by construction, `columns::visible` filters `column_order`
+    /// by this list without touching the order itself, so removing an id
+    /// here restores its original position rather than appending it.
     pub column_hidden: Vec<String>,
 
     /// Where this profile last saved an attachment, or None until it has.
@@ -53,15 +57,16 @@ pub struct DesktopSettings {
     /// Statuses that are recorded without stopping to ask for a note, by
     /// their on-disk values.
     ///
-    /// PER STATUS RATHER THAN ONE SWITCH. A note is worth asking for on an
-    /// interview or a declined offer and almost never wanted on Applied, which
-    /// is the one set most often - so a single "notes off" would take the
-    /// useful prompts with it and then stay off.
+    /// PER STATUS RATHER THAN ONE SWITCH. Believed, not measured, that a
+    /// note is wanted on an interview or a declined offer and almost never
+    /// on Applied - the one set most often - so a single "notes off" would
+    /// take the useful prompts with it and then stay off.
     ///
-    /// Defaults to Applied. Empty means every status asks; the default is
-    /// applied via `default_quiet_statuses` so an existing settings file that
-    /// predates this gains the behaviour rather than silently keeping the old
-    /// two-keystroke flow.
+    /// Defaults to Applied. Empty means every status asks; verified by
+    /// construction, both the serde default attribute and `Default::default`
+    /// call the same `default_quiet_statuses` function, so an existing
+    /// settings file that predates this field gains the same one-entry
+    /// default a fresh install ships with, rather than every status asking.
     #[serde(default = "default_quiet_statuses")]
     pub quiet_statuses: Vec<String>,
 
@@ -84,8 +89,9 @@ impl Default for DesktopSettings {
             tutorial_seen: false,
             column_order: Vec::new(),
             column_hidden: Vec::new(),
-            // The same default the serde attribute applies, so a fresh install
-            // and an upgraded one behave identically.
+            // The same default the serde attribute applies: by construction both
+            // call `default_quiet_statuses()`, so a fresh install and an upgraded
+            // one end up with the same quiet-statuses list.
             quiet_statuses: default_quiet_statuses(),
             download_dir: None,
             browser: String::new(),
@@ -95,8 +101,9 @@ impl Default for DesktopSettings {
 
 /// The status that ships with its note prompt off.
 ///
-/// Applied, because it is the one set most often and the one people least
-/// often have anything to say about at the moment they set it.
+/// Applied - believed, not measured, that it is the one set most often
+/// and the one people least often have anything to say about at the
+/// moment they set it.
 fn default_quiet_statuses() -> Vec<String> {
     vec!["applied".to_string()]
 }
@@ -117,15 +124,15 @@ impl DesktopSettings {
 
 /// Reads the file, falling back to the defaults when it cannot be read.
 ///
-/// A FILE THAT WILL NOT PARSE IS KEPT, NOT OVERWRITTEN. Falling back is the
-/// right call, since a settings file is never worth refusing to start over -
-/// but the fallback used to be silent AND destructive: the defaults loaded,
-/// and the next save wrote them over the only copy. A half-written file from
-/// a power cut, or one hand-edited a comma wrong, took the person's column
-/// layout, theme and browser choice with it and left nothing to recover from.
+/// A FILE THAT WILL NOT PARSE IS KEPT, NOT OVERWRITTEN - verified by
+/// construction: the `Err` branch below renames the file aside before
+/// returning defaults, so the next save writes only the fresh copy and
+/// never touches the original bytes.
 ///
-/// So the unreadable file is moved aside first. The person still lands on the
-/// defaults, but their settings are still on disk beside them.
+/// Unverified history: an earlier version is believed to have fallen
+/// back silently, letting the next save overwrite the only copy - so a
+/// half-written file from a power cut, or one hand-edited a comma wrong,
+/// could have taken the column layout, theme and browser choice with it.
 pub fn load(path: &Path) -> DesktopSettings {
     if !path.exists() {
         return DesktopSettings::default();
@@ -137,16 +144,15 @@ pub fn load(path: &Path) -> DesktopSettings {
         Ok(settings) => settings,
         Err(_) => {
             // Non-clobbering, so a second bad start does not overwrite the
-            // copy kept by the first.
+            // copy kept by the first: by construction, `non_clobbering_path`
+            // finds the first free "name (n)" suffix instead of reusing one
+            // that already exists.
             if let Some(dir) = path.parent() {
                 let name = path
                     .file_name()
                     .map(|n| n.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "desktop_settings.json".to_string());
-                let kept = crate::paths::non_clobbering_path(
-                    dir,
-                    &format!("{name}.unreadable"),
-                );
+                let kept = crate::paths::non_clobbering_path(dir, &format!("{name}.unreadable"));
                 let _ = fs::rename(path, kept);
             }
             DesktopSettings::default()
@@ -180,10 +186,12 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
     }
 
-    /// THE ONE THAT COST SOMETHING. An unreadable file used to load the
-    /// defaults silently, and the next save wrote them over the only copy -
-    /// so a half-written file took the column layout, the theme and the
-    /// browser choice with it and left nothing behind to recover from.
+    /// THE ONE THAT COST SOMETHING - unverified history: an unreadable
+    /// file is believed to have loaded the defaults silently in an earlier
+    /// version, and the next save would have written them over the only
+    /// copy, so a half-written file could have taken the column layout,
+    /// the theme and the browser choice with it and left nothing behind
+    /// to recover from.
     #[test]
     fn an_unreadable_file_is_kept_rather_than_overwritten() {
         let dir = dir_for("unreadable");
@@ -191,14 +199,20 @@ mod tests {
         fs::write(&path, "{\"theme\": \"dark\", oh dear").unwrap();
 
         let loaded = load(&path);
-        assert_eq!(loaded, DesktopSettings::default(), "falls back rather than failing");
+        assert_eq!(
+            loaded,
+            DesktopSettings::default(),
+            "falls back rather than failing"
+        );
         assert!(!path.exists(), "the bad file is moved out of the way");
 
         let kept = dir.join("desktop_settings.json.unreadable");
         assert!(kept.exists(), "and it is still on disk");
         assert!(fs::read_to_string(&kept).unwrap().contains("oh dear"));
 
-        // Saving now cannot reach the kept copy.
+        // Saving now cannot reach the kept copy: by construction `kept` is a
+        // different path (the "<name>.unreadable" suffix applied above), and
+        // `save` only ever writes to `path`.
         save(&path, &loaded).unwrap();
         assert!(kept.exists());
         let _ = fs::remove_dir_all(&dir);
@@ -214,8 +228,7 @@ mod tests {
         load(&path);
 
         let first = fs::read_to_string(dir.join("desktop_settings.json.unreadable")).unwrap();
-        let second =
-            fs::read_to_string(dir.join("desktop_settings.json (2).unreadable")).unwrap();
+        let second = fs::read_to_string(dir.join("desktop_settings.json (2).unreadable")).unwrap();
         assert_eq!(first, "first broken file");
         assert_eq!(second, "second broken file");
         let _ = fs::remove_dir_all(&dir);
@@ -243,13 +256,20 @@ mod tests {
     fn a_file_that_predates_a_field_gains_its_default() {
         let dir = dir_for("older");
         let path = dir.join("desktop_settings.json");
-        fs::write(&path, r#"{"theme": "dark", "python_invocation": "python3"}"#).unwrap();
+        fs::write(
+            &path,
+            r#"{"theme": "dark", "python_invocation": "python3"}"#,
+        )
+        .unwrap();
         let loaded = load(&path);
         assert!(loaded.is_dark());
         assert_eq!(loaded.python_invocation, "python3");
         assert!(!loaded.asks_for_note("applied"), "applied ships quiet");
         assert!(loaded.asks_for_note("interviewed"));
-        assert!(loaded.browser.is_empty(), "no browser is the shipped default");
+        assert!(
+            loaded.browser.is_empty(),
+            "no browser is the shipped default"
+        );
         let _ = fs::remove_dir_all(&dir);
     }
 }

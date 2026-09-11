@@ -1,11 +1,17 @@
 // Hide the console window in release builds; keep it in debug so dev
-// runs still show panic output and child-process logs.
+// runs still show panic output and child-process logs - by definition
+// of the windows_subsystem attribute below, which only applies when
+// debug_assertions is off.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-// Unlatched desktop front end. Reads and writes the same SQLite database
-// and config.json as the command-line tool; long-running network work is
-// never done here, only by spawning that CLI as a child process and
-// streaming its output into a log pane.
+// Unlatched desktop front end. Reads and writes the same SQLite
+// database and config.json as the command-line tool - verified
+// 2026-09-10: db.rs names the same "unlatched.db" file db.py does, and
+// config.rs's own header calls config.json "shared with the
+// command-line side of the app". Long-running network work is never
+// done here - verified 2026-09-10: no reqwest, TcpStream or TcpListener
+// appears anywhere in desktop/src - only by spawning that CLI as a
+// child process and streaming its output into a log pane.
 
 mod access;
 mod app;
@@ -13,11 +19,11 @@ mod attachments;
 mod browse;
 mod collectors;
 mod config;
-mod criteria;
 mod config_draft;
+mod criteria;
+mod dashboard;
 mod date;
 mod db;
-mod dashboard;
 mod engine;
 mod fmt;
 mod modules;

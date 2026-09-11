@@ -1,18 +1,19 @@
 // The configured handoff collectors, as the menu needs them.
 //
-// ASKED OF THE ENGINE, NEVER PARSED OUT OF config.json HERE. This front end
-// already models the rest of that file, so reading `collectors` directly would
-// have been the shorter route - and wrong. What is really configured is not
-// what the file says: a profile with no list at all still has one collector
-// (the migrated `ingest.path`), an entry with a bad id or a duplicate id is
-// refused, and a schedule that will not parse takes its whole entry out. All of
-// that lives in collectors.py. A second copy here would drift, and the symptom
-// would be a menu entry that pulls nothing.
+// ASKED OF THE ENGINE, NEVER PARSED OUT OF config.json HERE - verified
+// 2026-09-10 against unlatched/collectors.py: a profile with no `collectors`
+// list still gets one collector from migrated_from_ingest_path, a bad or
+// duplicate id is refused by configured()/_entry(), and an entry whose
+// schedule will not parse is dropped whole rather than partly applied. All
+// of that lives in collectors.py. A second copy here would drift, and the
+// symptom would be a menu entry that pulls nothing.
 //
-// LOADED OFF THE UI THREAD. The engine is a frozen executable and starting one
-// costs the better part of a second; doing that inside the frame that opens a
-// menu is felt. The listing is fetched once when a profile opens and again when
-// config.json is reloaded, and the menu shows what it has.
+// LOADED OFF THE UI THREAD - by construction: Collectors::load spawns a
+// std::thread below. Starting the frozen engine costs the better part of a
+// second, and doing that inside the frame that opens a menu is felt. The
+// listing is fetched once when a profile opens and again when config.json
+// is reloaded - verified 2026-09-10: app.rs calls refresh_handoffs from
+// both the profile-open path and reload_config().
 
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
@@ -25,8 +26,10 @@ pub struct Handoff {
     pub enabled: bool,
     pub path: String,
     pub schedule: Vec<String>,
-    /// Hours since the SENDER stamped the file. None means it carries no stamp,
-    /// which is not the same as fresh and must never be shown as if it were.
+    /// Hours from when the SENDER stamped the file. None means it carries no
+    /// stamp, which is not the same as fresh and never reads as fresh -
+    /// verified by construction: detail() below prints "age is unknown" for
+    /// None, never "written 0h ago".
     pub age_hours: Option<f64>,
     pub file_present: bool,
 }
@@ -62,9 +65,10 @@ impl Handoff {
 struct Listing {
     collectors: Vec<Handoff>,
     /// Entries the engine refused, already worded for a person. Shown rather
-    /// than dropped: a collector missing from this menu because of a typo three
-    /// lines into a config file is otherwise indistinguishable from one nobody
-    /// ever added.
+    /// than dropped - by construction: views::collectors_menu renders every
+    /// entry in this list unfiltered, so a collector missing from the menu
+    /// because of a typo three lines into a config file is not indistinguishable
+    /// from one nobody ever added.
     problems: Vec<String>,
 }
 
@@ -114,7 +118,9 @@ impl Collectors {
 
     /// The failure, if asking went wrong. Separate from `ready` so an engine
     /// that could not be run reads differently from a profile with no
-    /// collectors - the menu says which.
+    /// collectors - verified 2026-09-10: views::collectors_menu checks this
+    /// method first and prints "could not read the list: ..." before falling
+    /// back to the empty-collectors message.
     pub fn failure(&self) -> Option<String> {
         let guard = self.inner.lock().ok()?;
         match guard.as_ref()? {
@@ -126,15 +132,19 @@ impl Collectors {
     /// The ids of collectors that are configured AND enabled.
     ///
     /// What the dashboard uses to decide whether a source is allowed to be
-    /// called late. On a profile with no second source this is empty, so
-    /// nothing can be - which is the point: a fresh install must never show a
-    /// staleness warning about a collector nobody set up.
+    /// called late - verified 2026-09-10: refresh_dashboard (app.rs) feeds this
+    /// into crate::fmt::Collected::Late. On a profile with no second source
+    /// this is empty, so nothing can be - which is the point: a fresh install
+    /// must never show a staleness warning about a collector nobody set up.
     ///
-    /// A DISABLED collector is excluded too. Turning one off is a decision;
-    /// reporting it as late afterwards would be the app arguing with it.
+    /// A DISABLED collector is excluded too - by construction: the filter
+    /// below keeps only `c.enabled`. Turning one off is a decision; reporting
+    /// it as late afterwards would be the app arguing with it.
     ///
-    /// An answer that has not arrived yet counts as none, which is the safe
-    /// direction: for the second the engine takes to reply, nothing is late.
+    /// An answer that has not arrived yet counts as none - by construction:
+    /// the early return below fires whenever `ready()` is None, which is the
+    /// safe direction: for the second the engine takes to reply, nothing is
+    /// late.
     pub fn configured_ids(&self) -> Vec<String> {
         let Some((collectors, _)) = self.ready() else {
             return Vec::new();
@@ -199,7 +209,8 @@ mod tests {
         let one = &listing.collectors[0];
         assert_eq!(one.when(), "every refresh");
         // An unstamped file must not read as fresh, and a missing one must say
-        // so - both were how a dead collector looked healthy.
+        // so - unverified history: both are believed to be how a dead collector
+        // once looked healthy.
         assert!(one.detail().contains("age is unknown"));
         assert!(one.detail().contains("nothing at that path yet"));
     }
@@ -207,9 +218,7 @@ mod tests {
     #[test]
     fn problems_survive_the_parse() {
         // The engine words these for a person; this side must not swallow them.
-        let listing = parse(
-            r#"{"collectors": [], "problems": ["collector 'x': needs a path"]}"#,
-        );
+        let listing = parse(r#"{"collectors": [], "problems": ["collector 'x': needs a path"]}"#);
 
         assert_eq!(listing.problems.len(), 1);
         assert!(listing.problems[0].contains("needs a path"));
