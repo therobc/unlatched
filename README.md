@@ -113,21 +113,34 @@ Both bundle the engine, so Python is not required.
 **Windows will warn you, and it is right to.** The installer is not
 code-signed, so SmartScreen shows "Windows protected your PC" - click **More
 info**, then **Run anyway**. This is not a formality to wave away: that warning
-is the same one a genuinely malicious download gets, so verify the file instead
-of trusting the click.
+is the same one a genuinely malicious download gets, so check where the file
+came from instead of trusting the click.
 
-Every release publishes a SHA-256 for each file. Check it before you run
-anything:
+Every release is built by this repository's GitHub Actions workflow, not on
+anyone's own machine, and GitHub signs a build attestation recording which
+workflow and which commit produced each file. Check it with the GitHub CLI
+before you run anything - the release page shows this command with the
+repository name filled in:
+
+```powershell
+gh attestation verify .\Unlatched-Setup-<version>.exe --repo <owner>/unlatched
+```
+
+If it does not verify, do not run the file.
+
+The workflow's public run log also prints the SHA-256 of every file it built.
+Comparing against it confirms a download arrived intact, or that a copy you got
+from somewhere else is the same file:
 
 ```powershell
 Get-FileHash .\Unlatched-Setup-<version>.exe -Algorithm SHA256
 ```
 
-If the hash does not match the one on the release page, do not run it.
-
-A code-signing certificate would not remove the warning either - Windows
-SmartScreen clears a new binary on accumulated reputation, not on the presence
-of a signature - so the hash is the check that actually tells you something.
+A matching hash is not, on its own, evidence that a file is genuine - anyone
+publishing a lookalike would list their own - which is why the attestation is
+the check to rely on. A code-signing certificate would not remove the warning
+either: Windows SmartScreen clears a new binary on accumulated reputation, not
+on the presence of a signature.
 
 ### From source
 
