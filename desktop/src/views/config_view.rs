@@ -631,9 +631,9 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
 /// the x on a chip to remove it. Both act on the DRAFT, so nothing is
 /// written until Save - verified by construction: `config_draft` is
 /// reset from the saved config only by `reload_config` and by
-/// switching profiles, never by switching views, so an accidental
-/// removal survives navigating away and back and is undone only by
-/// Reload or by not pressing Save.
+/// switching profiles, never by switching views. An accidental removal
+/// is put back by the Undo button that appears under the chips, without
+/// throwing away any other unsaved edit the way Reload would.
 ///
 /// This replaced a three-row text box holding one item per line. With
 /// 55 title terms that meant scrolling a tiny window to change a
@@ -641,7 +641,7 @@ pub fn show(app: &mut UnlatchedApp, ui: &mut egui::Ui) {
 /// preventing a duplicate.
 fn tag_editor(ui: &mut egui::Ui, width: f32, label: &str, id: &str, field: &mut TagField) {
     ui.label(label);
-    chips(ui, width, field);
+    chips(ui, width, id, field);
     entry_box(ui, id, field, "type and press Enter");
     ui.add_space(6.0);
 }
@@ -661,7 +661,7 @@ fn tag_editor_with_suggestions(
     field: &mut TagField,
 ) {
     ui.label(label);
-    chips(ui, width, field);
+    chips(ui, width, id, field);
     entry_box(ui, id, field, "type a city, then pick one below");
 
     let picks = crate::places::suggest(&field.input, 6);
@@ -694,7 +694,7 @@ fn wrapped_row(ui: &mut egui::Ui, width: f32, add: impl FnOnce(&mut egui::Ui)) {
     );
 }
 
-fn chips(ui: &mut egui::Ui, width: f32, field: &mut TagField) {
+fn chips(ui: &mut egui::Ui, width: f32, id: &str, field: &mut TagField) {
     wrapped_row(ui, width, |ui| {
         // Collected first, then removed after the loop: mutating the vector
         // while rendering from it would shift every index after the one
@@ -706,9 +706,20 @@ fn chips(ui: &mut egui::Ui, width: f32, field: &mut TagField) {
             }
         }
         if let Some(idx) = remove_at {
-            field.items.remove(idx);
+            field.remove(idx);
         }
     });
+    if let Some((_, term)) = field.removed.clone() {
+        if crate::access::tag(
+            ui.small_button(format!("Undo remove \"{term}\"")),
+            egui::WidgetType::Button,
+            format!("{id}-undo-remove"),
+        )
+        .clicked()
+        {
+            field.undo_remove();
+        }
+    }
 }
 
 /// One tag pill. Returns true when its x was clicked.
